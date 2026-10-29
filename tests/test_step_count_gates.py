@@ -1,4 +1,4 @@
-"""The CLI step-count gates: HD189 1495, HD209 1211, W39b 1202.
+"""The CLI step-count gates: HD189 1495, HD209 1211, W39b 1260.
 
 A physics-neutral change keeps these counts. HD189_vulcan3 is left out
 because its count is platform-dependent. Each run is a full
@@ -17,7 +17,7 @@ import pytest
 
 from vulcan3.config import load_config
 
-_GATES = {"HD189": 1495, "HD209": 1211, "W39b": 1202}
+_GATES = {"HD189": 1495, "HD209": 1211, "W39b": 1260}
 # The CLI selects each config's import-frozen network by re-executing itself;
 # an inherited selection would run the config on the wrong network.
 _FROZEN_ENV = ("VULCAN3_NETWORK", "VULCAN3_ATOM_LIST", "VULCAN3_CLI_RELAUNCHED")

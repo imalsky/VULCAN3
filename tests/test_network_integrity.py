@@ -1,4 +1,5 @@
-"""Network-file integrity: no silent duplicates, positional photo indices.
+"""Network-file integrity: no silent duplicates, positional photo indices,
+pinned T-range exposure.
 
 The parser is positional and appends every reaction row, so a reaction
 duplicated within one section is double-counted in both directions with no
@@ -11,6 +12,12 @@ Photolysis rates are indexed by parser position, never by the id column.
 VULCAN's `make_chem_funs.py` renumbers a network file in place the first time
 it runs, but a fetched, hand-edited or never-run file keeps stale ids, and
 keying photolysis by them puts a rate in the wrong k_arr slot or out of range.
+
+The trailing `Temp` annotation column documents each thermal rate's fitted
+range. Nothing enforces it at runtime (matching VULCAN-master);
+jwst-transit-authority reports the exposure through
+`runtime_validation.rate_temp_range_exposure`. The pinned counts are for the
+shipped atm-file profiles and move only with the network files or the parser.
 """
 
 from __future__ import annotations
@@ -23,6 +30,7 @@ import sys
 import warnings
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -173,6 +181,49 @@ def test_duplicate_reactions_refuse_naming_the_equations():
     msg = dup_msgs[0]
     for eq in ("TiO2 + M -> Ti + O2 + M", "TiO + M -> Ti + O + M", "VO + M -> V + O + M"):
         assert eq in msg
+
+
+@pytest.mark.parametrize(
+    "annotation, expected",
+    [
+        ("1992OLD/LOG8426-8430 250-2580", ((250.0, 2580.0),)),
+        ("Estimate 300-2.50E4", ((300.0, 25000.0),)),  # sci-notation upper bound
+        ("2007GAN/GLO6679-6692 298", ((298.0, 298.0),)),  # bare measurement T
+        ("1981PET/SAP771 1560-2270, 1500-1900", ((1560.0, 2270.0), (1500.0, 1900.0))),
+        ("1986TSA/HAM1087300-2500", ()),  # reference fused to range: refuse
+        ("1991DEA/DAV183-1911500-4200", ()),  # fused, inverted: refuse
+        ("--", ()),
+        ("KIDA", ()),
+    ],
+)
+def test_temp_range_annotation_parser(annotation, expected):
+    """Strict end-of-row scan: real ranges parse, garbled ones refuse."""
+    from vulcan3.network import _parse_temp_ranges
+
+    assert _parse_temp_ranges(annotation.split()) == expected
+
+
+# any/all = rows outside the union of their documented ranges in >=1 / all
+# profile layers; no_range = rows whose annotation has no parseable range.
+_EXPOSURE = {
+    "HD189": {"thermal_rows": 390, "no_range": 95, "any_outside": 291, "all_outside": 43},
+    "HD209": {"thermal_rows": 390, "no_range": 95, "any_outside": 291, "all_outside": 58},
+    "W39b": {"thermal_rows": 531, "no_range": 150, "any_outside": 199, "all_outside": 69},
+}
+
+
+@pytest.mark.parametrize("cfg_name", sorted(_EXPOSURE), ids=str)
+def test_shipped_profile_temp_range_exposure_is_pinned(cfg_name):
+    """The out-of-range exposure of each shipped case is known and stays known."""
+    from vulcan3 import runtime_validation as rv
+    from vulcan3.config import load_config
+
+    cfg = load_config(cfg_name)
+    net, _ = _parse_quietly(cfg.network)
+    prof = np.genfromtxt(f"src/vulcan3/{cfg.atm_file}", names=True, skip_header=1)
+    temp_col = next(n for n in prof.dtype.names if n.lower().startswith("temp"))
+    exposure = rv.rate_temp_range_exposure(net, np.asarray(prof[temp_col], float))
+    assert exposure == _EXPOSURE[cfg_name]
 
 
 # A network whose species lack a composition row cannot be integrated: atom

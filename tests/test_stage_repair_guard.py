@@ -29,7 +29,7 @@ BUILT_ON = (
     if _MANIFEST.is_file()
     else None
 )
-S_NETWORK = "thermo/SNCHO_photo_network.txt"
+S_NETWORK = "thermo/SNCHO_photo_network_2025.txt"
 BAND = slice(83, 95)  # W39b layers where H2S is a trace, not a reservoir
 _GAMMA = 1.0 + 2.0**-0.5
 

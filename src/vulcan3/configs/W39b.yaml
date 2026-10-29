@@ -15,7 +15,7 @@ atom_list:
 - S
 
 # ====== Setting up paths and filenames for the input and output files ======
-network: thermo/SNCHO_photo_network.txt
+network: thermo/SNCHO_photo_network_2025.txt
 atm_file: atm/atm_W39b_evening_TP_Kzz.txt
 sflux_file: atm/stellar_flux/sflux-W39b_Tsai2023.txt
 vul_ini: output/W39b-nominal.vul

@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.util
 import math
 
+import numpy as np
+
 from . import chem_funs
 from ._paths import resolve_data_path
 from .config import _ELEMENT_RATIO_KEY
@@ -359,3 +361,38 @@ def validate_runtime_config(cfg) -> None:
             "Unsupported or invalid VULCAN3 runtime configuration:\n- "
             + "\n- ".join(errors)
         )
+
+
+def rate_temp_range_exposure(net, Tco) -> dict:
+    """Count thermal rows evaluated outside their documented T ranges on `Tco`.
+
+    Advisory only (no rate is altered). jwst-transit-authority's
+    `forward.run_model` calls it; nothing in this package does, so vulture
+    and a dead-code sweep miss that caller.
+
+    Coverage per row is the UNION of its documented ranges (lenient: a
+    Lindemann row's k0 and k_inf windows are OR'd, so this undercounts).
+    A bare measurement temperature parses as a degenerate (T, T) range, so
+    room-temperature-only rates count as out-of-range on hot profiles
+    rather than hiding in the no-range bucket.
+    """
+    T = np.asarray(Tco, dtype=np.float64)
+    no_range = any_outside = all_outside = 0
+    for ranges in (net.temp_ranges or {}).values():
+        if not ranges:
+            no_range += 1
+            continue
+        covered = np.zeros(T.shape, dtype=bool)
+        for lo, hi in ranges:
+            covered |= (T >= lo) & (T <= hi)
+        n_out = int(np.count_nonzero(~covered))
+        if n_out:
+            any_outside += 1
+            if n_out == T.size:
+                all_outside += 1
+    return {
+        "thermal_rows": len(net.temp_ranges or {}),
+        "no_range": no_range,
+        "any_outside": any_outside,
+        "all_outside": all_outside,
+    }

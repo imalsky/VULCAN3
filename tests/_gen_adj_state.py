@@ -40,7 +40,7 @@ N_POLISH = 40
 # The W39b state needs the sulfur network and its atom list. These are
 # import-locked env vars: they must be set BEFORE the first `import vulcan3`,
 # which is why this module imports jax lazily inside the builders.
-W39B_NETWORK = "thermo/SNCHO_photo_network.txt"
+W39B_NETWORK = "thermo/SNCHO_photo_network_2025.txt"
 W39B_ATOM_LIST = "H,O,C,N,S"
 
 

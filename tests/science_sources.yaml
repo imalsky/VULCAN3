@@ -84,17 +84,22 @@ supported_inputs:
     sha256: b6aede1753ff6cfac8ce61f1748ffbe1a169e8d830e12ee83af52b1eac5d1360
     oracle: vulcan2_ncho
     diverges: [ch2cn_falloff]
-    note: Selected by W39b.yaml.
+    note: >-
+      The 89-species network of Tsai et al. 2021. No shipped config selects
+      it; a caller selects it by path.
 
   thermo/SNCHO_photo_network_2025.txt:
-    sha256: a82daa92494fad81b5ead2f9251a3ed7f7ed27e6d810a8b543fe8fd8d0267b6e
-    oracle: vulcan2_ncho
+    sha256: c96f983b2d0893b97c291ba60df3c4162885b5c47a11a5265266d48e054a7006
+    oracle: null
     diverges: [renumber_2025_reaction_index_gap]
     note: >-
-      Current upstream's W39b network (93 species). Selectable by
-      jwst-transit-authority as network="sncho2025"; the shipped W39b.yaml
-      still selects the 89-species file above. Already carries upstream's own
-      10.2025 CH2CN falloff fix, so it needs no ch2cn_falloff entry.
+      Upstream's file at a68d715 (unchanged at c870b1a), which is NEWER than
+      every pinned oracle, so `oracle` is null and the audit's oracle
+      comparison does not cover it; the hash pin above is the whole guard.
+      Against the vulcan2_ncho copy it drops `NH3 + CH -> NH2 + CH2` (39f1906)
+      and writes `HNCO + M -> H + NCO + M` (a68d715). 93 species; selected by
+      W39b.yaml. Already carries upstream's own 10.2025 CH2CN falloff fix, so
+      it needs no ch2cn_falloff entry.
 
   thermo/all_compose.txt:
     sha256: 35377a47c7233eaa4f9d7ebde4d603e69ffe19e1956f37bd2a5949d3e425b462
@@ -124,6 +129,10 @@ supported_inputs:
   atm/stellar_flux/sflux-W39b_Tsai2023.txt:
     sha256: 7746f9c874101975f4bd33717f8b1fabd47498cf0e19f20f87a7175e8f6c6de0
     oracle: vulcan3_vm_branch
+    note: >-
+      Upstream's cfg_wasp39b.py selects sflux-wasp39-frances.txt (3ed92cf): the
+      same wavelength grid and this flux times 0.999972 throughout. Not vendored
+      (the maintainer decided).
 
   atm/stellar_flux/sflux-GJ1214.txt:
     sha256: b8c52774e2ce3114e2921e0f0cda952fc9db97a240c6f9c96e73f8df3fc2302a
@@ -155,8 +164,10 @@ supported_inputs:
       The upstream composition (Lodders 2009 at solar), with only the P/S row
       order corrected. It matches upstream's elemental C/N/O/S/He for a
       cross-code comparison, but it does not reproduce upstream's initial
-      state: at full solar, upstream's FastChem locks 0.166 dex of oxygen into
-      rocky oxides that an NCHO/SNCHO network has no species for.
+      state: upstream's FastChem holds 17.3% of the oxygen (0.083 dex) in SiO and
+      Fe(OH)2, which an NCHO/SNCHO network has no species for (measured on the W39b
+      profile at 10x solar, rocky elements at 10x: the bound of all Si and Fe so
+      bound).
 
 # ---------------------------------------------------------------------------
 # Intentional divergences from upstream.
@@ -179,14 +190,14 @@ intentional_divergences:
   renumber_2025_reaction_index_gap:
     files:
       - thermo/SNCHO_photo_network_2025.txt
-    reaction: CH3 + C2H2 -> CH2CCH2 + H
     reason: >-
-      Upstream numbers this row 1039, breaking the otherwise strictly
-      increasing odd-numbered forward-reaction sequence, and then continues
-      at 861. VULCAN-JAX renumbers the run from 861 so the indices stay
-      monotonic. Stripping the leading index makes the file byte-identical to
-      the oracle copy: rates, reactions and references are unchanged.
-    recorded_in: tools/audit_master_parity.py::KNOWN_THERMO_RENUMBERED
+      Upstream's id column is not positional: rows carry 1039 and 1131 out of
+      sequence, and after the removed NH3 + CH row all 61 photolysis ids are
+      off by one row, which the parser refuses as stale. VULCAN-JAX writes
+      every row's parser position as its id. Stripping the leading index
+      makes the file byte-identical to upstream's a68d715 file: rates,
+      reactions and references are unchanged.
+    recorded_in: supported_inputs sha256 pin (this file)
 
   ch2cn_falloff:
     files:

@@ -20,15 +20,15 @@ notes (the NAS `analysis/` tree no longer exists).
   `imalsky/VULCAN3`); earlier releases were `vulcan-jax`. 0.18.0 is on TestPyPI, not
   on PyPI [I].
 - Consumers floor `vulcan3>=0.18.0`. Production: vulcan-retrieval's WASP-39b on NAS
-  GH200s (SNCHO, nz 100, ni 89, `ffi`, grouped RHS; its run settings are its own).
-- Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495,
-  HD209 1211, W39b 1202 on arm64 and x86-64. HD189_vulcan3 is not in that test:
-  2603 on arm64; on x86-64 it ends on its hybrid phase-1 budget at step 4018.
-- Tests at 0.18.0 [M]: normal tier (`python -m pytest tests`, budget 10 min on daw)
-  323 passed / 92 skipped in 6:29 at `-n 16`; full tier (`VULCAN3_RUN_SLOW=1`,
-  oracle on, no GPU) 352 passed / 63 skipped in 18:00 at `-n 16`, the skips being
-  the CUDA kernel and compute-sanitizer tests. `oracle.yml` is `workflow_dispatch`
-  only, one process per slow test; last green dispatch 37173830150 at `b372e65`.
+  GH200s (2025 SNCHO file, ni 93; v5 ran the 2021 file, ni 89; `ffi`, grouped RHS).
+- Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209
+  1211, W39b 1260 (1202 on the 2021 file, as below) on arm64 and x86-64. HD189_vulcan3
+  is not in that test: 2603 on arm64; on x86-64 it ends on its phase-1 budget at 4018.
+- Tests [M], daw, `-n 16`, no GPU: normal tier (`python -m pytest tests`, budget 10 min)
+  322 passed / 61 skipped in 5:47; full tier (`VULCAN3_RUN_SLOW=1`, oracle on) 339
+  passed / 32 skipped in 18:01 before the T-range restore, plus the W39b gate re-pinned
+  (3 of 3 pass); the skips are the CUDA kernel and compute-sanitizer tests. `oracle.yml`
+  is `workflow_dispatch` only; last green dispatch 37173830150 at `b372e65`.
 - Oracle clones: `vulcan2_ncho` 80f75b9, `vulcan2_fastchem_ps_order` 8970337
   (provenance only, no test), `vulcan3_vm_branch` 84d010d. On daw the clones are
   clean at those commits with `core.fileMode false`, so
@@ -167,16 +167,16 @@ Integrator
 Inputs and data
 - `thermo/solar_element_abundances.dat` replaced in ccc40f7, still the default:
   He and S changed, P/Si/Ti/V/Cl/K/Na/Mg/F/Ca/Fe at -3.0: the networks have no Mg/Si/Fe
-  species, and at solar upstream FastChem's SiO and Fe oxides bind up to ~17% of the O
-  [I]; the ExoGibbs seed sees network elements only. Upstream's file is kept as
+  species, and upstream FastChem's SiO and Fe(OH)2 hold 17.3% of the O (W39b, 10x, rocky
+  10x) [M]; the ExoGibbs seed sees network elements only. Upstream's file is kept as
   `..._lodders2009.dat` with the P/S rows corrected (C12). For W39b the config's
-  `<X>_H` override the file (`ini_abun._base_vector`), so only He comes from it. A
-  row-order bug once left EQ runs' carbon atomic (fixed 45cc4c7). Provenance not
-  recorded.
+  `<X>_H` override the file (`ini_abun._base_vector`), so only He comes from it.
 - EQ seed: ExoGibbs on the port's NASA-9 data, not FastChem (one dataset with the
   reverse rates; no aarch64 FastChem). On identical inputs it matches upstream FastChem
   to ~1e-6 dex (HO2 aside); seeded from either, HD189 and W39b keep 1495 / 1202 steps
-  and agree to <= 3e-3 dex, median 4e-5 [M]. The gap is upstream's input rounding.
+  and agree to <= 3e-3 dex, median 4e-5 [M]. The gap is upstream's input rounding. It
+  converges 225-6000 K; below, it breaks down (NaN residual, not the cap) at scattered T
+  on every network, where FastChem converges 150-300 K, fails at 100 K [M]; untracked.
 - Data corrections: C1 (= e841d77, SNCHO reaction 949 k0 1e-20 -> 1e-29, which
   upstream also fixed), C4, C5, C6, C7, C12, C14 (networks renumbered), C20 (both
   sides), P18.
@@ -201,9 +201,8 @@ Refused or not ported (no physics change)
 Retrieval per-run settings (vulcan-retrieval's W39b runs vs master's W39b
 example): fixed rtol 0.05 (master 0.05 adaptive), cap-and-reject at 5000 accepted
 steps (master stops at 1e4-2e4 and saves the unconverged state), dt_max 1e11
-(1e17), photolysis keyed to ticks, the older
-network (the 2025 network changed no certification, +5% per tick), nz 100 over
-1e-9..7.6 bar (master: 150 over 5e-9..50 bar).
+(1e17), photolysis keyed to ticks, nz 100 over 1e-9..7.6 bar (master: 150 over
+5e-9..50 bar).
 
 Referee verdicts. An outside review (at `93896f6`) and a second referee checked the
 departures above; their numbers are their own [M]. Their measurements are optional.
@@ -342,7 +341,7 @@ B. Found in upstream, kept at parity
 | P5 | `const_lowT` sum omits NH3, He as remainder | `build_atm.py:48`, `:213` | `ini_abun._load_const_lowT_y` | He/H 0.83% low at 10x N; not live | no |
 | P6 | = C16 | | | | no |
 | P7 | photolysis quadrature skips the bin-grid join interval | `op.py:2771-2780` | `photo.compute_J_jax_flat` | HO2 J 0.06% (W39b) / 0.32% (HD189), others <= 0.05% | no |
-| P8 | `HNCO + M -> H + NCO` carries M on the reactant side only | `thermo/SNCHO_photo_network.txt:557` | parser tracks each side; `rates_jax` delta_n | 1.3e-5 / 5.0e-5 / 6.0e-4 ln VMR on the gates; HD189_vulcan3 2803 -> 2668 | partly, a68d7151 (W39b's SNCHO_photo still one-sided) |
+| P8 | `HNCO + M -> H + NCO` carries M on the reactant side only | `thermo/SNCHO_photo_network.txt:557` | parser tracks each side; `rates_jax` delta_n | 1.3e-5 / 5.0e-5 / 6.0e-4 ln VMR on the gates; HD189_vulcan3 2803 -> 2668 | partly, a68d7151 (in the vendored 2025 file; the 2021 SNCHO file still one-sided) |
 | P9 | moldiff boundary rows do not conserve the column | `op.py:1549-1558` | `bdry0_grav` / `bdry_top_grav` in `jax_step` | +6.6e-19 to +7.9e-18 /s; C23 bounds it | no |
 | P10 | N(2D) NASA-9 thermo is a molecule's | `thermo/NASA9/N_2D.txt` | same file | K_eq 1.6e3-1.5e4x low; HD209 1211 -> 1206 if fixed; hot-top N 1000x | no |
 | P10 (second use of the ID) | escape Jacobian entry `top_flux/y[-1]` too large by `dzi[-1]` | `op.py:2106-2107` vs RHS `:1689` | comment at the `diff_lim` term in `jax_ros2_step` | LHS only; HD209's `diff_esc` inert | no |
@@ -758,8 +757,6 @@ were not obtained).
 - `exoclime/VULCAN` redirects to the VULCAN 3 line (its `vulcan_cfg.py` is
   byte-identical to `vulcan3_vm_branch`): the pinned clones are the only VULCAN 2
   reference.
-- Oracle vintage: upstream removed `NH3 + CH -> NH2 + CH2` from NCHO (exoclime
-  `39f1906`); the oracle and the vendored `NCHO_*` files predate it.
 - Declared code deltas (`tests/oracle.py::ORACLE_CODE_DELTAS`): an upstream defect
   corrected on both sides is one (OLD, NEW, tag) entry applied to the disposable
   oracle copy and to `bench_table1.sh`'s scratch copy; OLD must occur exactly once
@@ -768,7 +765,8 @@ were not obtained).
 - Upstream changed `NCHO_photo_network.txt`, `SNCHO_photo_network.txt`,
   `all_compose.txt` and the HD189 / HD209 Kzz files after 80f75b9; the port keeps
   the pinned versions. The pin can move only within VULCAN 2 history, and a move
-  re-baselines every oracle family and gate.
+  re-baselines every oracle family and gate. Exception (the maintainer's): the 2025
+  SNCHO file is upstream's a68d715 one (`tests/science_sources.yaml`), `oracle: null`.
 
 ### Molecular diffusion and the hybrid scheme
 
@@ -849,7 +847,9 @@ is the scale ratio `max|lane - solo| / max|soloA - soloB|` (`SCALE_TOL` 1e-4); t
 photo-on batched deviation (13 of 87 carry leaves at the last bit) is accepted as
 roundoff; the AD-build `dt_max` cap stays off the cold solve; `config.DT_MAX_S`
 stays 1e15. The JAX paper quotes 0.6.0, the version its data came from. The CUDA
-solve guard stays at its ~7% solve cost ("Efficiency program").
+solve guard stays at its ~7% solve cost ("Efficiency program"). Upstream's rocky
+seed (`use_other_ele` + `fastchem_met_scale`: FastChem holds O in species the
+network drops) is not ported: the seed is ExoGibbs over the network's elements.
 
 ## Known and deliberately untracked
 

@@ -250,7 +250,7 @@ def _master_cfg(master_root: Path, config_name: str, scratch: Path) -> Path:
         legacy + "\n# resolved W39b overrides\n" + "\n".join(lines) + "\n"
     )
     for rel in (
-        "thermo/SNCHO_photo_network.txt",
+        "thermo/SNCHO_photo_network_2025.txt",
         "atm/atm_W39b_evening_TP_Kzz.txt",
         "atm/stellar_flux/sflux-W39b_Tsai2023.txt",
     ):

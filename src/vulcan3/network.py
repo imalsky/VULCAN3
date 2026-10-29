@@ -35,7 +35,8 @@ _SECTION_RADIATIVE = "radiative"
 _SECTION_PHOTO = "photo"
 _SECTION_ION = "ion"
 
-# Sections whose rows carry Arrhenius fits read from the file.
+# Sections whose rows carry Arrhenius fits read from the file; only these
+# have a meaningful documented temperature range in the trailing annotation.
 _THERMAL_SECTIONS = (
     _SECTION_TWO_BODY,
     _SECTION_THREE_BODY_KINF,
@@ -100,6 +101,13 @@ class Network:
     # Original file path for debugging
     network_path: str
 
+    # Documented temperature validity, parser-i -> ((lo, hi), ...) in K, for
+    # thermal (Arrhenius) forward rows only. An empty tuple means the row's
+    # trailing annotation carries no parseable range. Advisory: nothing in
+    # either VULCAN implementation enforces these at runtime. Consumed by
+    # jwst-transit-authority (runtime_validation.rate_temp_range_exposure).
+    temp_ranges: dict | None = None
+
     # (position, written id, reaction text) for every photo/ion row whose id
     # column disagrees with its parser position. Rates are indexed by
     # position, so the parse is correct either way, but a `cfg.remove_list`
@@ -109,6 +117,43 @@ class Network:
 
 
 _RE_LINE = re.compile(r"^\s*(\d*)\s*\[\s*([^\]]+)\s*\]\s*(.*)$")
+
+# Temperature annotations in the trailing `Temp` column: '250-2580',
+# '300-2.50E4', a bare measurement temperature '298', or comma-separated
+# lists of these. No sign and no negative exponent: temperatures are
+# positive Kelvin, and allowing 'E-' would make the range split ambiguous.
+_NUM = r"\d+(?:\.\d+)?(?:[Ee]\+?\d+)?"
+_RE_TEMP_RANGE = re.compile(rf"^({_NUM})-({_NUM})$")
+_RE_TEMP_SINGLE = re.compile(rf"^{_NUM}$")
+
+
+def _parse_temp_ranges(tokens: list[str]) -> tuple[tuple[float, float], ...]:
+    """Parse the documented temperature range(s) off a row's annotation tokens.
+
+    Scans from the end of the annotation (the Temp column is last) and stops
+    at the first token that is not a range or a bare temperature. A reference
+    fused to a range (e.g. '1986TSA/HAM1087300-2500') or an inverted 'lo-hi'
+    yields no ranges rather than a garbage window.
+    A bare temperature T becomes the degenerate range (T, T).
+    """
+    out: list[tuple[float, float]] = []
+    for tok in reversed(tokens):
+        t = tok.strip(",")
+        if t == "/":  # k0 / k_inf window separator on three-body rows
+            continue
+        m = _RE_TEMP_RANGE.match(t)
+        if m:
+            lo, hi = float(m.group(1)), float(m.group(2))
+            if lo > hi:
+                return ()
+            out.append((lo, hi))
+            continue
+        if _RE_TEMP_SINGLE.match(t):
+            v = float(t)
+            out.append((v, v))
+            continue
+        break
+    return tuple(reversed(out))
 
 # Duplicate reactions listed by name in the parse error.
 _DUPS_SHOWN = 4
@@ -225,6 +270,7 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
 
     forward_records: list[dict] = []
     Rf_text: dict[int, str] = {}
+    temp_ranges: dict[int, tuple[tuple[float, float], ...]] = {}
     stale_ids: list[tuple[int, int, str]] = []
 
     def _intern_species(sp: str) -> int:
@@ -335,6 +381,8 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
             }
             forward_records.append(rec)
             Rf_text[parser_i] = eq
+            if section in _THERMAL_SECTIONS:
+                temp_ranges[parser_i] = _parse_temp_ranges(cols[len(num_cols):])
 
             if section in (_SECTION_PHOTO, _SECTION_ION):
                 if file_id != parser_i:
@@ -491,5 +539,6 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
         ion_branch=dict(ion_branch),
         Rf=dict(Rf_text),
         network_path=network_path,
+        temp_ranges=dict(temp_ranges),
         stale_ids=tuple(stale_ids),
     )

@@ -345,7 +345,7 @@ def test_cuda_kernel_under_compute_sanitizer(tool, buffers):
 BUFFER_DTS = (3.8e4, 1e6, 1e11)
 _BUFFER_NETS = {  # fixture, config, the child's network environment
     "HD189": ("adj_state_hd189.npz", {"VULCAN3_NETWORK": "thermo/NCHO_photo_network.txt"}),
-    "W39b": ("adj_state_w39b.npz", {"VULCAN3_NETWORK": "thermo/SNCHO_photo_network.txt",
+    "W39b": ("adj_state_w39b.npz", {"VULCAN3_NETWORK": "thermo/SNCHO_photo_network_2025.txt",
                                     "VULCAN3_ATOM_LIST": "H,O,C,N,S"}),
 }
 _BUFFERS_CHILD = r"""
@@ -731,6 +731,6 @@ for backend in ("fast", "ffi"):
 def test_fast_on_real_w39b_blocks():
     from _helpers import run_child
 
-    res = run_child(_CHILD, network="thermo/SNCHO_photo_network.txt", label="solver_fast W39b")
+    res = run_child(_CHILD, network="thermo/SNCHO_photo_network_2025.txt", label="solver_fast W39b")
     print(res.stdout)
     assert res.stdout.count("dt=") == 2 * len(DTS)

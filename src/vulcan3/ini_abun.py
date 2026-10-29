@@ -459,8 +459,18 @@ def eq_column(pco, Tco, M) -> np.ndarray:
     seed_jit = _seed_controls(*_seed_key())[1]
     ymix = np.asarray(seed_jit(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b)))
     if not np.isfinite(ymix).all():
-        conv = np.asarray(_solve_profile(Tco, p_bar, b)[1]["converged"])
+        diag = _solve_profile(Tco, p_bar, b)[1]
+        conv = np.asarray(diag["converged"])
         bad = np.flatnonzero(~conv)
+        # A layer that stopped before the cap broke down (NaN residual), which
+        # more iterations do not cure; seen below ~225 K on the shipped networks.
+        capped = bool(np.asarray(diag["hit_max_iter"])[bad].all())
+        remedy = (
+            "Raise fastchem_newton_max_iter." if capped else
+            "The minimizer broke down before the cap (a NaN residual, seen on "
+            "columns colder than ~225 K); seed it with ini_mix='const_lowT' or "
+            "'const_mix'."
+        )
         raise RuntimeError(
             f"the equilibrium seed did not converge in "
             f"{_CFG.fastchem_newton_max_iter} iterations at "
@@ -469,7 +479,7 @@ def eq_column(pco, Tco, M) -> np.ndarray:
                 f"layer {i} (T={Tco[i]:.1f} K, p={p_bar[i]:.3e} bar)"
                 for i in bad[:5]
             )
-            + ". Raise fastchem_newton_max_iter."
+            + ". " + remedy
         )
     return ymix * np.asarray(M, dtype=np.float64)[:, None]
 

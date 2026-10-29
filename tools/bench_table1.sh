@@ -39,7 +39,7 @@ done
 
 # --- network / atom_list per planet (import-locked in VULCAN-JAX, must be set BEFORE import) ---
 net_for() { case "$1" in
-    W39b) echo "thermo/SNCHO_photo_network.txt" ;;
+    W39b) echo "thermo/SNCHO_photo_network_2025.txt" ;;
     *)    echo "thermo/NCHO_photo_network.txt" ;;
   esac; }
 atoms_for() { case "$1" in

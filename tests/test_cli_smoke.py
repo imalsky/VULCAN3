@@ -77,7 +77,7 @@ def test_frozen_knob_mismatch_flags_only_non_default_networks():
     # Sulfur networks differ in both network and atom_list.
     w39b = cli._frozen_knob_mismatch(load_config("W39b"))
     assert w39b == {
-        "VULCAN3_NETWORK": "thermo/SNCHO_photo_network.txt",
+        "VULCAN3_NETWORK": "thermo/SNCHO_photo_network_2025.txt",
         "VULCAN3_ATOM_LIST": "H,O,C,N,S",
     }
 
@@ -102,7 +102,7 @@ def test_relaunch_sets_env_and_refuses_to_loop(monkeypatch):
     with pytest.raises(SystemExit):
         cli._relaunch_for_frozen_knobs(load_config("W39b"), "W39b")
 
-    assert captured["env"]["VULCAN3_NETWORK"] == "thermo/SNCHO_photo_network.txt"
+    assert captured["env"]["VULCAN3_NETWORK"] == "thermo/SNCHO_photo_network_2025.txt"
     assert captured["env"]["VULCAN3_ATOM_LIST"] == "H,O,C,N,S"
     assert captured["env"][cli._RELAUNCH_GUARD] == "1"
     assert captured["argv"][-2:] == ["--config", "W39b"]

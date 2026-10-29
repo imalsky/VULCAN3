@@ -19,7 +19,7 @@ import pytest
 CASES = {
     "HD209_photo_off": ("HD209", False, "thermo/NCHO_photo_network.txt",
                         "H,O,C,N", 1e-8, 0.1),
-    "W39b_photo_on": ("W39b", True, "thermo/SNCHO_photo_network.txt",
+    "W39b_photo_on": ("W39b", True, "thermo/SNCHO_photo_network_2025.txt",
                       "H,O,C,N,S", 1e-4, 0.05),
 }
 

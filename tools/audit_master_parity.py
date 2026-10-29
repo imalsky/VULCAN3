@@ -15,7 +15,6 @@ import argparse
 import hashlib
 import math
 import os
-import re
 import runpy
 import sys
 from pathlib import Path
@@ -46,16 +45,6 @@ KNOWN_THERMO_DIVERGENCES: dict[str, tuple[str, ...]] = {
     "SNCHO_photo_network_C3.txt": ("CH2CN + H + M -> CH3CN + M",),
     "SNCHO_DMS_photo_network_Tsai2024.txt": ("CH2CN + H + M -> CH3CN + M",),
 }
-
-# Vendored network files where the only allowed drift is the leading reaction
-# index. Upstream's 2025 SNCHO file numbers one row 1039, breaking the
-# otherwise increasing odd-numbered forward sequence, and then continues at
-# 861; JAX renumbers the run so the indices stay monotonic. Every field after
-# the index must still match, so a rate change is still real drift.
-KNOWN_THERMO_RENUMBERED: frozenset[str] = frozenset(
-    {"SNCHO_photo_network_2025.txt"}
-)
-_LEADING_INDEX = re.compile(r"^\s*\d+\s+")
 
 # eps Eri flux: master's sflux-epseri.txt is low by R_star^4 because the formula
 # at atm/make_spectra_in_nm.py:25 multiplies by R_star where it should divide; JAX
@@ -212,21 +201,6 @@ def _known_divergence_only(
     return errors
 
 
-def _index_renumber_only(master_path: Path, jax_path: Path) -> list[str]:
-    """Return errors for any drift beyond the leading reaction index."""
-    errors, pairs = _paired_lines(master_path, jax_path)
-    for lineno, (m_line, j_line) in pairs:
-        if m_line == j_line:
-            continue
-        if (_LEADING_INDEX.sub("", m_line) == _LEADING_INDEX.sub("", j_line)
-                and _LEADING_INDEX.match(m_line)):
-            continue  # leading reaction index only
-        errors.append(
-            f"unexpected drift at line {lineno}: master={m_line!r}, jax={j_line!r}"
-        )
-    return errors
-
-
 def _known_sflux_rescale_only(
     master_path: Path, jax_path: Path, factor: float
 ) -> list[str]:
@@ -286,8 +260,7 @@ def _compare_runtime_data(master_root: Path, jax_root: Path) -> list[str]:
     """Compare the vendored files in `supported_inputs` pinned to vulcan2_ncho.
 
     KNOWN_THERMO_DIVERGENCES files may differ on their listed reactions,
-    KNOWN_THERMO_RENUMBERED files on the leading index, KNOWN_SFLUX_RESCALES
-    files by their factor; anything else fails. A supported file the oracle
+    KNOWN_SFLUX_RESCALES files by their factor; anything else fails. A supported file the oracle
     lacks is an error; a file only the oracle has is not.
     """
     errors: list[str] = []
@@ -315,15 +288,7 @@ def _compare_runtime_data(master_root: Path, jax_root: Path) -> list[str]:
                 continue
             known = KNOWN_THERMO_DIVERGENCES.get(rel_path.name)
             rescale = KNOWN_SFLUX_RESCALES.get(rel_path.name)
-            if rel_path.name in KNOWN_THERMO_RENUMBERED:
-                errors.extend(
-                    f"{rel_dir}/{rel_path}: {msg}"
-                    for msg in _index_renumber_only(
-                        master_root / rel_dir / rel_path,
-                        jax_root / rel_dir / rel_path,
-                    )
-                )
-            elif known is not None:
+            if known is not None:
                 sub = _known_divergence_only(
                     master_root / rel_dir / rel_path,
                     jax_root / rel_dir / rel_path,
