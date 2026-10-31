@@ -34,8 +34,8 @@ notes (the NAS `analysis/` tree no longer exists).
   clean at those commits with `core.fileMode false`, so
   `VULCAN_MASTER_DIR=~/VULCAN_Project/.oracles/vulcan2_ncho` works.
 - Fixtures: the tracked `FIXTURES.json` is the arm64 (laptop) manifest of a rebuild at
-  `2441e6c`; daw's `tests/data/*.npz` are an x86-64 rebuild at the same commit and differ
-  bitwise, so `gen_fixtures.py --verify` fails on daw by design (restore the tracked
+  `2441e6c`; daw's `tests/data/*.npz` are an x86-64 rebuild of the same solver code
+  (`73fd25a`, which changes only docs and the manifest) and differ bitwise, so `gen_fixtures.py --verify` fails on daw by design (restore the tracked
   manifest after a daw rebuild). A rebuild takes about a minute.
 
 ## Efficiency program
