@@ -169,8 +169,10 @@ def run_self(test_file, *args, network: str, atom_list: str, cwd) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def run_child(child_src: str, *, network: str, label: str, timeout: int = 600):
-    """Run `child_src` in a fresh CPU-only interpreter with `network` selected.
+def run_child(child_src: str, *, network: str, label: str, timeout: int = 600,
+              platforms: str = "cpu"):
+    """Run `child_src` in a fresh interpreter with `network` selected, on the
+    JAX `platforms` (CPU unless the caller checks a GPU path).
 
     A cold start is required: the network is import-frozen, so it can only be
     chosen through the environment before `vulcan3` is first imported.
@@ -179,7 +181,7 @@ def run_child(child_src: str, *, network: str, label: str, timeout: int = 600):
     """
     env = {
         **os.environ,
-        "JAX_PLATFORMS": "cpu",
+        "JAX_PLATFORMS": platforms,
         "VULCAN3_NETWORK": network,
     }
     res = subprocess.run(

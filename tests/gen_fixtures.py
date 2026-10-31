@@ -3,15 +3,15 @@
     python tests/gen_fixtures.py --all
 
 That one command, run in a clean clone with no sibling repositories, produces
-all four fixtures and writes `tests/data/FIXTURES.json` recording each file's
+all five fixtures and writes `tests/data/FIXTURES.json` recording each file's
 SHA-256 alongside the commit, config, and dependency versions that made it.
 
 The fixtures are required (conftest fails collection when one is missing)
 but gitignored (~36 MB), so a clean clone must regenerate them. The network
 is frozen at the first `import vulcan3` and the two adjoint states need
 different networks, so each generator runs in its own subprocess. The
-adjoint states each converge a real run (minutes); the photo fixtures are
-fast.
+adjoint states and the HD209 state each converge a real run (minutes); the
+photo fixtures are fast.
 """
 
 from __future__ import annotations
@@ -49,6 +49,11 @@ GENERATORS = {
         "argv": [sys.executable, "tests/_gen_adj_state.py", "w39b"],
         "writes": ["adj_state_w39b.npz"],
         "note": "WASP-39 b converged state, photo ON (frozen), SNCHO network",
+    },
+    "hd209": {
+        "argv": [sys.executable, "tests/_gen_adj_state.py", "hd209"],
+        "writes": ["state_hd209.npz"],
+        "note": "HD209 converged state (shipped config, photo ON), C-H-N-O network",
     },
 }
 
@@ -106,7 +111,7 @@ def _config_identity() -> dict:
     """
     cfg_dir = ROOT / "src" / "vulcan3" / "configs"
     out = {}
-    for name in ("default.yaml", "W39b.yaml", "HD189.yaml"):
+    for name in ("default.yaml", "W39b.yaml", "HD189.yaml", "HD209.yaml"):
         p = cfg_dir / name
         if p.is_file():
             out[name] = sha256(p)[:16]

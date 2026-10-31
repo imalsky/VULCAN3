@@ -3,7 +3,7 @@
 The repair puts each atom's stage defect on a fixed reservoir (H2, H2O, CO,
 N2, H2S); where that carrier is a trace the correction exceeds the cell and
 is skipped, leaving the layer's budget to the certificate's element-budget
-term. Pins: (1) on W39b layers 83-94 no H2S cell goes negative where the
+term. Pins: (1) on W39b layers 100-149 no H2S cell goes negative where the
 raw solve is positive, and the unguarded repair does invert one
 (subprocess: SNCHO is import-frozen); (2) on HD189 at dt 1e6 the guard
 clamps only dissociated carriers. `0.0` is the raw solve, `inf` the
@@ -30,7 +30,9 @@ BUILT_ON = (
     else None
 )
 S_NETWORK = "thermo/SNCHO_photo_network_2025.txt"
-BAND = slice(83, 95)  # W39b layers where H2S is a trace, not a reservoir
+# W39b layers where H2S is a trace, not a reservoir (VMR <= 1.3e-9 on the
+# 2025-network fixture; 83-94 on the 2021 network)
+BAND = slice(100, 150)
 _GAMMA = 1.0 + 2.0**-0.5
 
 # How many band cells the unguarded repair inverts depends on the fixture's
@@ -120,8 +122,9 @@ def test_guard_keeps_the_w39b_trace_carrier_band_positive(w39b_band_counts):
     ),
 )
 def test_unguarded_repair_inverts_the_w39b_band(w39b_band_counts):
-    """Non-vacuity: without the guard the band inverts somewhere at dt 1e11."""
-    assert w39b_band_counts[1e11]["unguarded"] >= 1, w39b_band_counts
+    """Non-vacuity: without the guard the band inverts somewhere, at one of
+    the two dt (on the 2025-network fixture at 1e8, on the 2021 one at 1e11)."""
+    assert max(c["unguarded"] for c in w39b_band_counts.values()) >= 1, w39b_band_counts
 
 
 @pytest.mark.skipif(

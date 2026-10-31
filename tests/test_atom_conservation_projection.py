@@ -5,8 +5,8 @@ the projection distributes the residual across the reservoir species
 (H2, H2O, CO, N2) so each layer conserves H/O/C/N. A VULCAN-JAX
 correctness feature with no master analogue.
 
-Runs on the always-available HD189 pre-loop state (the HD209 fixture-based
-projection test skips on a fresh checkout). Pins:
+Runs on the always-available HD189 pre-loop state (the HD209 projection
+tests in test_chem_rhs_codegen.py need the generated `state_hd209.npz`). Pins:
   1. injecting an atom residual on a non-reservoir species and projecting
      drives the per-atom residual to ~machine-zero,
   2. the projection mutates ONLY the reservoir rows,

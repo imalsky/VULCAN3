@@ -35,7 +35,8 @@ class NetworkArrays:
 
     A pytree with `ni`/`nr` as static meta fields so jit/vmap don't retrace
     per network and `num_segments` stays concrete. `jac_terms` / `jac_place`
-    are the analytical Jacobian's static gather tables (`_jac_gather_tables`).
+    are the analytical Jacobian's static gather tables (`_jac_gather_tables`),
+    `jac_pow` its power slots (`_jac_pow_tables`).
     """
 
     ni: int
@@ -47,6 +48,7 @@ class NetworkArrays:
     is_three_body: jnp.ndarray
     jac_terms: tuple
     jac_place: jnp.ndarray
+    jac_pow: tuple
 
 
 jtu.register_dataclass(
@@ -59,6 +61,7 @@ jtu.register_dataclass(
         "is_three_body",
         "jac_terms",
         "jac_place",
+        "jac_pow",
     ],
     meta_fields=["ni", "nr"],
 )
@@ -117,6 +120,17 @@ def _jac_gather_tables(net: Network) -> tuple[tuple, jnp.ndarray]:
     return tuple(buckets), jnp.asarray(place)
 
 
+def _jac_pow_tables(net: Network) -> tuple:
+    """The reactant slots with stoich >= 2, the only ones `chem_jac_entries`
+    raises to a power: `(r, s, place)`, with `place[r, s]` the slot's row in
+    the per-slot power results and one past the end for every other slot."""
+    st = np.asarray(net.reactant_stoich)
+    r, s = np.nonzero(st >= 2)
+    place = np.full(st.shape, r.size, dtype=np.int32)
+    place[r, s] = np.arange(r.size, dtype=np.int32)
+    return tuple(jnp.asarray(t, dtype=jnp.int32) for t in (r, s, place))
+
+
 def to_jax(net: Network) -> NetworkArrays:
     """Pack a Network's relevant arrays into jnp form for the chemistry RHS."""
     jac_terms, jac_place = _jac_gather_tables(net)
@@ -130,6 +144,7 @@ def to_jax(net: Network) -> NetworkArrays:
         is_three_body=jnp.asarray(net.is_three_body, dtype=jnp.bool_),
         jac_terms=jac_terms,
         jac_place=jac_place,
+        jac_pow=_jac_pow_tables(net),
     )
 
 
@@ -168,7 +183,20 @@ def chem_jac_entries(
     st = net.reactant_stoich[:, :, None]  # [nr+1, max_terms, 1]
 
     y_r = yp[net.reactant_idx]  # [nr+1, max_terms, nz]
-    factor_l = jnp.where(st > 0, y_r**st, 1.0)
+    # Only the stoich >= 2 slots (`net.jac_pow`) take a pow, at the exponents
+    # the full-table form used; an f64 pow costs ~8 ns a call on x86-64 and
+    # XLA re-evaluates it in every fused consumer. A stoich-1 factor is y: on
+    # XLA:CPU (x86-64 and arm64 measured) pow(y, 1) returns y for every
+    # normal y, and a subnormal y meets only multiplies, which XLA:CPU
+    # flushes to the same signed zero, so this is bitwise the full-table form
+    # there; on a GPU that is not measured (todo.md).
+    pr, ps, pplace = net.jac_pow
+    y_p = y_r[pr, ps]  # [n_pow, nz]
+    st_p = net.reactant_stoich[pr, ps][:, None]
+    one = jnp.ones((1, nz), dtype=y.dtype)
+    pow_st = jnp.concatenate([y_p**st_p, one], axis=0)[pplace]  # [nr+1, max_terms, nz]
+    pow_st_m1 = jnp.concatenate([y_p ** (st_p - 1), one], axis=0)[pplace]
+    factor_l = jnp.where(st >= 2, pow_st, jnp.where(st > 0, y_r, 1.0))
 
     # Leave-one-out product Π_{l != j} factor_l: the remaining factors
     # multiplied left to right in slot order (a fixed order, as for the sums).
@@ -185,10 +213,9 @@ def chem_jac_entries(
     # AD-safe power rule: `y_r ** 0` has a NaN jvp at y_r == 0 (clipped
     # cells), so stoich==1 gives a constant 1 and stoich>=2 an exponent >= 1.
     # Primal is bit-identical to y_r**(stoich-1); masks fold at trace time.
-    safe_exp = jnp.where(net.reactant_stoich > 1, net.reactant_stoich - 1, 1)[:, :, None]
     pow_minus_one = jnp.where(
         st >= 2,
-        y_r**safe_exp,
+        pow_st_m1,
         jnp.where(st == 1, 1.0, 0.0),
     )
     drate_dy = st * pow_minus_one * leave_out * k[:, None, :]

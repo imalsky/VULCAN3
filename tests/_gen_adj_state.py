@@ -1,19 +1,22 @@
-"""Regenerate the two adjoint-state oracle fixtures under tests/data/.
+"""Regenerate the converged-state oracle fixtures under tests/data/.
 
 Writes `adj_state_hd189.npz` (HD189, photo OFF, C-H-N-O network) and
 `adj_state_w39b.npz` (WASP-39 b, photo ON, SNCHO network): a converged state
 plus the operator inputs the reverse-mode adjoint tests replay, so the adjoint
-linear algebra can be iterated without re-converging a run.
+linear algebra can be iterated without re-converging a run. Also
+`state_hd209.npz`: the shipped HD209 run's final y, M and rate table, the
+column test_chem_rhs_codegen's projection tests take a layer from.
 
-The network is import-locked, so the two states cannot be built in one
+The network is import-locked, so the states cannot be built in one
 process; each case runs in its own process (`tests/gen_fixtures.py` handles
 the fan-out; running this module directly builds exactly one case).
 
 Run from VULCAN-JAX/:
     python tests/_gen_adj_state.py hd189
     python tests/_gen_adj_state.py w39b
+    python tests/_gen_adj_state.py hd209
 
-Prefer `python tests/gen_fixtures.py --all`, which drives both plus the two
+Prefer `python tests/gen_fixtures.py --all`, which drives these plus the two
 photo fixtures and writes the provenance manifest.
 """
 
@@ -218,7 +221,44 @@ def build_w39b(out_dir: Path) -> Path:
     return path
 
 
-BUILDERS = {"hd189": build_hd189, "w39b": build_w39b}
+def build_hd209(out_dir: Path) -> Path:
+    """Run the shipped HD209 config (photo ON) to its certificate, as the CLI
+    does, and dump the final y, M and rate table (photolysis rows included)."""
+    t0 = time.time()
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.chdir(ROOT)
+
+    import jax
+
+    jax.config.update("jax_enable_x64", True)
+
+    from vulcan3.config import load_config
+    from vulcan3.chem_funs import spec_list
+    from vulcan3.state import RunState, legacy_view
+    import vulcan3.legacy_io as op
+    import vulcan3.op_jax as op_jax
+    import vulcan3.outer_loop as outer_loop
+
+    cfg = load_config("HD209")
+    cfg.use_print_prog = False
+    rs = RunState.with_pre_loop_setup(cfg)
+    integ = outer_loop.OuterLoop(op_jax.Ros2JAX(), op.Output(cfg=cfg), cfg=cfg)
+    var, atm, para = legacy_view(integ(rs))
+    if int(para.end_case) != 1:
+        raise RuntimeError(
+            f"HD209 ended with end_case {int(para.end_case)} after {int(para.count)} "
+            "steps, not on the certificate (1); the fixture must be a converged state.")
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "state_hd209.npz"
+    np.savez(path, y=var.y, M=atm.M, k_arr=var.k_arr,
+             species=np.asarray(spec_list), count=int(para.count))
+    print(f"[hd209] wrote {path} ({int(para.count)} steps) in {time.time() - t0:.1f}s",
+          flush=True)
+    return path
+
+
+BUILDERS = {"hd189": build_hd189, "w39b": build_w39b, "hd209": build_hd209}
 
 
 def main(argv=None) -> int:

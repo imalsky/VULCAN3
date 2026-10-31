@@ -1,6 +1,6 @@
 {
-  "generated_utc": "2026-10-31T06:19:19Z",
-  "vulcan3_commit": "2441e6cce75caf94c02af61c31f819142aa5fbb8",
+  "generated_utc": "2026-10-31T12:43:42Z",
+  "vulcan3_commit": "709407d24590cddcc0aeb5e5f9278f878ce9f15b-dirty",
   "platform_machine": "arm64",
   "versions": {
     "python": "3.12.14",
@@ -13,7 +13,8 @@
   "config_sha256_16": {
     "default.yaml": "45a04b0a32fc2b68",
     "W39b.yaml": "9c6140722e5ab77c",
-    "HD189.yaml": "356b489e4445a0d0"
+    "HD189.yaml": "356b489e4445a0d0",
+    "HD209.yaml": "22aaa4aeb946cc13"
   },
   "fixtures": {
     "photo_setup_hd189_baseline.npz": {
@@ -39,6 +40,12 @@
       "bytes": 1908258,
       "generator": "tests/_gen_adj_state.py w39b",
       "note": "WASP-39 b converged state, photo ON (frozen), SNCHO network"
+    },
+    "state_hd209.npz": {
+      "sha256": "c4588ec2339b4c33e5d41d7ff519b9ca1f3eb57f8fa9e878718a2b677f6fe6d6",
+      "bytes": 1141684,
+      "generator": "tests/_gen_adj_state.py hd209",
+      "note": "HD209 converged state (shipped config, photo ON), C-H-N-O network"
     }
   }
 }

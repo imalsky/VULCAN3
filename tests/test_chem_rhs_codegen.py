@@ -10,8 +10,6 @@ The (y, M, k) state is captured fresh from `RunState.with_pre_loop_setup`.
 
 from __future__ import annotations
 
-import os
-import pickle
 import platform
 import sys
 from pathlib import Path
@@ -162,46 +160,29 @@ def test_codegen_cache_key_changes_with_consumed_network_fields(tmp_path):
 def _hd209_repeated_final_layer_fixture() -> tuple[
     np.ndarray, np.ndarray, np.ndarray, object, tuple[str, ...], np.ndarray
 ]:
-    """Return one HD209 final-state layer repeated to the production column shape."""
+    """Return one HD209 final-state layer repeated to the production column shape
+    (`tests/data/state_hd209.npz`, the shipped HD209 run's final state)."""
     from vulcan3.config import default_config
-
-    vulcan_cfg = default_config()
     import vulcan3.network as net_mod
 
-    saved = ROOT / "output" / "HD209.vul"
+    saved = ROOT / "tests" / "data" / "state_hd209.npz"
     if not saved.exists():
-        # A converged run, not a checked-in fixture, so a bare clone (CI) lacks
-        # it: skip only under the missing-fixture switch, fail otherwise.
-        _missing = (
-            "HD209 steady-state oracle absent; run "
-            "`python -m vulcan3.cli --config HD209`"
-        )
-        if os.environ.get("VULCAN3_ALLOW_MISSING_FIXTURES") == "1":
-            pytest.skip(_missing)
-        pytest.fail(_missing)
+        # conftest refuses a missing fixture unless VULCAN3_ALLOW_MISSING_FIXTURES=1
+        pytest.skip(f"{saved.name} missing (VULCAN3_ALLOW_MISSING_FIXTURES=1); build it "
+                    "with `python tests/gen_fixtures.py --only hd209`")
+    state = np.load(saved)
 
-    with saved.open("rb") as handle:
-        state = pickle.load(handle)
-
-    net = net_mod.parse_network(vulcan_cfg.network)
-    if list(state["variable"]["species"]) != list(net.species):
-        pytest.fail("Current default network does not match saved HD209 state")
+    net = net_mod.parse_network(default_config().network)
+    if list(state["species"]) != list(net.species):
+        pytest.fail("Current default network does not match the saved HD209 state; rebuild "
+                    "it with `python tests/gen_fixtures.py --only hd209 --force`")
 
     layer = 2
-    n_layers = int(state["variable"]["y"].shape[0])
-    y_layer = np.asarray(
-        state["variable"]["y"][layer : layer + 1],
-        dtype=np.float64,
-    )
-    y = np.repeat(y_layer, n_layers, axis=0)
-    M = np.repeat(
-        np.asarray(state["atm"]["M"][layer : layer + 1], dtype=np.float64),
-        n_layers,
-    )
+    n_layers = int(state["y"].shape[0])
+    y = np.repeat(state["y"][layer : layer + 1], n_layers, axis=0)
+    M = np.repeat(state["M"][layer : layer + 1], n_layers)
     k_arr = np.zeros((net.nr + 1, n_layers), dtype=np.float64)
-    for i, vec in state["variable"]["k"].items():
-        if 1 <= int(i) <= net.nr:
-            k_arr[int(i)] = np.asarray(vec, dtype=np.float64)[layer]
+    k_arr[1:] = state["k_arr"][1 : net.nr + 1, layer, None]
     atoms = ("H", "O", "C", "N")
     atom_counts = atom_count_matrix(net, atoms)
     return y, M, k_arr, net, atoms, atom_counts

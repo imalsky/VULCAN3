@@ -63,9 +63,14 @@ KERNEL_CASES = [(1, 5, "random"), (3, 16, "random"), (4, 33, "random"), (6, 64, 
 
 @pytest.fixture(params=["fast", "ffi"])
 def fast(request, monkeypatch):
-    # On a CUDA device `ffi` runs libblock_thomas_cuda.so when it has been built
-    # (`--cuda`); the same assertions apply, so nothing here is platform-specific.
+    # `ffi` is the production GH200 solver: on a CUDA device it runs
+    # libblock_thomas_cuda.so when that has been built (`--cuda`). Elsewhere it
+    # would check only the C++ CPU twin, which no run uses, so its cases skip.
     if request.param == "ffi":
+        if not fast_mod._on_cuda():
+            pytest.skip(f"ffi is the GH200 CUDA solver and JAX's default backend here is "
+                        f"{jax.default_backend()!r}: its cases run only on a CUDA device "
+                        "(JAX_PLATFORMS=cuda)")
         try:
             fast_mod.build()
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
@@ -546,7 +551,10 @@ def check_real_blocks(fixture: str, cfg_name: str, backend: str):
                 2.0 * r["resid_cur"], 10.0 * r["resid_dense"]
             ) + 1e-12, r
         # at dt=1e11 the reference tangent residual is itself O(1) (the
-        # off-run-path conditioning regime): nothing to match there
+        # off-run-path conditioning regime): nothing to match there. The same
+        # holds for the gradient: on the W39b 2025-network fixture the two
+        # arms' gradients differ there by 1.2e-6 (arm64) / 5.0e-6 (x86-64)
+        # at a cotangent residual of 9e8 / 1e8.
         if r["dt"] <= 1e6:
             assert r["tangent_rel"] < tangent_bar, r
             assert r["tres_cand"] <= max(
@@ -555,8 +563,8 @@ def check_real_blocks(fixture: str, cfg_name: str, backend: str):
             assert r["gres_cand"] <= max(
                 2.0 * r["gres_cur"], 10.0 * r["gres_dense"]
             ), r
-        if backend == "fast":  # the transpose runs on the same factors as today
-            assert r["grad_rel"] < 1e-6, r
+            if backend == "fast":  # the transpose runs on the same factors as today
+                assert r["grad_rel"] < 1e-6, r
         # The vmapped solve is judged by its residual, and by solution
         # agreement wherever batching does not change the arithmetic: on CPU
         # (measured 0 for both backends) and for the kernel on any device
@@ -719,18 +727,22 @@ repo = sys.argv[1]
 sys.path.insert(0, os.path.join(repo, "tests"))
 from test_solver_fast import check_matrix_free, check_real_blocks
 import vulcan3.solver_fast as fast_mod
-for backend in ("fast", "ffi"):
-    if backend == "ffi":
-        fast_mod.build()
-    check_real_blocks("adj_state_w39b.npz", "W39b", backend)
-    check_matrix_free("adj_state_w39b.npz", "W39b", backend)
+backend = @BACKEND@
+if backend == "ffi":
+    assert fast_mod._on_cuda(), "the ffi child must run on the CUDA backend"
+    fast_mod.build()
+check_real_blocks("adj_state_w39b.npz", "W39b", backend)
+check_matrix_free("adj_state_w39b.npz", "W39b", backend)
 """
 
 
 @pytest.mark.slow
-def test_fast_on_real_w39b_blocks():
+def test_fast_on_real_w39b_blocks(fast):
     from _helpers import run_child
 
-    res = run_child(_CHILD, network="thermo/SNCHO_photo_network_2025.txt", label="solver_fast W39b")
+    # `ffi` runs only on a CUDA host (the fixture), and its child on the same backend
+    res = run_child(_CHILD.replace("@BACKEND@", repr(fast.BACKEND)),
+                    network="thermo/SNCHO_photo_network_2025.txt", label="solver_fast W39b",
+                    platforms=os.environ["JAX_PLATFORMS"] if fast.BACKEND == "ffi" else "cpu")
     print(res.stdout)
-    assert res.stdout.count("dt=") == 2 * len(DTS)
+    assert res.stdout.count("dt=") == len(DTS)

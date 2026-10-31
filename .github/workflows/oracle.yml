@@ -60,12 +60,6 @@ jobs:
       - name: Build the numerical-regression fixtures
         run: python tests/gen_fixtures.py --all
 
-      # test_chem_rhs_codegen's HD209 projection cases read a converged
-      # output/HD209.vul; the CLI writes it relative to the cwd.
-      - name: Converge HD209 (the codegen tests' steady-state oracle)
-        if: matrix.family == 'vulcan2_ncho'
-        run: python -m vulcan3.cli --config HD209
-
       - name: Run the ${{ matrix.family }} comparisons
         env:
           VULCAN_MASTER_DIR: ${{ runner.temp }}/oracle-${{ matrix.family }}
@@ -74,7 +68,7 @@ jobs:
 
       # The full tier: the `slow` tests only (the normal tier is tests.yml),
       # among them the CLI step-count gates HD189 1495 / HD209 1211 / W39b
-      # 1202. HD189_vulcan3's count is arm64-only and is not run here.
+      # 1260. HD189_vulcan3's count is arm64-only and is not run here.
       # One process per test, run in sequence: the W39b tangent certificate
       # peaks at 12.6 GB on this 16 GB runner, so memory one test leaves
       # behind must not carry into the next. Each failure prints at once

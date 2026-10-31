@@ -879,13 +879,14 @@ def _make_runner(
 
     def _conv_jax(
         s: JaxIntegState, accept_count_after: jnp.ndarray,
-        y_ring_old: jnp.ndarray, ring_idx: jnp.ndarray, y_slot: jnp.ndarray,
+        y_ring: jnp.ndarray, ring_idx: jnp.ndarray, y_slot: jnp.ndarray,
     ) -> "tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]":
         """(longdy, longdydt, ratio) against the `_lookback_index` slot.
 
-        `s` carries this step's time ring. The y lookback reads the pre-write
-        ring with this step's slot overlaid: the written ring's values, without
-        needing the written ring (`body_fn_batch` writes it after its cond).
+        `s` carries this step's time ring. The y lookback reads `y_ring` with
+        this step's slot overlaid: the written ring's values, also when
+        `y_ring` is the pre-write ring (`body_fn_batch` writes it after its
+        cond).
 
         On the first iteration the ring is all-zero, which yields
         longdy ≈ |y/n_0| ~ O(1); the `ready` gate prevents acting on it.
@@ -895,7 +896,7 @@ def _make_runner(
         longdy_new, ratio = _longdy_reduce(
             s.y,
             s.ymix,
-            jnp.where(indx == ring_idx, y_slot, y_ring_old[indx]),
+            jnp.where(indx == ring_idx, y_slot, y_ring[indx]),
             s.pv.n_0,
             atol=statics.atol,
             mtol_conv=statics.mtol_conv,
@@ -966,7 +967,7 @@ def _make_runner(
         return jnp.logical_not(real_term)
 
     def body_fn(s: JaxIntegState, atm_static_, lane_axis=None, it=None,
-                hold=None, photo_take=None, defer_ring=False):
+                hold=None, photo_take=None, defer_ring=False, matrix_free=True):
         # `lane_axis=None` is the single-profile trace, unchanged. A string
         # means the body runs under `jax.vmap(..., axis_name=lane_axis)` from
         # `body_fn_batch`: the refresh cond then takes a lane-uniform
@@ -1009,19 +1010,22 @@ def _make_runner(
             e_mask = jnp.zeros_like(s.fix_mask).at[:, statics.e_idx].set(True)
             step_mask = (s.fix_mask | e_mask) if statics.use_fix_species else e_mask
             sol, delta_arr = jax_ros2_step(
-                s.y, s.k_arr, s.dt, atm_step, net, fix_mask=step_mask
+                s.y, s.k_arr, s.dt, atm_step, net, fix_mask=step_mask,
+                matrix_free=matrix_free,
             )
             delta_arr = jnp.where(step_mask, 0.0, delta_arr)
             if statics.use_fix_species:
                 sol = jnp.where(s.fix_mask, s.fix_y, sol)
         elif statics.use_fix_species:
             sol, delta_arr = jax_ros2_step(
-                s.y, s.k_arr, s.dt, atm_step, net, fix_mask=s.fix_mask
+                s.y, s.k_arr, s.dt, atm_step, net, fix_mask=s.fix_mask,
+                matrix_free=matrix_free,
             )
             sol = jnp.where(s.fix_mask, s.fix_y, sol)
             delta_arr = jnp.where(s.fix_mask, 0.0, delta_arr)
         else:
-            sol, delta_arr = jax_ros2_step(s.y, s.k_arr, s.dt, atm_step, net)
+            sol, delta_arr = jax_ros2_step(s.y, s.k_arr, s.dt, atm_step, net,
+                                           matrix_free=matrix_free)
 
         # Bottom-layer pins are applied to `sol` before the truncation error
         # and the clip (exoclime@80f75b9 op.py:2935-2946): the carried ymix
@@ -1263,8 +1267,12 @@ def _make_runner(
             t_evo_new = s.t_evo
             evo_idx_new = s.evo_idx
 
-        # Snapshot state with (y, t, time ring) updated, fed to _conv_jax;
-        # the y ring goes in pre-write with the slot just written.
+        # Snapshot state with (y, t, time ring) updated, fed to _conv_jax,
+        # with the y ring and the slot just written. Solo, that is the written
+        # ring: a read of the pre-write ring after the in-place write made
+        # XLA:CPU copy the whole (conv_step, nz, ni) ring twice an iteration
+        # (notes "Efficiency program"). Batched (`defer_ring`) it is the
+        # pre-write ring; the overlay gives the same values either way.
         s_for_conv = s._replace(
             y=y_next,
             ymix=ymix_next,
@@ -1274,7 +1282,7 @@ def _make_runner(
         longdy_new_val, longdydt_new_val, where_varies_most_new = _conv_jax(
             s_for_conv,
             accept_count_next,
-            s.y_time_ring,
+            s.y_time_ring if defer_ring else y_time_ring_new,
             ring_idx,
             y_slot,
         )
@@ -1619,9 +1627,12 @@ def _make_runner(
         # `runner` cut off once `accept_count` reaches `target`, so a host
         # loop can print progress and take Ctrl+C between chunks. Same body
         # and carry: resuming from the returned state continues the run.
+        # Never differentiated (`__call__` is not an AD entry point), so the
+        # step takes the dense stage operator: the matrix-free one's RHS jvp
+        # costs seconds of tracing and nothing in the primal.
         final = jax.lax.while_loop(
             lambda s: cond_fn(s) & (s.accept_count < target),
-            lambda s: body_fn(s, atm_static),
+            lambda s: body_fn(s, atm_static, matrix_free=False),
             state,
         )
         _real_term, reason = _real_terminate(final)
