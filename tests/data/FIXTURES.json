@@ -1,7 +1,7 @@
 {
-  "generated_utc": "2026-10-28T23:14:07Z",
-  "vulcan3_commit": "ebf1f6be1b82e6073e289278b240515f4f4963f2-dirty",
-  "platform_machine": "x86_64",
+  "generated_utc": "2026-10-31T06:19:19Z",
+  "vulcan3_commit": "2441e6cce75caf94c02af61c31f819142aa5fbb8",
+  "platform_machine": "arm64",
   "versions": {
     "python": "3.12.14",
     "jax": "0.6.2",
@@ -23,19 +23,19 @@
       "note": "HD189 photo cross-section setup (default and T-dependent)"
     },
     "photo_setup_hd189_T_dep.npz": {
-      "sha256": "7527dd8e6a9f217568aa75073f096e5a5b14f0925b68e04237849453fccb6fbc",
+      "sha256": "585fc82e49a3f085720d3e2218d351572f83d0bec8618686d62a10dceab976fd",
       "bytes": 32547752,
       "generator": "tests/_gen_photo_baseline.py",
       "note": "HD189 photo cross-section setup (default and T-dependent)"
     },
     "adj_state_hd189.npz": {
-      "sha256": "819f1553f8e04f642d4bdd4556253687c5d25d05a5402d0f1f09450f1432e817",
+      "sha256": "729039fd85dcc88a279dab06969d2161e95fd0872604a1213893d0c32ac7e07d",
       "bytes": 1414716,
       "generator": "tests/_gen_adj_state.py hd189",
       "note": "HD189 converged state, photo OFF, C-H-N-O network"
     },
     "adj_state_w39b.npz": {
-      "sha256": "68b1ec96f67cb860039135fe50dfe591fb2ca37513079ba6cff2cd6f83cee161",
+      "sha256": "8d01df55f0d8526899a0b2c948de874f8b066d8e44f9ea8b48e9682110b5f4af",
       "bytes": 1908258,
       "generator": "tests/_gen_adj_state.py w39b",
       "note": "WASP-39 b converged state, photo ON (frozen), SNCHO network"

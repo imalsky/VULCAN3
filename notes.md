@@ -33,9 +33,10 @@ notes (the NAS `analysis/` tree no longer exists).
   (provenance only, no test), `vulcan3_vm_branch` 84d010d. On daw the clones are
   clean at those commits with `core.fileMode false`, so
   `VULCAN_MASTER_DIR=~/VULCAN_Project/.oracles/vulcan2_ncho` works.
-- Fixtures: daw's `tests/data/*.npz` are an x86-64 rebuild at `2fef3c1`; the
-  tracked `FIXTURES.json` (last changed in `15f3377`) is an arm64 manifest with the
-  old `vulcan_jax` field names, so `gen_fixtures.py --verify` fails on daw by design.
+- Fixtures: the tracked `FIXTURES.json` is the arm64 (laptop) manifest of a rebuild at
+  `2441e6c`; daw's `tests/data/*.npz` are an x86-64 rebuild at the same commit and differ
+  bitwise, so `gen_fixtures.py --verify` fails on daw by design (restore the tracked
+  manifest after a daw rebuild). A rebuild takes about a minute.
 
 ## Efficiency program
 
@@ -853,8 +854,6 @@ network drops) is not ported: the seed is ExoGibbs over the network's elements.
 
 ## Known and deliberately untracked
 
-- `FIXTURES.json` records config hashes that match no later config; regenerate on
-  the fixture machine with `--all` when fixtures are next rebuilt.
 - Never run (no shipped claim rests on them): HPC chunked-Jacobian peak at 512
   lanes, untiled-vs-tiled throughput, GPU parity, exhaustive config-combination
   oracle sweeps, long oracles for every vendored example, the nonsense-value
