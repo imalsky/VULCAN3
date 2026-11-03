@@ -336,8 +336,10 @@ def _make_clip_fn(
             )
             # ysum==0 on an all-clipped gas layer (master divides unguarded):
             # return 0 there. `where`, since a condensate over a floored ysum
-            # would overflow.
-            ymix_new = jnp.where(ysum > 0, y_clip / ysum, 0.0)
+            # would overflow. A non-finite ysum stays non-finite, so a NaN
+            # solve still ends the run.
+            ymix_new = jnp.where(ysum > 0, y_clip / ysum,
+                                 jnp.where(jnp.isfinite(ysum), 0.0, jnp.nan))
             return y_clip, ymix_new, small_y_inc, nega_y_inc
     else:
 
@@ -358,10 +360,10 @@ def _make_clip_fn(
 def _make_aggregate_delta_fn(
     mtol: float, atol: float, zero_bot_row: bool, condense_zero_mask: jnp.ndarray
 ):
-    """Build the scalar `delta(sol, delta_arr, ymix_old, zero_bot, ymix_new)` reducer.
+    """Build the scalar `delta(sol, delta_arr, ymix_old, zero_bot, ymix_trial)` reducer.
 
-    Zeros entries where both the pre-step and the trial mixing ratio are
-    below mtol (master masks on the pre-step one alone, op.py:2949, so a
+    Zeros entries where both the pre-step and the trial (pre-clip) mixing ratio
+    are below mtol (master masks on the pre-step one alone, op.py:2949, so a
     species the step creates escapes the estimate: parity ledger C29),
     sol < atol, optionally the bottom row (use_botflux / use_fix_sp_bot),
     and condensed species, then returns the max of (delta_arr / sol) over
@@ -369,10 +371,10 @@ def _make_aggregate_delta_fn(
     """
     cond_zero = jnp.asarray(condense_zero_mask, dtype=jnp.bool_)
 
-    def agg(sol, delta_arr, ymix_old, zero_bot=None, ymix_new=None):
+    def agg(sol, delta_arr, ymix_old, zero_bot=None, ymix_trial=None):
         dead = ymix_old < mtol
-        if ymix_new is not None:
-            dead = dead & (ymix_new < mtol)
+        if ymix_trial is not None:
+            dead = dead & (ymix_trial < mtol)
         masked = jnp.where(dead, 0.0, delta_arr)
         masked = jnp.where(sol < atol, 0.0, masked)
         # `zero_bot` is the runtime extension of the static flag: upstream's
@@ -1078,7 +1080,11 @@ def _make_runner(
         # delta uses the pre-clip sol (master computes it before clip):
         # sol_clip would erase the truncation error of cells about to clip to
         # zero and let overly aggressive steps through (HD209 exercises this).
-        delta = agg_delta_fn(sol, delta_arr, s.ymix, zero_bot_dyn, ymix_new)
+        # The trial mixing ratio of the mask is pre-clip too: the clip zeroes a
+        # species the step creates below pos_cut (parity ledger C29).
+        ymix_trial = sol / jnp.maximum(
+            jnp.sum(sol, axis=1, keepdims=True), UNDERFLOW_DENOM)
+        delta = agg_delta_fn(sol, delta_arr, s.ymix, zero_bot_dyn, ymix_trial)
 
         # Acceptance uses the build-time rtol, never the carry's adapted one:
         # upstream binds `rtol = vulcan_cfg.rtol` as a default argument of

@@ -312,11 +312,11 @@ A. Upstream errors corrected in the port
 | C15b | `make_bins_read_cross` drops a bin when `dbin_12trans` is out of range | `op.py:583-585` | `photo_setup._make_bins` raises; silent | unreachable shipped | no |
 | C19 | Ros2 stage vectors leak element content at large dt (only guard `loss_eps`) | `op.py:2914,2929`; `:2490`; `vulcan_cfg.py:136` | `jax_step._repair_stage` + `config.DT_MAX_S` (a larger `dt_max` raises); cap declared, repair silent | upstream fails the same column (S +32%); gates unchanged | no |
 | C20 | `OH + CH3 + M` Troe width in ln, not log10 | `op.py:204-205` | `rates_jax._troe_OH_CH3`; both sides via `ORACLE_CODE_DELTAS`; `test_troe_oh_ch3_is_visscher_moses_eq14` | rate 1.19-1.21x at Pr 0.1; max 0.111 ln VMR (HD189 CH4); gates unchanged | no |
-| C25 | low-T reverse rates above the collision limit: NH3 + CH, CH + M, C2H + M removed; NCO + HCN and S + CN rewritten in the exothermic direction (CN + HNCO 2.50E-11, Tsang 1992; N + CS 3.80E-11 (T/300)^0.5 exp(-1160/T), UMIST RATE22) | NCHO, CHO, SNCHO, TiSNCHO network rows | `low_t_reverse_rates`; declared (`KNOWN_THERMO_DIVERGENCES`, `ORACLE_DATA_DELTAS`) | reverse at 300 K, 1 bar up to 2e5x collision; NH3 + CH alone moves no scored gas in maxichem's 395,114-row 0-D yardstick; gates re-baselined | NH3 + CH only (39f1906) |
+| C25 | low-T reverse rates above the collision limit: NH3 + CH, CH + M, C2H + M removed; NCO + HCN and S + CN rewritten in the exothermic direction (CN + HNCO 2.50E-11, Tsang 1992; N + CS 3.80E-11 (T/300)^0.5 exp(-1160/T), UMIST RATE22) | NCHO, CHO, SNCHO, TiSNCHO network rows | `low_t_reverse_rates`; declared (`KNOWN_THERMO_DIVERGENCES`, `ORACLE_DATA_DELTAS`) | reverse at 300 K, 1 bar up to 2e5x collision; NH3 + CH alone moves no scored gas in maxichem's 395,114-row 0-D yardstick; step-count gates not re-baselined yet (todo 4) | NH3 + CH only (39f1906) |
 | C26 | (was P8) `HNCO + M -> H + NCO` carries M on the reactant side only | 9 network files | product M added (as a68d7151); declared | 1.3e-5 / 5.0e-5 / 6.0e-4 ln VMR on the gates (P8's measurement) | a68d7151, 6 files |
 | C27 | (was P10) N(2D) NASA-9 thermo is a molecule's (Cp/R near 4, S 69.8 J/mol/K above N) | `thermo/NASA9/N_2D.txt` | rebuilt from N: Cp 2.5 R, H(N) + 230.017 kJ/mol, S(N) + R ln(10/4); `n2d_thermo`, declared | K_eq 1.6e3-1.5e4x; HD209 1211 -> 1206 (P10's measurement) | no |
 | C28 | CS, CS2, COS, first HCS masses inconsistent with the file's own atomic masses | `thermo/all_compose.txt:133-136` | 44.071 / 76.131 / 60.071 / 45.079; `sulfur_compose_masses`, declared | mean mass, moldiff only | no |
-| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_aggregate_delta_fn` masks where the old and the trial ymix are both < mtol; `_clip_prologue` keeps values < nega_cut (step rejected); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`; `steady_state_grad._clip_dead_mask` matches; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes); gates re-baselined | no |
+| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_aggregate_delta_fn` masks where the old and the pre-clip trial ymix are both < mtol; `_clip_prologue` keeps values < nega_cut (step rejected); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`; a non-finite gas sum stays non-finite in the condensing clip; `steady_state_grad._clip_dead_mask` matches; `tests/test_step_control_c29.py`; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes); step-count gates not re-baselined yet (todo 4) | no |
 | L1 | `diffdf_settling_vm` drops the `vm` drift at the bottom interface | `op.py:1845-1848` | consistent; `test_diffusion`; silent | one cell, `use_settling` only | no |
 | L2 | vm_branch setup `vm` rolls a 2-D array without `axis=0` | `vulcan3_vm_branch/build_atm.py:803` | `axis=0`; silent | 5e-10 at step 2 | no |
 | P18 | `sflux-GJ1214.txt` pads 133.75-181.55 nm with 464 zero rows | `atm/stellar_flux/sflux-GJ1214.txt` | upstream's regenerated file, `gj1214_upstream_regenerated`; declared | 0 shipped; regeneration lowers every flux 1.392x | bb9255b1 |
@@ -352,8 +352,8 @@ B. Found in upstream, kept at parity
 | P7 | photolysis quadrature skips the bin-grid join interval | `op.py:2771-2780` | `photo.compute_J_jax_flat` | HO2 J 0.06% (W39b) / 0.32% (HD189), others <= 0.05% | no |
 | P9 | moldiff boundary rows do not conserve the column | `op.py:1549-1558` | `bdry0_grav` / `bdry_top_grav` in `jax_step` | +6.6e-19 to +7.9e-18 /s; C23 bounds it | no |
 | P10 | escape Jacobian entry `top_flux/y[-1]` too large by `dzi[-1]` | `op.py:2106-2107` vs RHS `:1689` | comment at the `diff_lim` term in `jax_ros2_step` | LHS only; HD209's `diff_esc` inert | no |
-| P11 | C2H4O, CH3NO2, HCS listed twice with different masses | `all_compose.txt:76/158, 118/161, 136/212` | `composition._PARITY_DUPLICATES` (first row kept) | moldiff 7e-5 | no |
-| P12 | CS-family and H2SO4 masses inconsistent with the S row | `all_compose.txt:133-136,143` | same | ~0.2% on trace masses | no |
+| P11 | C2H4O, CH3NO2 listed twice with different masses (HCS's two rows agree since C28) | `all_compose.txt:76/158, 118/161` | `composition._PARITY_DUPLICATES` (first row kept) | moldiff 7e-5 | no |
+| P12 | H2SO4 mass inconsistent with the S row (the CS family corrected by C28) | `all_compose.txt:143` | same | ~0.2% on trace masses | no |
 | P13 | `CH3SH_branch.csv` grid non-monotonic at the tail | `thermo/photo_cross/CH3SH/CH3SH_branch.csv:142-143` | same | unmeasured | no |
 | P14 | TiSNCHO ships three reactions twice | `thermo/TiSNCHO_photo_network.txt:537-542` | `parse_network(duplicates_ok=True)` | 0 (unselected) | yes |
 | P15 | SNCHO_C3 ships `C2H2 + C -> C3 + H2` twice, different rates | `thermo/SNCHO_photo_network_C3.txt:474,479` | same | 0 (unselectable) | file renamed away |
@@ -386,6 +386,11 @@ or re-measured. Detail is in "Parity ledger" or the named repo's notes.
   weight; P5 `const_lowT` initializer; P7
   photolysis bin-grid join interval; P9 diffusion boundary rows leak the column;
   P19 arithmetic layer-mean actinic flux.
+- vulcan3, steady-state adjoint audit (`audit_adjoint_scope`): after C29 the clip
+  mask no longer excludes values below nega_cut, but the scan still skips cells
+  with zero or tiny starting abundance (`_AUDIT_MIN_YMIX`), so a candidate state
+  that goes below nega_cut there scores no defect although the runner would reject
+  it. Effect on gradients not measured.
 - vulcan3, inherited from upstream, P4 (`atm_type='table'`): the table replaces the
   pressure centres after the interfaces were built, and the interfaces are not
   rebuilt (upstream the same order: `vulcan.py:118`, then `build_atm.py:406`); `dzi`
@@ -530,9 +535,9 @@ reaches those dt (every solve instrumented):
   cells above 1e-6 VMR still gives delta 0.27-0.30: the ceiling is physics.
 - dt -> inf IS Newton (k1 identical to 10 digits at dt 1e15 / 1e30). At the
   converged state `max|f(y*)| = 1.4e21` against production/loss ~1e28: a fixed
-  point of the step map, not a zero of f. `_clip_prologue` zeroes negatives
-  unconditionally, so `all_nonneg` is vacuous (inherited, `op.py:2459`); C23
-  catches what it misses.
+  point of the step map, not a zero of f. Before C29 `_clip_prologue` zeroed
+  every negative, so `all_nonneg` was vacuous (inherited, `op.py:2459`); since
+  C29 a value below nega_cut rejects the step.
 - The convergence window is not a step window: `_lookback_index` takes the ring
   slot closest in time to `t * st_factor` (0.5); `conv_step` 500 is only a floor.
   An uncapped dt band certifies cleanly and is 43% wrong on H2O.
@@ -844,7 +849,7 @@ confirmed defect; a relaxation of VULCAN's gate is never adopted.
 
 The parity audit's three ion-mode / low-T items stay at parity; P4, P5, P7, P9
 stay; every confirmed data and step-control defect is corrected (C25-C29, which replace P8, P10
-and the old "NH3 and CH stay" decision), gates re-baselined; the C20 report is not filed upstream; the
+and the old "NH3 and CH stay" decision); the step-count gates are not re-baselined yet (todo 4); the C20 report is not filed upstream; the
 tangent-stall early stop is not built; `test_vmap_photo_batch`'s ymix assertion
 is the scale ratio `max|lane - solo| / max|soloA - soloB|` (`SCALE_TOL` 1e-3 since C29: 1.6e-4 measured, a closure leak gives ~1); the
 photo-on batched deviation (13 of 87 carry leaves at the last bit) is accepted as

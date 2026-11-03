@@ -109,6 +109,15 @@ supported_inputs:
     oracle: vulcan2_ncho
     diverges: [nh3_ice_mass, sulfur_compose_masses]
 
+  thermo/NASA9/N_2D.txt:
+    sha256: 9078bdc41b07ce54e7099b18c4a688a6ccef954e45dffa7598073b91b4306462
+    oracle: null
+    diverges: [n2d_thermo]
+    note: >-
+      Rebuilt whole (n2d_thermo), so no row of the oracle's file survives and
+      the audit's oracle comparison does not cover it; the hash pin is the
+      guard. The oracle gets this file through ORACLE_DATA_DELTAS.
+
   atm/atm_HD189_Kzz.txt:
     sha256: 5268e178e258ed008b67d693ae4e34dec30d87c79c7589a88ad2d37cc95dbcb9
     oracle: vulcan2_ncho

@@ -219,32 +219,29 @@ def _known_divergence_only(
 _ROW = re.compile(r"^\s*(\d+)?\s*\[(.*?)\](.*)$")
 
 
-def _rows_and_text(path: Path) -> tuple[list[tuple[str, str]], list[str]]:
-    """(reaction rows as (equation, rest), other lines) with ids and the
+def _items(path: Path) -> list[tuple[str, ...]]:
+    """The file as a sequence of ("row", equation, rest) and ("text", line) items, in file order, with ids and the
     equation's spacing normalised; VULCAN-JAX history lines dropped."""
-    rows, text = [], []
+    items = []
     for line in path.read_text().splitlines():
         m = None if line.lstrip().startswith("#") else _ROW.match(line)
         if m:
-            rows.append((" ".join(m.group(2).split()), " ".join(m.group(3).split())))
+            items.append(("row", " ".join(m.group(2).split()), " ".join(m.group(3).split())))
         elif "VULCAN-JAX:" not in line:
-            text.append(line)
-    return rows, text
+            items.append(("text", line))
+    return items
 
 
 def _known_row_divergence_only(
     master_path: Path, jax_path: Path, reactions: tuple[str, ...]
 ) -> list[str]:
-    """Every row and comment line outside the allowlisted reactions must agree."""
-    m_rows, m_text = _rows_and_text(master_path)
-    j_rows, j_text = _rows_and_text(jax_path)
-    keep = lambda rows: [r for r in rows if not any(rx in r[0] for rx in reactions)]  # noqa: E731
-    errors = []
-    if keep(m_rows) != keep(j_rows):
-        errors.append("reaction rows differ outside the known divergences")
-    if m_text != j_text:
-        errors.append("non-reaction lines differ")
-    return errors
+    """Outside the allowlisted reactions, every row and every other line must agree, in the same order (so a moved
+    section heading is caught). The allowlisted rows themselves are not compared here: their exact text is guarded
+    by the file's sha256 pin in tests/science_sources.yaml."""
+    keep = lambda items: [i for i in items if not (i[0] == "row" and any(rx in i[1] for rx in reactions))]  # noqa: E731
+    if keep(_items(master_path)) != keep(_items(jax_path)):
+        return ["rows or lines differ outside the known divergences"]
+    return []
 
 
 def _known_sflux_rescale_only(

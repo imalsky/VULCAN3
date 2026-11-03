@@ -79,7 +79,8 @@ def test_sub_atol_cell_gives_a_finite_batch_independent_tangent():
     agg = _make_aggregate_delta_fn(1e-22, 1e-2, False, jnp.zeros(y.shape, dtype=bool))
 
     def delta_of(sol):
-        return agg(sol, jnp.abs(sol - y_old) * 1e-3, ymix)
+        ymix_trial = sol / jnp.sum(sol, axis=1, keepdims=True)
+        return agg(sol, jnp.abs(sol - y_old) * 1e-3, ymix, None, ymix_trial)
 
     def tangents(f):
         plain = jax.jvp(f, (y,), (t,))[1]
