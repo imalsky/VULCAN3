@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import math
 import os
+import re
 import runpy
 import sys
 from pathlib import Path
@@ -37,13 +38,25 @@ INTENTIONAL_JAX_DELTAS = {
 # Network files carrying master's CH2CN + H + M correction (k0 1.00E-29,
 # k_inf 1.00E-10), which master applied to NCHO only; any other
 # differing line fails.
+# Rows VULCAN-JAX removes or rewrites because their low-temperature reverse rate
+# exceeds the collision limit (science_sources.yaml low_t_reverse_rates), plus
+# upstream's own later fixes 39f1906 / a68d715. Removing rows renumbers the id
+# column, so files carrying these are compared row by row (ids ignored).
+_LOW_T_REVERSE_ROWS = (
+    "NH3 + CH -> NH2 + CH2", "CH + M -> C + H + M", "C2H + M -> C2 + H + M",
+    "NCO + HCN -> HNCO + CN", "CN + HNCO -> HCN + NCO",
+    "S + CN -> N + CS", "N + CS -> S + CN", "HNCO + M -> H + NCO",
+)
+# Composition rows whose mass disagrees with the file's own atomic masses
+# (sulfur_compose_masses): CS, CS2, COS, HCS ("CS " also matches "HCS ").
 KNOWN_THERMO_DIVERGENCES: dict[str, tuple[str, ...]] = {
     # Upstream lists NH3 condensate as 16.023 g/mol; the corrected value is
     # 17.031 g/mol. Only that species row may differ in all_compose.txt.
-    "all_compose.txt": ("NH3_l_s",),
-    "SNCHO_photo_network.txt": ("CH2CN + H + M -> CH3CN + M",),
-    "SNCHO_photo_network_C3.txt": ("CH2CN + H + M -> CH3CN + M",),
-    "SNCHO_DMS_photo_network_Tsai2024.txt": ("CH2CN + H + M -> CH3CN + M",),
+    "all_compose.txt": ("NH3_l_s", "CS ", "CS2 ", "COS "),
+    "SNCHO_photo_network.txt": ("CH2CN + H + M -> CH3CN + M",) + _LOW_T_REVERSE_ROWS,
+    "SNCHO_photo_network_C3.txt": ("CH2CN + H + M -> CH3CN + M",) + _LOW_T_REVERSE_ROWS,
+    "SNCHO_DMS_photo_network_Tsai2024.txt": ("CH2CN + H + M -> CH3CN + M",) + _LOW_T_REVERSE_ROWS,
+    "NCHO_photo_network.txt": _LOW_T_REVERSE_ROWS,
 }
 
 # eps Eri flux: master's sflux-epseri.txt is low by R_star^4 because the formula
@@ -190,6 +203,8 @@ def _known_divergence_only(
     differing line is real drift and is reported.
     """
     errors, pairs = _paired_lines(master_path, jax_path)
+    if errors:  # rows removed: compare the remaining rows, ids ignored
+        return _known_row_divergence_only(master_path, jax_path, reactions)
     for lineno, (m_line, j_line) in pairs:
         if m_line == j_line:
             continue
@@ -198,6 +213,37 @@ def _known_divergence_only(
         errors.append(
             f"unexpected drift at line {lineno}: master={m_line!r}, jax={j_line!r}"
         )
+    return errors
+
+
+_ROW = re.compile(r"^\s*(\d+)?\s*\[(.*?)\](.*)$")
+
+
+def _rows_and_text(path: Path) -> tuple[list[tuple[str, str]], list[str]]:
+    """(reaction rows as (equation, rest), other lines) with ids and the
+    equation's spacing normalised; VULCAN-JAX history lines dropped."""
+    rows, text = [], []
+    for line in path.read_text().splitlines():
+        m = None if line.lstrip().startswith("#") else _ROW.match(line)
+        if m:
+            rows.append((" ".join(m.group(2).split()), " ".join(m.group(3).split())))
+        elif "VULCAN-JAX:" not in line:
+            text.append(line)
+    return rows, text
+
+
+def _known_row_divergence_only(
+    master_path: Path, jax_path: Path, reactions: tuple[str, ...]
+) -> list[str]:
+    """Every row and comment line outside the allowlisted reactions must agree."""
+    m_rows, m_text = _rows_and_text(master_path)
+    j_rows, j_text = _rows_and_text(jax_path)
+    keep = lambda rows: [r for r in rows if not any(rx in r[0] for rx in reactions)]  # noqa: E731
+    errors = []
+    if keep(m_rows) != keep(j_rows):
+        errors.append("reaction rows differ outside the known divergences")
+    if m_text != j_text:
+        errors.append("non-reaction lines differ")
     return errors
 
 

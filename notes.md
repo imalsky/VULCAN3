@@ -34,10 +34,9 @@ notes (the NAS `analysis/` tree no longer exists).
   clean at those commits with `core.fileMode false`, so
   `VULCAN_MASTER_DIR=~/VULCAN_Project/.oracles/vulcan2_ncho` works.
 - Fixtures: the tracked `FIXTURES.json` is the arm64 manifest of a laptop rebuild at
-  `709407d` plus the speed pass (the four `2441e6c` fixtures byte-identical; new
-  `state_hd209.npz`, the HD209 run, 1211 steps). daw's `tests/data` is an x86-64 rebuild
-  at `73fd25a` without `state_hd209.npz` (`gen_fixtures.py --only hd209`) that differs
-  bitwise, so `--verify` fails there by design (restore the tracked manifest after it).
+  `709407d` plus the speed pass, made before C25-C29 and now stale (todo 4). daw's
+  `tests/data` is an x86-64 rebuild with C25-C29 (HD209 1206 steps); `--verify` fails
+  there by design (restore the tracked manifest after a rebuild).
 
 ## Efficiency program
 
@@ -157,7 +156,12 @@ Integrator
   `outer_loop.py:1077-1080`). Inert: at `dt_var_min` 0.5 the 97th consecutive
   reject from `DT_MAX_S` 1e15 (the 84th from the retrieval's 1e11) would take dt
   below `dt_min` 1e-14, and that ends the chain first, as in master. Kept as the
-  loop guard (a jitted `while_loop` cannot raise). Provenance not recorded.
+  loop guard (a jitted `while_loop` cannot raise). Provenance not recorded. A
+  force-accepted step keeps the previous state (C29).
+- Step control C29: the error estimate counts a species the step creates, a
+  value below `nega_cut` rejects the step instead of being clipped, a retry
+  restarts from the previous ymix. Reason: master's rules let a wrong step
+  through or accept a rejected composition (Parity ledger C29).
 - `default.yaml` rtol 0.2, use_adapt_rtol false, count_max 1e4 (from 3938cf9):
   [M] rtol and count_max equal upstream's HD189 example
   (`vulcan_cfg_HD189.py:151`, `:136`); that example has no `use_adapt_rtol` line
@@ -178,7 +182,8 @@ Inputs and data
   on every network, where FastChem converges 150-300 K, fails at 100 K [M]; untracked.
 - Data corrections: C1 (= e841d77, SNCHO reaction 949 k0 1e-20 -> 1e-29, which
   upstream also fixed), C4, C5, C6, C7, C12, C14 (networks renumbered), C20 (both
-  sides), P18.
+  sides), P18, C25-C28 (low-T reverse rows, HNCO + M, N(2D), sulfur masses; the
+  oracle copy gets the same files, `tests/oracle.py::ORACLE_DATA_DELTAS`).
 - Gravity is `G Mp / Rp^2`; no `gs` knob. `HD189*.yaml` ship the VULCAN 2
   gs-matched `Mp` (`2140.0*Rp**2/G`, Tsai et al. 2017 sec 3.1).
 
@@ -244,11 +249,11 @@ departures above; their numbers are their own [M]. Their measurements are option
 
 ## Parity numbers
 
-Default NCHO network, 69 species, 878 reactions.
+Default NCHO network, 69 species, 872 reactions.
 
 | layer | max rel error | test |
 |---|---|---|
-| forward rates (439) / reverse rates (Gibbs) | 4.460e-16 / 5.705e-14 | `test_gibbs` |
+| forward rates (436) / reverse rates (Gibbs) | 4.460e-16 / 5.705e-14 | `test_gibbs` |
 | atmosphere (`pco`, `Tco`, `Kzz`, `M`) | bit-exact | `test_default_master_parity` |
 | EQ seed | 7.9e-3 dex worst / 5.8e-5 median (HD189), 7.7e-3 / 9.1e-5 (W39b) | `test_eq_seed`, bar 2.4e-2 dex |
 | chemistry RHS | ~2e-13 worst cell, ~1e-16 bulk | `test_chem_rhs_codegen` |
@@ -307,6 +312,11 @@ A. Upstream errors corrected in the port
 | C15b | `make_bins_read_cross` drops a bin when `dbin_12trans` is out of range | `op.py:583-585` | `photo_setup._make_bins` raises; silent | unreachable shipped | no |
 | C19 | Ros2 stage vectors leak element content at large dt (only guard `loss_eps`) | `op.py:2914,2929`; `:2490`; `vulcan_cfg.py:136` | `jax_step._repair_stage` + `config.DT_MAX_S` (a larger `dt_max` raises); cap declared, repair silent | upstream fails the same column (S +32%); gates unchanged | no |
 | C20 | `OH + CH3 + M` Troe width in ln, not log10 | `op.py:204-205` | `rates_jax._troe_OH_CH3`; both sides via `ORACLE_CODE_DELTAS`; `test_troe_oh_ch3_is_visscher_moses_eq14` | rate 1.19-1.21x at Pr 0.1; max 0.111 ln VMR (HD189 CH4); gates unchanged | no |
+| C25 | low-T reverse rates above the collision limit: NH3 + CH, CH + M, C2H + M removed; NCO + HCN and S + CN rewritten in the exothermic direction (CN + HNCO 2.50E-11, Tsang 1992; N + CS 3.80E-11 (T/300)^0.5 exp(-1160/T), UMIST RATE22) | NCHO, CHO, SNCHO, TiSNCHO network rows | `low_t_reverse_rates`; declared (`KNOWN_THERMO_DIVERGENCES`, `ORACLE_DATA_DELTAS`) | reverse at 300 K, 1 bar up to 2e5x collision; NH3 + CH alone moves no scored gas in maxichem's 395,114-row 0-D yardstick; gates re-baselined | NH3 + CH only (39f1906) |
+| C26 | (was P8) `HNCO + M -> H + NCO` carries M on the reactant side only | 9 network files | product M added (as a68d7151); declared | 1.3e-5 / 5.0e-5 / 6.0e-4 ln VMR on the gates (P8's measurement) | a68d7151, 6 files |
+| C27 | (was P10) N(2D) NASA-9 thermo is a molecule's (Cp/R near 4, S 69.8 J/mol/K above N) | `thermo/NASA9/N_2D.txt` | rebuilt from N: Cp 2.5 R, H(N) + 230.017 kJ/mol, S(N) + R ln(10/4); `n2d_thermo`, declared | K_eq 1.6e3-1.5e4x; HD209 1211 -> 1206 (P10's measurement) | no |
+| C28 | CS, CS2, COS, first HCS masses inconsistent with the file's own atomic masses | `thermo/all_compose.txt:133-136` | 44.071 / 76.131 / 60.071 / 45.079; `sulfur_compose_masses`, declared | mean mass, moldiff only | no |
+| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_aggregate_delta_fn` masks where the old and the trial ymix are both < mtol; `_clip_prologue` keeps values < nega_cut (step rejected); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`; `steady_state_grad._clip_dead_mask` matches; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes); gates re-baselined | no |
 | L1 | `diffdf_settling_vm` drops the `vm` drift at the bottom interface | `op.py:1845-1848` | consistent; `test_diffusion`; silent | one cell, `use_settling` only | no |
 | L2 | vm_branch setup `vm` rolls a 2-D array without `axis=0` | `vulcan3_vm_branch/build_atm.py:803` | `axis=0`; silent | 5e-10 at step 2 | no |
 | P18 | `sflux-GJ1214.txt` pads 133.75-181.55 nm with 464 zero rows | `atm/stellar_flux/sflux-GJ1214.txt` | upstream's regenerated file, `gj1214_upstream_regenerated`; declared | 0 shipped; regeneration lowers every flux 1.392x | bb9255b1 |
@@ -340,10 +350,8 @@ B. Found in upstream, kept at parity
 | P5 | `const_lowT` sum omits NH3, He as remainder | `build_atm.py:48`, `:213` | `ini_abun._load_const_lowT_y` | He/H 0.83% low at 10x N; not live | no |
 | P6 | = C16 | | | | no |
 | P7 | photolysis quadrature skips the bin-grid join interval | `op.py:2771-2780` | `photo.compute_J_jax_flat` | HO2 J 0.06% (W39b) / 0.32% (HD189), others <= 0.05% | no |
-| P8 | `HNCO + M -> H + NCO` carries M on the reactant side only | `thermo/SNCHO_photo_network.txt:557` | parser tracks each side; `rates_jax` delta_n | 1.3e-5 / 5.0e-5 / 6.0e-4 ln VMR on the gates; HD189_vulcan3 2803 -> 2668 | partly, a68d7151 (in the vendored 2025 file; the 2021 SNCHO file still one-sided) |
 | P9 | moldiff boundary rows do not conserve the column | `op.py:1549-1558` | `bdry0_grav` / `bdry_top_grav` in `jax_step` | +6.6e-19 to +7.9e-18 /s; C23 bounds it | no |
-| P10 | N(2D) NASA-9 thermo is a molecule's | `thermo/NASA9/N_2D.txt` | same file | K_eq 1.6e3-1.5e4x low; HD209 1211 -> 1206 if fixed; hot-top N 1000x | no |
-| P10 (second use of the ID) | escape Jacobian entry `top_flux/y[-1]` too large by `dzi[-1]` | `op.py:2106-2107` vs RHS `:1689` | comment at the `diff_lim` term in `jax_ros2_step` | LHS only; HD209's `diff_esc` inert | no |
+| P10 | escape Jacobian entry `top_flux/y[-1]` too large by `dzi[-1]` | `op.py:2106-2107` vs RHS `:1689` | comment at the `diff_lim` term in `jax_ros2_step` | LHS only; HD209's `diff_esc` inert | no |
 | P11 | C2H4O, CH3NO2, HCS listed twice with different masses | `all_compose.txt:76/158, 118/161, 136/212` | `composition._PARITY_DUPLICATES` (first row kept) | moldiff 7e-5 | no |
 | P12 | CS-family and H2SO4 masses inconsistent with the S row | `all_compose.txt:133-136,143` | same | ~0.2% on trace masses | no |
 | P13 | `CH3SH_branch.csv` grid non-monotonic at the tail | `thermo/photo_cross/CH3SH/CH3SH_branch.csv:142-143` | same | unmeasured | no |
@@ -376,9 +384,8 @@ or re-measured. Detail is in "Parity ledger" or the named repo's notes.
 - vulcan3, inherited from upstream and kept: P1 unweighted atom-conservation
   diagnostic; P2 two-stream pole; P3 condensate mass in the gas mean molecular
   weight; P5 `const_lowT` initializer; P7
-  photolysis bin-grid join interval; P8 HNCO + M one-sided M; P9 diffusion
-  boundary rows leak the column; P10 N(2D) thermo is a molecule's polynomial
-  (maintainer: not fixing, upstream data); P19 arithmetic layer-mean actinic flux.
+  photolysis bin-grid join interval; P9 diffusion boundary rows leak the column;
+  P19 arithmetic layer-mean actinic flux.
 - vulcan3, inherited from upstream, P4 (`atm_type='table'`): the table replaces the
   pressure centres after the interfaces were built, and the interfaces are not
   rebuilt (upstream the same order: `vulcan.py:118`, then `build_atm.py:406`); `dzi`
@@ -835,11 +842,11 @@ terms stay (both referees recommended it): the rule "keep VULCAN's original
 convergence criteria" keeps every VULCAN 2 test and allows extra tests that fix a
 confirmed defect; a relaxation of VULCAN's gate is never adopted.
 
-The parity audit's three ion-mode / low-T items stay at parity; P4, P5, P7, P8,
-P9, P10 stay; NH3 and CH stay in the default network (removal re-baselines every
-gate for no measured benefit); the C20 report is not filed upstream; the
+The parity audit's three ion-mode / low-T items stay at parity; P4, P5, P7, P9
+stay; every confirmed data and step-control defect is corrected (C25-C29, which replace P8, P10
+and the old "NH3 and CH stay" decision), gates re-baselined; the C20 report is not filed upstream; the
 tangent-stall early stop is not built; `test_vmap_photo_batch`'s ymix assertion
-is the scale ratio `max|lane - solo| / max|soloA - soloB|` (`SCALE_TOL` 1e-4); the
+is the scale ratio `max|lane - solo| / max|soloA - soloB|` (`SCALE_TOL` 1e-3 since C29: 1.6e-4 measured, a closure leak gives ~1); the
 photo-on batched deviation (13 of 87 carry leaves at the last bit) is accepted as
 roundoff; the AD-build `dt_max` cap stays off the cold solve; `config.DT_MAX_S`
 stays 1e15. The JAX paper quotes 0.6.0, the version its data came from. The CUDA

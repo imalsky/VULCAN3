@@ -37,6 +37,11 @@ def fake_oracle(tmp_path):
     repo = tmp_path / "VULCAN-oracle"
     (repo / "thermo").mkdir(parents=True)
     (repo / "thermo" / "NCHO_photo_network.txt").write_text("# network v1\n")
+    # every declared data delta needs a file to replace
+    for rel in orc.ORACLE_DATA_DELTAS:
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        if not (repo / rel).exists():
+            (repo / rel).write_text("upstream\n")
     # the declared code delta must find its OLD block exactly once
     (repo / "op.py").write_text("def read_rate():\n"
                                 + orc.ORACLE_CODE_DELTAS["op.py"][0][0])
@@ -180,6 +185,10 @@ def test_worktree_gives_a_copy_and_proves_the_original_is_untouched(
         # the declared delta landed on the copy ...
         copy_op = (work / "op.py").read_text()
         assert old not in copy_op and new in copy_op
+        # ... and so did every declared data delta
+        pkg = ROOT / "src" / "vulcan3"
+        for rel in orc.ORACLE_DATA_DELTAS:
+            assert (work / rel).read_bytes() == (pkg / rel).read_bytes(), rel
         # simulate make_chem_funs renumbering the network IN PLACE
         (work / "thermo" / "NCHO_photo_network.txt").write_text("renumbered\n")
     assert (fake_oracle / "thermo"

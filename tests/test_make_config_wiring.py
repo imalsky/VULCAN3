@@ -187,8 +187,8 @@ def test_clip_fn_degenerate_layer_stays_finite():
             [-1e-25, -1e-25, -1e-25],  # all negative -> all clip to 0 (0/0 risk)
         ]
     )
-    # No ymix argument: master's second clip rule reads the post-solve ymix,
-    # which reduces to "zero every negative" (see _clip_prologue).
+    # Every value here is within [nega_cut, pos_cut), so all clip to 0
+    # (a value below nega_cut would stay negative: see _clip_prologue).
     for non_gas_present in (False, True):
         clip = _make_clip_fn(
             non_gas_present, gas_mask, pos_cut=1e-20, nega_cut=-1e-20

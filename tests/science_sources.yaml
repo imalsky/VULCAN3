@@ -2,9 +2,10 @@
 #
 # Each oracle-test family names the exact upstream commit it is valid against,
 # and the tests verify `git rev-parse HEAD` plus a clean worktree BEFORE they
-# compute anything. A checkout at another commit is not a parity reference: the
-# vendored NCHO network carries `NH3 + CH -> NH2 + CH2`, which upstream deleted
-# in 39f1906, so a later revision shifts every reaction index past it. A tree
+# compute anything. A checkout at another commit is not a parity reference. The
+# vendored networks drop rows the pinned revision still has (`intentional_divergences`
+# low_t_reverse_rates); tests/oracle.py::ORACLE_DATA_DELTAS copies them into the
+# disposable copy, so reaction indices line up on both sides. A tree
 # carrying VULCAN-JAX's own code is refused outright
 # (`tools/audit_master_parity.py`, `_check_oracle_is_pristine`).
 #
@@ -74,24 +75,26 @@ oracles:
 supported_inputs:
 
   thermo/NCHO_photo_network.txt:
-    sha256: 7d63e06068ddbfc4f31196532d0b7f4c9300db5deaa2e6ebd9fb8fb06d4564c5
+    sha256: ba5c7914202a416316670e1d44c7105961b53edba85bcdb9dc2b34e7cd29ff08
     oracle: vulcan2_ncho
+    diverges: [low_t_reverse_rates]
     note: >-
-      Byte-identical to the vulcan2_ncho revision. Selected by default.yaml,
-      HD189.yaml, HD189_vulcan3.yaml, HD209.yaml.
+      The vulcan2_ncho revision's file with the low_t_reverse_rates rows removed
+      or rewritten and the id column renumbered; every other row is identical.
+      Selected by default.yaml, HD189.yaml, HD189_vulcan3.yaml, HD209.yaml.
 
   thermo/SNCHO_photo_network.txt:
-    sha256: b6aede1753ff6cfac8ce61f1748ffbe1a169e8d830e12ee83af52b1eac5d1360
+    sha256: 7937f16fe360b7a1c9c8f732cb45be2cda3028c8af4607f1a2f0091961869121
     oracle: vulcan2_ncho
-    diverges: [ch2cn_falloff]
+    diverges: [ch2cn_falloff, low_t_reverse_rates]
     note: >-
       The 89-species network of Tsai et al. 2021. No shipped config selects
       it; a caller selects it by path.
 
   thermo/SNCHO_photo_network_2025.txt:
-    sha256: c96f983b2d0893b97c291ba60df3c4162885b5c47a11a5265266d48e054a7006
+    sha256: 3c7a9aa7a69547f1986ed80124beb7b9b457a815e12885dda0047386e9e3e78f
     oracle: null
-    diverges: [renumber_2025_reaction_index_gap]
+    diverges: [renumber_2025_reaction_index_gap, low_t_reverse_rates]
     note: >-
       Upstream's file at a68d715 (unchanged at c870b1a), which is NEWER than
       every pinned oracle, so `oracle` is null and the audit's oracle
@@ -102,9 +105,9 @@ supported_inputs:
       it needs no ch2cn_falloff entry.
 
   thermo/all_compose.txt:
-    sha256: 35377a47c7233eaa4f9d7ebde4d603e69ffe19e1956f37bd2a5949d3e425b462
+    sha256: 64dee9896eb34d3507ccd5e999f2f9f292e44a103476cf4c8be878072e478665
     oracle: vulcan2_ncho
-    diverges: [nh3_ice_mass]
+    diverges: [nh3_ice_mass, sulfur_compose_masses]
 
   atm/atm_HD189_Kzz.txt:
     sha256: 5268e178e258ed008b67d693ae4e34dec30d87c79c7589a88ad2d37cc95dbcb9
@@ -175,6 +178,59 @@ supported_inputs:
 # Each intentional difference from upstream is listed here with a test;
 # anything else that differs is drift, and the audit fails on it.
 intentional_divergences:
+
+  low_t_reverse_rates:
+    files:
+      - thermo/NCHO_photo_network.txt
+      - thermo/NCHO_thermo_network.txt
+      - thermo/NCHO_full_photo_network.txt
+      - thermo/NCHO_photo_network_lowT_Jupiter.txt
+      - thermo/CHO_photo_network.txt
+      - thermo/CHO_photo_network_lowT.txt
+      - thermo/SNCHO_photo_network.txt
+      - thermo/SNCHO_photo_network_2025.txt
+      - thermo/SNCHO_photo_network_C3.txt
+      - thermo/SNCHO_DMS_photo_network_Tsai2024.txt
+      - thermo/TiSNCHO_photo_network.txt
+    reactions:
+      - "NH3 + CH -> NH2 + CH2: removed (upstream 39f1906)"
+      - "HNCO + M -> H + NCO + M: product M added (upstream a68d715)"
+      - "CH + M -> C + H + M: removed"
+      - "C2H + M -> C2 + H + M: removed"
+      - "NCO + HCN -> HNCO + CN: rewritten CN + HNCO -> HCN + NCO, 2.50E-11 (Tsang 1992 sec. 17.15 estimate)"
+      - "S + CN -> N + CS: rewritten N + CS -> S + CN, 3.80E-11 (T/300)^0.5 exp(-1160/T) (UMIST RATE22)"
+    reason: >-
+      Each removed or rewritten row is a high-temperature fit whose reverse rate,
+      computed from the equilibrium constant, exceeds the gas-kinetic collision
+      limit at low temperature (at 300 K and 1 bar: CH + M about 2e5x, C2H + M
+      about 9e3x, NH3 + CH about 3e3x, NCO + HCN about 50x, S + CN about 2e5x) and
+      makes 300-400 K chemistry needlessly stiff. Upstream removed NH3 + CH
+      itself (39f1906) and the same class of rows in 2020 (CN + M, CN + C2H2,
+      N + CO, NH2 + NH2). No published low-temperature association rate was
+      found for C + H + M or C2 + H + M (H + CH <-> H2 + C and C2 + H2 <->
+      H + C2H keep the species connected); the two rewrites take the
+      exothermic direction with a published rate. A model choice, not a
+      measured correction, for the four rows upstream left in place.
+    recorded_in: tools/audit_master_parity.py::KNOWN_THERMO_DIVERGENCES; tests/oracle.py::ORACLE_DATA_DELTAS
+
+  n2d_thermo:
+    files: [thermo/NASA9/N_2D.txt]
+    reason: >-
+      Upstream's N_2D fit (ac1bbf8, "Fitting from NASA7") gives an atom Cp/R
+      near 4 and S(298) 69.8 J/mol/K above ground-state N; N(2D) at 3000 K
+      came out below ground-state N in G. VULCAN-JAX builds it from N:
+      Cp = 2.5 R, H = H(N) + 230.017 kJ/mol (NIST 2D5/2, 2D3/2 levels,
+      J-weighted), S = S(N) + R ln(10/4).
+    recorded_in: tests/oracle.py::ORACLE_DATA_DELTAS
+
+  sulfur_compose_masses:
+    files: [thermo/all_compose.txt]
+    reason: >-
+      Upstream lists CS 44.17, CS2 76.23, COS 60.17 and the first HCS row
+      45.178 g/mol, inconsistent with the file's own C 12.011, O 16.0, S 32.06
+      and H 1.008 (and with its second HCS row, 45.079). VULCAN-JAX uses
+      44.071, 76.131, 60.071 and 45.079.
+    recorded_in: tools/audit_master_parity.py::KNOWN_THERMO_DIVERGENCES
 
   ch3oh_troe_log10:
     reaction: OH + CH3 + M -> CH3OH + M

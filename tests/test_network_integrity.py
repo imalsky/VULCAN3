@@ -206,9 +206,9 @@ def test_temp_range_annotation_parser(annotation, expected):
 # any/all = rows outside the union of their documented ranges in >=1 / all
 # profile layers; no_range = rows whose annotation has no parseable range.
 _EXPOSURE = {
-    "HD189": {"thermal_rows": 390, "no_range": 95, "any_outside": 291, "all_outside": 43},
-    "HD209": {"thermal_rows": 390, "no_range": 95, "any_outside": 291, "all_outside": 58},
-    "W39b": {"thermal_rows": 531, "no_range": 150, "any_outside": 199, "all_outside": 69},
+    "HD189": {"thermal_rows": 387, "no_range": 93, "any_outside": 290, "all_outside": 43},
+    "HD209": {"thermal_rows": 387, "no_range": 93, "any_outside": 290, "all_outside": 58},
+    "W39b": {"thermal_rows": 529, "no_range": 148, "any_outside": 199, "all_outside": 70},
 }
 
 

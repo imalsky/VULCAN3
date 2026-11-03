@@ -240,25 +240,21 @@ class BodyTerms(NamedTuple):
     bot_val: Optional[jnp.ndarray] = None  # (m,)
 
 
-def _clip_dead_mask(G, ymix_old, cfg) -> np.ndarray:
+def _clip_dead_mask(G, cfg) -> np.ndarray:
     """Cells where the runner's per-step zero-clip would not be the identity.
 
-    Applied to a candidate post-step state `G` (number density, cm^-3) with the
-    pre-step mixing ratio `ymix_old`:
+    Applied to a candidate post-step state `G` (number density, cm^-3), the
+    same rule as `outer_loop._clip_prologue`:
 
         y < pos_cut and y >= nega_cut          -> 0     (small/negative cut)
-        ymix_old < mtol and y < 0              -> 0     (trace-negative cut)
 
-    Narrower than the runner's clip (`outer_loop._clip_prologue` zeroes every
-    negative cell), so fewer cells leave the defect scan. An excluded cell is
-    one the audit stops checking, so excluding fewer is the safe side.
+    A value below nega_cut is not clipped there (the step is rejected), so it
+    stays in the defect scan.
     """
     G = np.asarray(G)
     pos_cut = float(cfg.pos_cut)
     nega_cut = float(cfg.nega_cut)
-    mtol = float(cfg.mtol)
-    dead = (G < pos_cut) & (G >= nega_cut)
-    return dead | ((np.asarray(ymix_old) < mtol) & (G < 0.0))
+    return (G < pos_cut) & (G >= nega_cut)
 
 
 def _make_body_map(y_star, k_arr, atm, net, body_dt, photo_recompute_k, body_terms=None):
@@ -1445,7 +1441,7 @@ def audit_adjoint_scope(
 
     # Exclude cells the zero-clip owns: they have no fixed point, and
     # _AUDIT_MIN_YMIX (a mixing ratio) cannot catch the absolute cm^-3 clip window.
-    clip_dead = _clip_dead_mask(G_np, ymix, cfg)
+    clip_dead = _clip_dead_mask(G_np, cfg)
     scanned = (y_np > 0.0) & (ymix >= _AUDIT_MIN_YMIX)
     rel_full = np.where(scanned, defect / np.maximum(y_np, _UNDERFLOW_DENOM), 0.0)
     rel = np.where(clip_dead, 0.0, rel_full)

@@ -5,6 +5,7 @@ Evidence for these items is in `notes.md` (this repo's, unless another repo is n
 1. [decision] Claim `vulcan3` on PyPI: the README installs put TestPyPI first, so a TestPyPI package can shadow its PyPI namesake.
 2. [unverified] The Jacobian power change (`chem._jac_pow_tables`) is bitwise only where measured, on CPU: check on a GH200 that it leaves a W39b batch unchanged.
 3. [decision] The arm64 full tier fails `test_fast_on_real_w39b_blocks[fast]`: on the W39b 2025-network fixture the matrix-free step's primal under `jvp` is not bitwise the plain step's (bitwise on x86-64).
+4. [owed] Re-baseline after the C25-C29 data and step-control fixes: full tier with the step-count gates, the oracle comparisons (`oracle.yml`), and the arm64 fixture manifest.
 
 ## 1. vulcan3 on PyPI
 
@@ -45,3 +46,17 @@ for the grouped RHS), an arm64 xfail, or keeping the operator's primal RHS from
 fusing with the step's. Command: `VULCAN3_RUN_SLOW=1 python -m pytest
 "tests/test_solver_fast.py::test_fast_on_real_w39b_blocks" -q`. Done when the arm64
 full tier passes and the notes row states the CPU scope.
+
+## 4. Re-baseline after C25-C29
+
+Evidence: notes "Parity ledger" C25-C29. The data fixes (low-T reverse rows, HNCO + M,
+N(2D), sulfur masses) and the C29 step control change every trajectory, so the
+full-tier step-count gates (`tests/test_step_count_gates.py`) move and the tracked
+`tests/data/FIXTURES.json` (the arm64 laptop manifest) is stale. The normal tier
+passes on daw with fixtures rebuilt there (HD209 1206 steps). Steps: on the laptop
+`python tests/gen_fixtures.py --all --force` and commit the manifest; run
+`VULCAN3_RUN_SLOW=1 python -m pytest tests -n 12 -q` and re-pin the gates with the
+new counts; dispatch `oracle.yml` (`VULCAN_MASTER_DIR` at 80f75b9: the oracle copy
+gets the corrected files through `tests/oracle.py::ORACLE_DATA_DELTAS`). Done when
+the full tier and the oracle workflow pass and the gates hold the new counts.
+

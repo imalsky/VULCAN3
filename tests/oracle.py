@@ -263,6 +263,29 @@ ORACLE_CODE_DELTAS: dict[str, tuple[tuple[str, str, str], ...]] = {
 }
 
 
+# Rule 4b. Vendored data files VULCAN-JAX corrects (science_sources.yaml
+# `intentional_divergences` low_t_reverse_rates, n2d_thermo, sulfur_compose_masses):
+# copied from this tree into the COPY so index-by-index rate and step comparisons
+# run the same network on both sides. tools/audit_master_parity.py checks that
+# these files differ from upstream only in the declared rows.
+ORACLE_DATA_DELTAS: tuple[str, ...] = (
+    "thermo/NCHO_photo_network.txt",
+    "thermo/SNCHO_photo_network.txt",
+    "thermo/all_compose.txt",
+    "thermo/NASA9/N_2D.txt",
+)
+
+
+def apply_data_deltas(root: Path) -> list[str]:
+    """Copy `ORACLE_DATA_DELTAS` from this tree into the COPY at `root`."""
+    pkg = Path(__file__).resolve().parent.parent / "src" / "vulcan3"
+    for rel in ORACLE_DATA_DELTAS:
+        if not (root / rel).is_file():
+            raise RuntimeError(f"{root / rel}: the oracle copy has no such file to replace")
+        shutil.copy2(pkg / rel, root / rel)
+    return list(ORACLE_DATA_DELTAS)
+
+
 def apply_code_deltas(root: Path) -> list[str]:
     """Apply `ORACLE_CODE_DELTAS` to the COPY at `root`; return the applied tags."""
     applied: list[str] = []
@@ -322,7 +345,8 @@ def oracle_worktree(
 
     Upstream data-generation code mutates its own checkout, so every test that
     runs it must work on a copy. The copy is deleted on exit and the original is
-    proven unchanged. The copy carries `ORACLE_CODE_DELTAS` (rule 4).
+    proven unchanged. The copy carries `ORACLE_CODE_DELTAS` (rule 4) and
+    `ORACLE_DATA_DELTAS` (rule 4b).
     """
     src = require_oracle(family)
     before = tree_fingerprint(src)
@@ -332,6 +356,7 @@ def oracle_worktree(
         shutil.copytree(src, dst, symlinks=True,
                         ignore=shutil.ignore_patterns(".git", "__pycache__"))
         apply_code_deltas(dst)
+        apply_data_deltas(dst)
         if config_rel is not None:
             config_source = dst / config_rel
             if not config_source.is_file():

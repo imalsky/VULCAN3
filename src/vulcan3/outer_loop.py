@@ -295,11 +295,13 @@ def _step_size(
 
 
 def _clip_prologue(y_in, pos_cut: float, nega_cut: float):
-    """Master's per-step clip, shared by both `_make_clip_fn` branches;
-    returns `(y_clip, small_y_inc, nega_y_inc)`.
+    """The per-step clip, shared by both `_make_clip_fn` branches; returns
+    `(y_clip, small_y_inc, nega_y_inc)`.
 
-    The second rule is op.py:2459 on the post-solve ymix (op.py:2991-2993),
-    which is < mtol for any y<0 cell, so it zeroes every negative.
+    Values in [nega_cut, pos_cut) go to 0. A value below nega_cut stays
+    negative, so `all_nonneg` rejects the step (parity ledger C29). Master's
+    second rule (op.py:2459 on the post-solve ymix, op.py:2991-2993) zeroes
+    every negative, so its negativity test can never fire.
     """
     small_y_inc = jnp.sum(
         jnp.where((y_in < pos_cut) & (y_in >= 0), jnp.abs(y_in), 0.0)
@@ -308,7 +310,6 @@ def _clip_prologue(y_in, pos_cut: float, nega_cut: float):
         jnp.where((y_in > nega_cut) & (y_in <= 0), jnp.abs(y_in), 0.0)
     )
     y_clip = jnp.where((y_in < pos_cut) & (y_in >= nega_cut), 0.0, y_in)
-    y_clip = jnp.where(y_clip < 0, 0.0, y_clip)
     return y_clip, small_y_inc, nega_y_inc
 
 
@@ -357,16 +358,22 @@ def _make_clip_fn(
 def _make_aggregate_delta_fn(
     mtol: float, atol: float, zero_bot_row: bool, condense_zero_mask: jnp.ndarray
 ):
-    """Build the scalar `delta(sol, delta_arr, ymix_old)` reducer.
+    """Build the scalar `delta(sol, delta_arr, ymix_old, zero_bot, ymix_new)` reducer.
 
-    Zeros entries where ymix < mtol, sol < atol, optionally the bottom
-    row (use_botflux / use_fix_sp_bot), and condensed species, then
-    returns the max of (delta_arr / sol) over (sol > 0) cells.
+    Zeros entries where both the pre-step and the trial mixing ratio are
+    below mtol (master masks on the pre-step one alone, op.py:2949, so a
+    species the step creates escapes the estimate: parity ledger C29),
+    sol < atol, optionally the bottom row (use_botflux / use_fix_sp_bot),
+    and condensed species, then returns the max of (delta_arr / sol) over
+    (sol > 0) cells.
     """
     cond_zero = jnp.asarray(condense_zero_mask, dtype=jnp.bool_)
 
-    def agg(sol, delta_arr, ymix_old, zero_bot=None):
-        masked = jnp.where(ymix_old < mtol, 0.0, delta_arr)
+    def agg(sol, delta_arr, ymix_old, zero_bot=None, ymix_new=None):
+        dead = ymix_old < mtol
+        if ymix_new is not None:
+            dead = dead & (ymix_new < mtol)
+        masked = jnp.where(dead, 0.0, delta_arr)
         masked = jnp.where(sol < atol, 0.0, masked)
         # `zero_bot` is the runtime extension of the static flag: upstream's
         # use_fix_H2He trip turns `use_fix_sp_bot` non-empty mid-run, which
@@ -1071,7 +1078,7 @@ def _make_runner(
         # delta uses the pre-clip sol (master computes it before clip):
         # sol_clip would erase the truncation error of cells about to clip to
         # zero and let overly aggressive steps through (HD209 exercises this).
-        delta = agg_delta_fn(sol, delta_arr, s.ymix, zero_bot_dyn)
+        delta = agg_delta_fn(sol, delta_arr, s.ymix, zero_bot_dyn, ymix_new)
 
         # Acceptance uses the build-time rtol, never the carry's adapted one:
         # upstream binds `rtol = vulcan_cfg.rtol` as a default argument of
@@ -1110,11 +1117,16 @@ def _make_runner(
         dt_used_for_t = jnp.where(force_accept, jnp.float64(statics.dt_min), s.dt)
         t_next = jnp.where(do_accept, s.t + dt_used_for_t, s.t)
 
-        # Master's step_reject resets only var.y at dt_min; ymix/atom_loss
-        # keep the rejected clipped solve. So the force-accept path must feed
-        # downstream work y_prev for y but the new clipped ymix.
+        # A force-accepted finite step keeps the previous state whole: master's
+        # step_reject (op.py:2515-2520) resets only var.y at dt_min and keeps
+        # the rejected solve's ymix, which the rebalance below turns back into
+        # y, so it accepts the composition it rejected (parity ledger C29). A
+        # non-finite solve still goes through, so the run ends as non-finite
+        # instead of idling to the step cap.
         y_prev_clipped = jnp.where(s.y_prev < 0, 0.0, s.y_prev)
         y_post_clip = jnp.where(force_accept, y_prev_clipped, sol_clip)
+        keep_prev = force_accept & jnp.all(jnp.isfinite(sol))
+        ymix_new = jnp.where(keep_prev, s.ymix, ymix_new)
 
         # Conden gates on the pre-step `s.t` (not `t_next`); master's
         # save_step advances var.t after conden runs, so this matches.
@@ -1191,8 +1203,10 @@ def _make_runner(
 
         # y / ymix / atom_loss for the next iteration.
         y_next = jnp.where(do_accept, sol_balanced, s.y_prev)
-        ymix_next = ymix_new
-        atom_loss_next = atom_loss_new
+        # A retry starts from the previous state: master restores var.y only
+        # (op.py:2524-2531), so its retry masks with the rejected ymix (C29).
+        ymix_next = jnp.where(do_accept, ymix_new, s.ymix)
+        atom_loss_next = jnp.where(accept, atom_loss_new, s.atom_loss)
 
         # y_prev is the revert target: on accept, the fresh state; on reject,
         # keep the carry's (still retrying this step).

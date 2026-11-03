@@ -27,8 +27,10 @@ COUNT_MAX = 30
 RTOL = 5e-2
 # ymix is judged by scale, |lane - own solo| / |soloA - soloB|: a
 # closure-baked photo field makes lane 1 equal soloA (ratio ~1). Bit
-# identity depends on the XLA version.
-SCALE_TOL = 1e-4
+# identity depends on the XLA version. The photolysis cadence differs (tick
+# vs accepted count), so rejected steps move the lanes apart: 1.6e-4 with the
+# C29 step control (8 rejections of 39 attempts on lane A).
+SCALE_TOL = 1e-3
 
 
 def _pin_cfg(**extra):
