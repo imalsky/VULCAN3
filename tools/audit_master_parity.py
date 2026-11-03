@@ -43,8 +43,7 @@ INTENTIONAL_JAX_DELTAS = {
 # upstream's own later fixes 39f1906 / a68d715. Removing rows renumbers the id
 # column, so files carrying these are compared row by row (ids ignored).
 _LOW_T_REVERSE_ROWS = (
-    "NH3 + CH -> NH2 + CH2", "CH + M -> C + H + M", "C2H + M -> C2 + H + M",
-    "NCO + HCN -> HNCO + CN", "CN + HNCO -> HCN + NCO",
+    "NH3 + CH -> NH2 + CH2", "NCO + HCN -> HNCO + CN", "CN + HNCO -> HCN + NCO",
     "S + CN -> N + CS", "N + CS -> S + CN", "HNCO + M -> H + NCO",
 )
 # Composition rows whose mass disagrees with the file's own atomic masses
@@ -203,7 +202,7 @@ def _known_divergence_only(
     differing line is real drift and is reported.
     """
     errors, pairs = _paired_lines(master_path, jax_path)
-    if errors:  # rows removed: compare the remaining rows, ids ignored
+    if errors or "network" in jax_path.name:  # a network: rows compared with ids ignored (rows removed renumber them)
         return _known_row_divergence_only(master_path, jax_path, reactions)
     for lineno, (m_line, j_line) in pairs:
         if m_line == j_line:

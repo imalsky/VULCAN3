@@ -75,7 +75,7 @@ oracles:
 supported_inputs:
 
   thermo/NCHO_photo_network.txt:
-    sha256: ba5c7914202a416316670e1d44c7105961b53edba85bcdb9dc2b34e7cd29ff08
+    sha256: 74d4f5c0d4b8ff293f5614bad1940d77e4347307812827b560da8389525baf0a
     oracle: vulcan2_ncho
     diverges: [low_t_reverse_rates]
     note: >-
@@ -84,7 +84,7 @@ supported_inputs:
       Selected by default.yaml, HD189.yaml, HD189_vulcan3.yaml, HD209.yaml.
 
   thermo/SNCHO_photo_network.txt:
-    sha256: 7937f16fe360b7a1c9c8f732cb45be2cda3028c8af4607f1a2f0091961869121
+    sha256: 3e0cbf8534bc4dd0c9721c8e27fa4c6b778836cd0cd7bb8434ecb05565260ed5
     oracle: vulcan2_ncho
     diverges: [ch2cn_falloff, low_t_reverse_rates]
     note: >-
@@ -92,7 +92,7 @@ supported_inputs:
       it; a caller selects it by path.
 
   thermo/SNCHO_photo_network_2025.txt:
-    sha256: 3c7a9aa7a69547f1986ed80124beb7b9b457a815e12885dda0047386e9e3e78f
+    sha256: 4e8d537ac746c0ec364a02f59deb4a9875990124de664be7938d11ecf62c7b63
     oracle: null
     diverges: [renumber_2025_reaction_index_gap, low_t_reverse_rates]
     note: >-
@@ -204,22 +204,20 @@ intentional_divergences:
     reactions:
       - "NH3 + CH -> NH2 + CH2: removed (upstream 39f1906)"
       - "HNCO + M -> H + NCO + M: product M added (upstream a68d715)"
-      - "CH + M -> C + H + M: removed"
-      - "C2H + M -> C2 + H + M: removed"
       - "NCO + HCN -> HNCO + CN: rewritten CN + HNCO -> HCN + NCO, 2.50E-11 (Tsang 1992 sec. 17.15 estimate)"
       - "S + CN -> N + CS: rewritten N + CS -> S + CN, 3.80E-11 (T/300)^0.5 exp(-1160/T) (UMIST RATE22)"
     reason: >-
       Each removed or rewritten row is a high-temperature fit whose reverse rate,
       computed from the equilibrium constant, exceeds the gas-kinetic collision
-      limit at low temperature (at 300 K and 1 bar: CH + M about 2e5x, C2H + M
-      about 9e3x, NH3 + CH about 3e3x, NCO + HCN about 50x, S + CN about 2e5x) and
-      makes 300-400 K chemistry needlessly stiff. Upstream removed NH3 + CH
-      itself (39f1906) and the same class of rows in 2020 (CN + M, CN + C2H2,
-      N + CO, NH2 + NH2). No published low-temperature association rate was
-      found for C + H + M or C2 + H + M (H + CH <-> H2 + C and C2 + H2 <->
-      H + C2H keep the species connected); the two rewrites take the
-      exothermic direction with a published rate. A model choice, not a
-      measured correction, for the four rows upstream left in place.
+      limit at low temperature (at 300 K and 1 bar: NH3 + CH about 3e3x,
+      NCO + HCN about 50x, S + CN about 2e5x) and makes 300-400 K chemistry
+      needlessly stiff. Upstream removed NH3 + CH itself (39f1906) and the same
+      class of rows in 2020 (CN + M, CN + C2H2, N + CO, NH2 + NH2); the two
+      rewrites take the exothermic direction with a published rate. CH + M and
+      C2H + M, first removed for the same reason, are kept: they matter in hot
+      gas (removing them moved up to 1.9 dex in maxichem's tests), and the
+      collision limit on rates (C30) bounds their low-T reverses. A model choice,
+      not a measured correction, for the rows upstream left in place.
     recorded_in: tools/audit_master_parity.py::KNOWN_THERMO_DIVERGENCES; tests/oracle.py::ORACLE_DATA_DELTAS
 
   n2d_thermo:

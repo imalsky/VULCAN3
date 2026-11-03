@@ -1,7 +1,7 @@
 # VULCAN N-C-H-O network for reducing atmospheres
 #########################################################################################################################################################
 # log history
-# 11.2026 VULCAN-JAX: removed NH3 + CH -> NH2 + CH2 (as upstream 39f1906) and CH + M -> C + H + M, C2H + M -> C2 + H + M; HNCO + M -> H + NCO + M (as upstream a68d715); NCO + HCN -> HNCO + CN rewritten as CN + HNCO -> HCN + NCO (Tsang 1992); S + CN -> N + CS rewritten as N + CS -> S + CN (UMIST 2022): low-T reverse rates above the collision limit
+# 11.2026 VULCAN-JAX: removed NH3 + CH -> NH2 + CH2 (as upstream 39f1906); HNCO + M -> H + NCO + M (as upstream a68d715); NCO + HCN -> HNCO + CN rewritten as CN + HNCO -> HCN + NCO (Tsang 1992); S + CN -> N + CS rewritten as N + CS -> S + CN (UMIST 2022): low-T reverse rates above the collision limit; CH + M and C2H + M kept, with the collision limit on rates (parity ledger C30)
 # Dec 2023 removed several CS reactions from Jim for stability
 # Not including C2H5SH (isomer of DMS) for now: [ C2H5SH + H -> C2H5 + H2S          ]  8.49E-12     0.000    1200.0       1989LAM/YOK47-63         298-423
 #
@@ -559,103 +559,105 @@
 1021 [ S + S3 + M -> S4 + M               ]  8.88E-26    -2.000       0.0      5.00E-11     0.000       0.0       Zahnle2016	
 1023 [ S2 + S2 + M -> S4 + M              ]  4.00E-31    0.000     -900.0      3.00E-10     0.000       0.0       Moses2002/Zahnle2016	
 1025 [ S4 + S4 + M -> S8 + M              ]  4.00E-31    0.000     -900.0      3.00E-10     0.000       0.0       Moses2002/Zahnle2016	
-1027 [ C2H4 + M -> C2H2 + H2 + M          ]  5.80E-08     0.000   36000.0      7.95E+12     0.440   44700.0                             ??, 1200-2500
-1029 [ C2H6 + M -> C2H4 + H2 + M          ]  3.80E-07     0.000   34000.0      1.32E+15     0.000   36800.0                             1800-2500, 873-973
-1031 [ CH2OH + M -> H + H2CO + M          ]  7.48E+01    -2.50    1.72E04      4.53E+34    -7.11    2.22E04        1987TSA471/Xu2015    300-2500/500-3000
-1033 [ N2H3 + M -> N2H2 + H + M           ]  3.49E+38   -13.130   36825.4      7.95E+13     0.000   27463.0       From Moses / Hwang and Mebel (2003)                          ??, ??
-1035 [ HNCO + M -> CO + NH + M            ]  3.60E+04    -3.100   51300.0      6.00E+13     0.000   50200.0       1992TSA753-791 / 1992TSA753-791                              500-2500, 500-2500
-1037 [ N2O + M  -> N2 + O + M             ]  6.64E-10     0.000   28200.0      1.30E+11     0.000   30000.0       1992JOH/GLA917-923 / 1991TSA/HER609-663                      1000-3000, 700-2500
-1039 [ N2H + M -> N2 + H + M              ]  2.15E-10    -0.110    2510.0      1.30E+15    -0.530    3404.0       1995BOZ/DEA1097-1109 / 2005CAR/ROD2356-2363                  1000-2000, 500-3000
-1041 [ S + CS + M -> CS2 + M              ]  1.71E-24    -2.420       0.0      3.17E+02    -4.300       0.0       2015GLA/MAR7277-7281 / 2015GLA/MAR7277-7281                  300-2800 / 1900-2800 
-1043 [ CH3 + SH + M -> CH3SH + M          ]  3.69E-29     0.0     -1280.0      1.21E-11     0.230     -70.0       Est. from CH3OH(1994HUM/OSE721-731) / Van de Vijver2015      TODO : Check the sensitivity
-1045 [ O + O2 + M -> O3 + M               ]  5.09E-27    -2.800       0.0      2.81E-12     0.          0.        
+1027 [ CH + M -> C + H + M                ]  3.16E-10     0.000   33700.0      1.00E-12     0.000       0.0                                                                    2500-3800, ??
+1029 [ C2H4 + M -> C2H2 + H2 + M          ]  5.80E-08     0.000   36000.0      7.95E+12     0.440   44700.0                             ??, 1200-2500
+1031 [ C2H6 + M -> C2H4 + H2 + M          ]  3.80E-07     0.000   34000.0      1.32E+15     0.000   36800.0                             1800-2500, 873-973
+1033 [ CH2OH + M -> H + H2CO + M          ]  7.48E+01    -2.50    1.72E04      4.53E+34    -7.11    2.22E04        1987TSA471/Xu2015    300-2500/500-3000
+1035 [ N2H3 + M -> N2H2 + H + M           ]  3.49E+38   -13.130   36825.4      7.95E+13     0.000   27463.0       From Moses / Hwang and Mebel (2003)                          ??, ??
+1037 [ HNCO + M -> CO + NH + M            ]  3.60E+04    -3.100   51300.0      6.00E+13     0.000   50200.0       1992TSA753-791 / 1992TSA753-791                              500-2500, 500-2500
+1039 [ N2O + M  -> N2 + O + M             ]  6.64E-10     0.000   28200.0      1.30E+11     0.000   30000.0       1992JOH/GLA917-923 / 1991TSA/HER609-663                      1000-3000, 700-2500
+1041 [ N2H + M -> N2 + H + M              ]  2.15E-10    -0.110    2510.0      1.30E+15    -0.530    3404.0       1995BOZ/DEA1097-1109 / 2005CAR/ROD2356-2363                  1000-2000, 500-3000
+1043 [ S + CS + M -> CS2 + M              ]  1.71E-24    -2.420       0.0      3.17E+02    -4.300       0.0       2015GLA/MAR7277-7281 / 2015GLA/MAR7277-7281                  300-2800 / 1900-2800 
+1045 [ CH3 + SH + M -> CH3SH + M          ]  3.69E-29     0.0     -1280.0      1.21E-11     0.230     -70.0       Est. from CH3OH(1994HUM/OSE721-731) / Van de Vijver2015      TODO : Check the sensitivity
+1047 [ O + O2 + M -> O3 + M               ]  5.09E-27    -2.800       0.0      2.81E-12     0.          0.        
 
 # 3-body reactions without high-pressure rates
 # id	# Reactions                         	A_0     	B_0     	C_0        	Ref 		  	    Temp												
 
-1047 [ O + C + M -> CO + M                ]   9.10E-22	-3.100  	2114.0
-1049 [ O + O + M -> O2 + M                ]	  5.21E-35	 0.		   -900.		1986TSA/HAM1087
-1051 [ O + N + M -> NO + M                ]	  5.46E-33	 0.	 	 	-155.		1973CAM/GRA607
-1053 [ H + S2 + M -> HS2 + M              ]	  3.17e-23	-2.84       838.		2002SEN/JAZ2439-2446    873-1423
-1055 [ HNCO + M -> H + NCO + M            ]   1.66E-07    0.        56400.0        1990WU/WAN3344        2120-2570
-1057 [ NH + M -> H + N + M                ]	  2.99E-10	 0.	 	 	3.76E04		1998DEP/FRI1474-1485    2500-3400
-1059 [ O + S + M -> SO + M                ]   1.50E-34	 0.0        -900.0      Meller(1979)(Moses2002) 
-1061 [ N_2D + M -> N + M                  ]   1.70e-14    0.0        0.0        1999HER1453-1483         200-300
-1063 [ S + CO + M -> COS + M              ]   4.47E-34    0.00      1510.0      Tsai2020(reverse_of_COS+MandC_0_from_H2O_recombination) 
-1065 [ HSO + M -> SO + H + M              ]   1.40E-08    0.000     29500.       1994TSU/YOK8419-8423    1100-2000	
+1049 [ O + C + M -> CO + M                ]   9.10E-22	-3.100  	2114.0
+1051 [ O + O + M -> O2 + M                ]	  5.21E-35	 0.		   -900.		1986TSA/HAM1087
+1053 [ O + N + M -> NO + M                ]	  5.46E-33	 0.	 	 	-155.		1973CAM/GRA607
+1055 [ H + S2 + M -> HS2 + M              ]	  3.17e-23	-2.84       838.		2002SEN/JAZ2439-2446    873-1423
+1057 [ HNCO + M -> H + NCO + M            ]   1.66E-07    0.        56400.0        1990WU/WAN3344        2120-2570
+1059 [ NH + M -> H + N + M                ]	  2.99E-10	 0.	 	 	3.76E04		1998DEP/FRI1474-1485    2500-3400
+1061 [ O + S + M -> SO + M                ]   1.50E-34	 0.0        -900.0      Meller(1979)(Moses2002) 
+1063 [ N_2D + M -> N + M                  ]   1.70e-14    0.0        0.0        1999HER1453-1483         200-300
+1065 [ C2H + M -> C2 + H + M              ]   2.92E+11	-5.160  	57400.0 
+1067 [ S + CO + M -> COS + M              ]   4.47E-34    0.00      1510.0      Tsai2020(reverse_of_COS+MandC_0_from_H2O_recombination) 
+1069 [ HSO + M -> SO + H + M              ]   1.40E-08    0.000     29500.       1994TSU/YOK8419-8423    1100-2000	
 	  				
 # special cases
 # id	# Reactions 
-1067 [  OH + CH3 + M -> CH3OH + M         ]    
+1071 [  OH + CH3 + M -> CH3OH + M         ]    
 
 # reverse stops
 # condensation
-1069 [  H2O -> H2O_l_s                    ] 
-1071 [  S8 -> S8_l_s                      ] 
+1073 [  H2O -> H2O_l_s                    ] 
+1075 [  S8 -> S8_l_s                      ] 
 
 # photo disscoiation (no reversals!) 		            # use sp to link br_index to RXXX
 # id	# Reactions                                     sp		br_index #(starting from 1)			
-1073 [ H2O -> H + OH                      ]       		H2O		1			 
-1075 [ H2O -> H2 + O_1                    ]             H2O		2	
-1077 [ H2O -> H + H + O                   ]             H2O		3      
-1079 [ CH4 -> CH3 + H                     ]       		CH4		1     
-1081 [ CH4 -> CH2_1 + H2                  ]             CH4		2	
-1083 [ CH4 -> CH2_1 + H + H               ]             CH4		3  
-1085 [ CH4 -> CH + H2 + H                 ] 			CH4		4
-1087 [ CH3 -> CH + H2                     ] 			CH3		1
-1089 [ CH3 -> CH2_1 + H                   ]             CH3		2
-1091 [ CO -> C + O                        ]				CO		1
-1093 [ H2 -> H + H                        ] 			H2		1
-1095 [ C2H2 -> C2H + H                    ]				C2H2	1
-1097 [ CO2 -> CO + O                      ]				CO2		1
-1099 [ CO2 -> CO + O_1                    ]             CO2     2
-1101 [ C2H4 -> C2H2 + H2	              ]				C2H4	1
-1103 [ C2H4 -> C2H2 + H + H	              ]				C2H4	2
-1105 [ C2H4 -> C2H3 + H		              ]				C2H4	3
-1107 [ C2H6 -> C2H4 + H2                  ]				C2H6	1
-1109 [ C2H6 -> C2H4 + H + H               ]				C2H6	2
-1111 [ C2H6 -> C2H2 + H2 + H2             ]				C2H6	3
-1113 [ C2H6 -> CH4 + CH2_1                ]				C2H6	4
-1115 [ C2H6 -> CH3 + CH3                  ]             C2H6	5
-1117 [ OH -> H + O                        ]             OH      1
-1119 [ HCO -> H + CO                      ]             HCO     1
-1121 [ H2CO -> H2 + CO                    ]             H2CO    1
-1123 [ H2CO -> H + HCO                    ]             H2CO    2
-1125 [ CH3OH -> CH3 + OH                  ]             CH3OH   1 
-1127 [ CH3OH -> H2CO + H2                 ]             CH3OH   2
-1129 [ CH3OH -> CH3O + H                  ]             CH3OH   3
-1131 [ CH3CHO -> CH4 + CO                 ]             CH3CHO  1
-1133 [ CH3CHO -> CH3 + HCO                ]             CH3CHO  2
-1135 [ N2 -> N + N			              ]				N2		1
-1137 [ NH3 -> NH2 + H		              ]				NH3		1
-1139 [ NH3 -> NH + H + H	              ]			    NH3		2
-1141 [ HCN -> H + CN		              ]             HCN		1
-1143 [ NO  -> N + O                       ]             NO      1
-1145 [ NO2 -> NO + O                      ]             NO2     1
-1147 [ N2H4 -> N2H3 + H                   ]             N2H4    1
-1149 [ HNCO -> NH + CO                    ]             HNCO    1
-1151 [ HNCO -> H + NCO                    ]             HNCO    2
-1153 [ HNO2 -> NO + OH                    ]             HNO2    1
-1155 [ HO2 -> O + OH                      ]             HO2     1  
-1157 [ SO -> S + O                        ]             SO      1
-1159 [ SO2 -> SO + O                      ]             SO2     1
-1161 [ SO2 -> S + O2                      ]             SO2     2
-1163 [ SH -> H + S                        ]             SH      1
-1165 [ H2S -> SH + H                      ]             H2S     1
-1167 [ S2 -> S + S                        ]             S2      1
-1169 [ COS -> CO + S                      ]             COS     1
-1171 [ CS -> C + S                        ]             CS      1 
-1173 [ CS2 -> CS + S                      ]             CS2     1
-1175 [ O2 -> O + O                        ]             O2      1					
-1177 [ O2 -> O + O_1                      ]             O2      2
-1179 [ C4H2 -> C2H2 + C2                  ]             C4H2    1
-1181 [ CH2 -> CH + H                      ]             CH2     1
-1183 [ C6H6 -> C6H5 + H                   ]             C6H6    1
-1185 [ C6H6 -> C3H3 + C3H3                ]             C6H6    2
-1187 [ CH3SH -> CH3S + H                  ]             CH3SH   1
-1189 [ CH3SH -> CH3 + SH                  ]             CH3SH   2
-1191 [ S4 -> S2 + S2                      ]             S4      1
-1193 [ CH3SCH3 -> CH3S + CH3              ]             CH3SCH3 1 
-1195 [ CH3S2CH3 -> CH3S + CH3S            ]             CH3S2CH3 1
-1197 [ O3 -> O2 + O                       ]              O3      1
-1199 [ O3 -> O2 + O_1                     ]              O3      2
+1077 [ H2O -> H + OH                      ]       		H2O		1			 
+1079 [ H2O -> H2 + O_1                    ]             H2O		2	
+1081 [ H2O -> H + H + O                   ]             H2O		3      
+1083 [ CH4 -> CH3 + H                     ]       		CH4		1     
+1085 [ CH4 -> CH2_1 + H2                  ]             CH4		2	
+1087 [ CH4 -> CH2_1 + H + H               ]             CH4		3  
+1089 [ CH4 -> CH + H2 + H                 ] 			CH4		4
+1091 [ CH3 -> CH + H2                     ] 			CH3		1
+1093 [ CH3 -> CH2_1 + H                   ]             CH3		2
+1095 [ CO -> C + O                        ]				CO		1
+1097 [ H2 -> H + H                        ] 			H2		1
+1099 [ C2H2 -> C2H + H                    ]				C2H2	1
+1101 [ CO2 -> CO + O                      ]				CO2		1
+1103 [ CO2 -> CO + O_1                    ]             CO2     2
+1105 [ C2H4 -> C2H2 + H2	              ]				C2H4	1
+1107 [ C2H4 -> C2H2 + H + H	              ]				C2H4	2
+1109 [ C2H4 -> C2H3 + H		              ]				C2H4	3
+1111 [ C2H6 -> C2H4 + H2                  ]				C2H6	1
+1113 [ C2H6 -> C2H4 + H + H               ]				C2H6	2
+1115 [ C2H6 -> C2H2 + H2 + H2             ]				C2H6	3
+1117 [ C2H6 -> CH4 + CH2_1                ]				C2H6	4
+1119 [ C2H6 -> CH3 + CH3                  ]             C2H6	5
+1121 [ OH -> H + O                        ]             OH      1
+1123 [ HCO -> H + CO                      ]             HCO     1
+1125 [ H2CO -> H2 + CO                    ]             H2CO    1
+1127 [ H2CO -> H + HCO                    ]             H2CO    2
+1129 [ CH3OH -> CH3 + OH                  ]             CH3OH   1 
+1131 [ CH3OH -> H2CO + H2                 ]             CH3OH   2
+1133 [ CH3OH -> CH3O + H                  ]             CH3OH   3
+1135 [ CH3CHO -> CH4 + CO                 ]             CH3CHO  1
+1137 [ CH3CHO -> CH3 + HCO                ]             CH3CHO  2
+1139 [ N2 -> N + N			              ]				N2		1
+1141 [ NH3 -> NH2 + H		              ]				NH3		1
+1143 [ NH3 -> NH + H + H	              ]			    NH3		2
+1145 [ HCN -> H + CN		              ]             HCN		1
+1147 [ NO  -> N + O                       ]             NO      1
+1149 [ NO2 -> NO + O                      ]             NO2     1
+1151 [ N2H4 -> N2H3 + H                   ]             N2H4    1
+1153 [ HNCO -> NH + CO                    ]             HNCO    1
+1155 [ HNCO -> H + NCO                    ]             HNCO    2
+1157 [ HNO2 -> NO + OH                    ]             HNO2    1
+1159 [ HO2 -> O + OH                      ]             HO2     1  
+1161 [ SO -> S + O                        ]             SO      1
+1163 [ SO2 -> SO + O                      ]             SO2     1
+1165 [ SO2 -> S + O2                      ]             SO2     2
+1167 [ SH -> H + S                        ]             SH      1
+1169 [ H2S -> SH + H                      ]             H2S     1
+1171 [ S2 -> S + S                        ]             S2      1
+1173 [ COS -> CO + S                      ]             COS     1
+1175 [ CS -> C + S                        ]             CS      1 
+1177 [ CS2 -> CS + S                      ]             CS2     1
+1179 [ O2 -> O + O                        ]             O2      1					
+1181 [ O2 -> O + O_1                      ]             O2      2
+1183 [ C4H2 -> C2H2 + C2                  ]             C4H2    1
+1185 [ CH2 -> CH + H                      ]             CH2     1
+1187 [ C6H6 -> C6H5 + H                   ]             C6H6    1
+1189 [ C6H6 -> C3H3 + C3H3                ]             C6H6    2
+1191 [ CH3SH -> CH3S + H                  ]             CH3SH   1
+1193 [ CH3SH -> CH3 + SH                  ]             CH3SH   2
+1195 [ S4 -> S2 + S2                      ]             S4      1
+1197 [ CH3SCH3 -> CH3S + CH3              ]             CH3SCH3 1 
+1199 [ CH3S2CH3 -> CH3S + CH3S            ]             CH3S2CH3 1
+1201 [ O3 -> O2 + O                       ]              O3      1
+1203 [ O3 -> O2 + O_1                     ]              O3      2

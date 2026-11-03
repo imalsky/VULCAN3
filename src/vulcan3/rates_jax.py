@@ -281,6 +281,31 @@ def fill_reverse_k(net: Network, k_fwd: jnp.ndarray, K_eq: jnp.ndarray) -> jnp.n
     return jnp.where(even_rev_m, k_rev, k_fwd)
 
 
+K_COLL = 1e-9  # cm3 s^-1: the collision limit of apply_collision_limit (parity ledger C30)
+
+
+def apply_collision_limit(net: Network, k: jnp.ndarray, M: jnp.ndarray) -> jnp.ndarray:
+    """Scale each thermal forward / reverse pair by c = min(1, K_COLL / q) (parity ledger C30; not in master).
+
+    q is the larger of the two directions' bimolecular-equivalent rates, k M^(three-body) M^(m - 2) with m the slot's
+    reactant molecules (stoichiometry, M excluded); a direction with m < 2 does not count. Both directions take the same
+    c, so their ratio (K_eq) and the equilibrium are unchanged. It only acts where a rate extrapolated from its fitted
+    range exceeds collision rates (the reverse of CH + M -> C + H + M and C2H + M -> C2 + H + M at low T).
+    """
+    m = np.asarray(net.reactant_stoich).sum(axis=1)
+    expo = np.asarray(net.is_three_body, float) + m - 2.0                  # power of M in q
+    idx = np.arange(net.nr + 1)
+    fwd = (idx % 2 == 1) & (idx + 1 < net.stop_rev_indx)                    # forward slots with a thermal reverse
+    elig = jnp.asarray(m >= 2)[:, None]
+    q = k * M[None, :] ** jnp.asarray(expo)[:, None]
+    r = jnp.where(elig, q / K_COLL, 0.0)
+    fi = np.flatnonzero(fwd)
+    rp = jnp.maximum(r[fi], r[fi + 1])                                      # the pair's larger ratio
+    c = 1.0 / jnp.maximum(rp, 1.0)
+    scale = jnp.ones_like(k).at[fi].set(c).at[fi + 1].set(c)
+    return k * scale
+
+
 def apply_remove_list(net: Network, k, remove_list: Iterable[int] | None):
     """Zero the rows in `remove_list`. No auto-pairing: passing a lone forward
     leaves its reverse intact.
@@ -309,7 +334,7 @@ def build_rate_array(
     use_lowT_caps: bool = False,
     rate_coeffs: dict | None = None,
 ) -> jnp.ndarray:
-    """End-to-end: forward(T) -> (lowT caps) -> reverse via Gibbs(T) -> remove.
+    """End-to-end: forward(T) -> (lowT caps) -> reverse via Gibbs(T) -> collision limit -> remove.
 
     `T`, `M` are (nz,) arrays; `nasa9_coeffs` is the (ni,2,10) thermo table
     (differentiable -- it flows through the Gibbs reverse path); `remove_list`
@@ -330,6 +355,7 @@ def build_rate_array(
     # `remove_list` is applied in its own pass, after the reverse fill, to
     # match master (no auto fwd/rev pairing).
     k = fill_reverse_k(net, k_fwd, K_eq)
+    k = apply_collision_limit(net, k, M)
     return apply_remove_list(net, k, remove_list)
 
 
