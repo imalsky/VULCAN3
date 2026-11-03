@@ -1081,9 +1081,11 @@ def _make_runner(
         # sol_clip would erase the truncation error of cells about to clip to
         # zero and let overly aggressive steps through (HD209 exercises this).
         # The trial mixing ratio of the mask is pre-clip too: the clip zeroes a
-        # species the step creates below pos_cut (parity ledger C29).
-        ymix_trial = sol / jnp.maximum(
-            jnp.sum(sol, axis=1, keepdims=True), UNDERFLOW_DENOM)
+        # species the step creates below pos_cut (parity ledger C29). Its
+        # denominator is the clip's: the gas species only when condensates exist.
+        gas_sum = jnp.sum(jnp.where(gas_indx_mask[None, :], sol, 0.0) if non_gas_present else sol,
+                          axis=1, keepdims=True)
+        ymix_trial = sol / jnp.maximum(gas_sum, UNDERFLOW_DENOM)
         delta = agg_delta_fn(sol, delta_arr, s.ymix, zero_bot_dyn, ymix_trial)
 
         # Acceptance uses the build-time rtol, never the carry's adapted one:
