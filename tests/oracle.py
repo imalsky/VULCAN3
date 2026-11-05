@@ -264,7 +264,7 @@ ORACLE_CODE_DELTAS: dict[str, tuple[tuple[str, str, str], ...]] = {
 
 
 # Rule 4b. Vendored data files VULCAN-JAX corrects (science_sources.yaml
-# `intentional_divergences` low_t_reverse_rates, n2d_thermo, sulfur_compose_masses):
+# `intentional_divergences` low_t_reverse_rates, n2d_thermo, hno3_thermo, sulfur_compose_masses):
 # copied from this tree into the COPY so index-by-index rate and step comparisons
 # run the same network on both sides. tools/audit_master_parity.py checks that
 # these files differ from upstream only in the declared rows.
@@ -273,6 +273,7 @@ ORACLE_DATA_DELTAS: tuple[str, ...] = (
     "thermo/SNCHO_photo_network.txt",
     "thermo/all_compose.txt",
     "thermo/NASA9/N_2D.txt",
+    "thermo/NASA9/HNO3.txt",
 )
 
 

@@ -118,6 +118,15 @@ supported_inputs:
       the audit's oracle comparison does not cover it; the hash pin is the
       guard. The oracle gets this file through ORACLE_DATA_DELTAS.
 
+  thermo/NASA9/HNO3.txt:
+    sha256: b1c247728c494e3b4ae5c71bb212e02fec516a27fe13b9cda2333facb09d10b9
+    oracle: null
+    diverges: [hno3_thermo]
+    note: >-
+      Upstream's last two coefficient sets, unchanged; its first set (below
+      200 K) is dropped (hno3_thermo). The hash pin is the guard. The oracle
+      gets this file through ORACLE_DATA_DELTAS.
+
   atm/atm_HD189_Kzz.txt:
     sha256: 5268e178e258ed008b67d693ae4e34dec30d87c79c7589a88ad2d37cc95dbcb9
     oracle: vulcan2_ncho
@@ -228,6 +237,19 @@ intentional_divergences:
       came out below ground-state N in G. VULCAN-JAX builds it from N:
       Cp = 2.5 R, H = H(N) + 230.017 kJ/mol (NIST 2D5/2, 2D3/2 levels,
       J-weighted), S = S(N) + R ln(10/4).
+    recorded_in: tests/oracle.py::ORACLE_DATA_DELTAS
+
+  hno3_thermo:
+    files: [thermo/NASA9/HNO3.txt]
+    reason: >-
+      Upstream's HNO3 file (Dorofeeva et al. 2003) holds three NASA-9 sets:
+      below 200 K, 200-1000 K and 1000-6000 K (each pair joins at its
+      breakpoint to round-off; the middle set gives H298 = -134.3 kJ/mol,
+      the file's HF298). The readers take the first two sets as the
+      T < 1000 K and T >= 1000 K fits, so HNO3 ran on the below-200 K fit
+      below 1000 K (Cp/R 19.8 instead of 8.67 at 500 K) and on the
+      200-1000 K fit above. VULCAN-JAX drops the below-200 K set. Only
+      NCHO_full_photo_network and SNCHO_DMS_photo_network_Tsai2024 carry HNO3.
     recorded_in: tests/oracle.py::ORACLE_DATA_DELTAS
 
   sulfur_compose_masses:
