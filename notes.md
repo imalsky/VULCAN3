@@ -179,8 +179,10 @@ Integrator
   force-accepted step keeps the previous state (C29).
 - Step control C29: the error estimate counts a species the step creates, a
   value below `nega_cut` rejects the step instead of being clipped, a retry
-  restarts from the previous ymix. Reason: master's rules let a wrong step
-  through or accept a rejected composition (Parity ledger C29).
+  restarts from the previous ymix. `nega_cut` is -1e4 cm^-3 against master's -1,
+  which only C29 made live: at -1 HD189 photo off stalls (notes "Forward mode").
+  Reason: master's rules let a wrong step through or accept a rejected
+  composition (Parity ledger C29).
 - `default.yaml` rtol 0.2, use_adapt_rtol false, count_max 1e4 (from 3938cf9):
   [M] rtol and count_max equal upstream's HD189 example
   (`vulcan_cfg_HD189.py:151`, `:136`); that example has no `use_adapt_rtol` line
@@ -343,7 +345,7 @@ A. Upstream errors corrected in the port
 | C30 | no rate may exceed collision rates: a rate fit extrapolated far from its range (the reverse of CH + M -> C + H + M is ~6e-5 cm3/s at 300 K, 1 bar) | `rates_jax.build_rate_array` | `apply_collision_limit`: each thermal pair scaled by c = min(1, 1e-9 cm3/s / q), q the larger direction's bimolecular-equivalent rate (k M^three-body M^(molecules - 2), two or more molecules); both directions scaled, so K_eq and the equilibrium are kept; `tests/test_collision_limit.py` | acts in NCHO on the CH + M and C2H + M reverses (CH below ~560-650 K, C2H below ~900 K at 1 bar, ~1830 K at 100 bar), NH + M (<= 4x, <= 351 K), and the forward fits of NCO + NH2 (<= 2x, >= 1880 K) and CN + C2H6 (<= 1.2x, >= 2890 K); SNCHO adds SH + O2 and S + CS + M, TiSNCHO C + SH and Ti + CN; the limit 1e-9 is a regularization ceiling, not a measured rate | no |
 | C31 | `C2H + C -> C3H + H` does not balance hydrogen (SNCHO_photo_network_C3 only) | `thermo/SNCHO_photo_network_C3.txt` row 861 | written `C2H + C -> C3 + H` (Hickson et al. 2016, the row's reference) | the file had no consumer that checks balance | no |
 | C32 | HNO3 NASA-9 file holds three sets (below 200 K, 200-1000 K, 1000-6000 K); the readers take the first two as the T < 1000 / T >= 1000 K fits | `thermo/NASA9/HNO3.txt` | the below-200 K set dropped; `hno3_thermo`, declared | Cp/R at 500 K 19.8 -> 8.67; HNO3 K_eq against FastChem +7.6 dex at 999 K, -0.42 at 3000 K before, within 0.03 dex after (maxichem's end-to-end tests, 2026-11-05); NCHO_full_photo and SNCHO_DMS only; no column rerun | no (the three pinned clones carry the same file) |
-| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_aggregate_delta_fn` masks where the old and the pre-clip trial ymix are both < mtol; `_clip_prologue` keeps values < nega_cut (step rejected); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`; a non-finite gas sum stays non-finite in the condensing clip; `steady_state_grad._clip_dead_mask` matches; `tests/test_step_control.py`; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes) | no |
+| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_aggregate_delta_fn` masks where the old and the pre-clip trial ymix are both < mtol; `_clip_prologue` keeps values < nega_cut (step rejected; cut -1e4 cm^-3, master's -1 never fires, notes "Forward mode"); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`; a non-finite gas sum stays non-finite in the condensing clip; `steady_state_grad._clip_dead_mask` matches; `tests/test_step_control.py`; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes) | no |
 | L1 | `diffdf_settling_vm` drops the `vm` drift at the bottom interface | `op.py:1845-1848` | consistent; `test_diffusion`; silent | one cell, `use_settling` only | no |
 | L2 | vm_branch setup `vm` rolls a 2-D array without `axis=0` | `vulcan3_vm_branch/build_atm.py:803` | `axis=0`; silent | 5e-10 at step 2 | no |
 | P18 | `sflux-GJ1214.txt` pads 133.75-181.55 nm with 464 zero rows | `atm/stellar_flux/sflux-GJ1214.txt` | upstream's regenerated file, `gj1214_upstream_regenerated`; declared | 0 shipped; regeneration lowers every flux 1.392x | bb9255b1 |
@@ -695,22 +697,26 @@ Reverse mode.
   re-converged central FD, top 1% response cells: median relative error 1.27e-4,
   max 1.71e-4 with the adaptive timestep differentiated; with its gradient
   stopped, median 0.388 with identical primals. `test_forward_jvp_integration`
-  runs that map at `nega_cut: -inf` (below): median 3.6e-4, max 4.5e-4 at C32 (2:35 on two
-  daw cores) [M]; single-step and reverse-mode checks do not cover this tangent.
-- C29 stops HD189 photo off (`default`, `use_photo: false`), at any `yconv` or `dt_max`
-  [M]: at the shipped `nega_cut` -1 it ends on its 3000-step cap at t 4.9e4 s, dt 14 s,
-  longdy 0.68, 2804 steps rejected (10000-step cap: t 7.9e4 s, longdy 0.26). CO at layer 148
-  (1e-8 bar) sits at exactly 0 and a step takes it to -0.079 dt, so dt past ~14 s rejects; the
-  moldiff operator is the source [I]: moldiff off certifies in 641 steps with no rejection.
-  `nega_cut` -1e3 still ends on the cap (dt 3.5e4 s, 373 rejected, NO and HNCO go next);
-  -1e6 and -inf certify in 793, as the code before C29 did. HD189_vulcan3 photo off
-  stalls alike (dt 5.8 s, 1998 rejected). HD209 and W39b photo off certify with no
-  rejection (283, 153 steps), and C29's code alone is bitwise on the photo-on gates. The planner's
-  photo-off path certifies too: WASP-39 b, HD 209458 b, HD 189733 b and WASP-107 b, moldiff on
-  and off, its 2025 and sulfur-free networks, 16 of 16 in 121-181 steps (nz 100). So the JVP
-  test and the `adj_state_hd189` fixture set `-inf`; a fixture built at -1 sat up to 1.04 dex
-  from the certified column (NH3, 1e-7 bar), and its builder now refuses an uncertified run.
-  The shipped rule stays until decided (todo).
+  runs that map: median 3.6e-4, max 4.5e-4 at C32 (2:35 on two daw cores) [M]; single-step and reverse-mode checks do not cover this tangent.
+- HD189 photo off and `nega_cut` [M]: near the top the gas is atomic H, so CO (m/mu 24) falls out faster than one layer resolves
+  (cell Peclet near 2). The central drift (`jax_step.compute_diff_grav`, `op.py:1580`) then takes CO out of layer 148 (1.2e-8 bar,
+  n 1.45e10 cm^-3) in proportion to what layer 147 holds, so a layer holding 0 falls at 0.115 cm^-3/s, and its worst trial on the way
+  to the fixed point is -1075 cm^-3, CO alone. VULCAN 2's clip hides it. Under C29 the first cut of -1 stopped this column on
+  its step cap at dt 14 s, and -1e3 missed by under 10% (at -1e3 only CO@148 fell below the cut: 371 of 371 first trials). The cut
+  is -1e4 for this (Parity ledger C29): `default` photo off certifies with no negativity rejection, 793 steps at
+  `yconv` 1e-3 and 609 at the shipped tolerances; HD189_vulcan3 photo off 632 at the shipped tolerances (at 1e-3 it ends on its
+  step cap, with no negativity rejection). The state is bitwise the `-inf` state the fixture and the JVP test were built on.
+  The operator's flaw remains: CO stays 0 at layer 148 against 3.6e-7 at nz 600 (no stall and no C<0 cell there; moldiff off
+  certifies in 641), HD189 photo on holds the same zero cell behind a rate 7 orders smaller, and the clip adds mass there. Upper-cell
+  drift: "Ideas not adopted". Against -1 the shipped runs keep every array bit for bit with their step counts (1495, 1206, 1084,
+  HD189_vulcan3 4057); only `parameter/nega_y` moves (HD189 17 to 6.7e4, W39b unchanged), a running sum of clipped negatives that
+  includes trials the estimate rejects. The runner's lowered program differs in that one constant. The 0-D case behind C29 (VULCAN-0D,
+  300 K, 35.5 bar, atomic-H start, CH4 0.66 dex) did not reproduce to its end on this code: on the current NCHO network CH4 ends at
+  3.40e-7 under VULCAN 2's step control and under every cut from -1 to -1e8, so there is no error left to catch; on its own 53-species
+  network the corrected estimate idles at `dt_min`. Its first trials there reach CH4 -5.5e13 to -1.56e5 (dt 1.2e-14 s, just before
+  the stored run's exact 0), all past -1e4. Every one also fails the estimate, and -1 and -1e4 decide all 1038 trials compared alike.
+  So -1e4 keeps the guard by inference [I], not by a rerun. The planner's photo-off path certifies too: WASP-39 b, HD 209458 b, HD 189733 b and WASP-107 b,
+  moldiff on and off, its 2025 and sulfur-free networks, 16 of 16 in 121-181 steps (nz 100).
 - End-to-end `jvp` on HD189 photo-on vs re-converged FD: better than 0.1% on
   responding levels, correlation > 0.9999.
 - Photo-off W39b (retrieval `config.WIDE`) was a primal problem: a marginally
@@ -961,6 +967,10 @@ network drops) is not ported: the seed is ExoGibbs over the network's elements.
 
 ## Ideas not adopted
 
+- Upper-cell drift where the central stencil turns non-positive (cell Peclet above 0.75), for HD189's CO at layer 148: certifies
+  photo off at a cut of -1 in 813 steps, CO 2.92e-7 at 1.185e-8 bar against 3.56e-7 at nz 600, HD189 photo on 1495 steps; the layers
+  beside it stay about 0.5 dex off, and it departs from VULCAN 2's operator with its tangent unmeasured [M, runtime patch, HD189
+  only]. Rejected for now by the maintainer in favour of the looser `nega_cut`.
 - Cross-step Jacobian / LU reuse (legal in a W-method): LU+J k=5 gives 3.2-4.3x
   fewer factorizations but +8.7 / +29.3 / +37.9% steps and W39b parity 1.1e-9 ->
   1e-3..6e-3. Rejected by the maintainer; re-open only with a measured net GPU
@@ -981,6 +991,8 @@ network drops) is not ported: the seed is ExoGibbs over the network's elements.
 
 ## Do not retry
 
+- `nega_cut` as a share of the layer (`y < -1e-6 n`): it certifies HD189 photo off, but it is -8.6e14 cm^-3 at the 0-D atomic-H start's
+  n, past every CH4 trial of that start (-5.5e13 to -1.56e5) [M]. An absolute -1e3 ends on the step cap, -1100 clears HD189's -1075 by 2%.
 One line each, with the measured reason.
 
 Adjoint and tangents

@@ -18,16 +18,12 @@ def _check_gradient():
     from vulcan3.outer_loop import OuterLoop
     from vulcan3.state import RunState
 
-    # nega_cut: photo off, the zero CO cell at layer 148 falls ~0.08 cm^-3/s, so the shipped -1 rejects every step past
-    # dt ~14 s and the column never leaves t ~1e5 s (notes "Forward mode"). At -inf every negative clips, the map this
-    # bar was measured on; the column certifies at 793 steps with no rejection.
     cfg = load_config(
         "default",
         use_photo=False,
         use_print_prog=False,
         yconv_cri=1e-3,
         yconv_min=1e-3,
-        nega_cut=float("-inf"),
     )
     integ = OuterLoop(Ros2JAX(), Output(), cfg=cfg)
     state0, static = integ.prepare_runstate(RunState.with_pre_loop_setup(cfg))

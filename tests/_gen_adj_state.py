@@ -77,7 +77,6 @@ def build_hd189(out_dir: Path) -> Path:
     cfg.yconv_cri = 1e-3
     cfg.count_max = 3000
     cfg.runtime = 1e14
-    cfg.nega_cut = float("-inf")  # stalls at the shipped -1 (notes "Forward mode")
     import vulcan3.legacy_io as op
     from vulcan3 import chem as chem_mod, composition, network as net_mod, op_jax, outer_loop
     from vulcan3.jax_step import jax_ros2_step, make_atm_static

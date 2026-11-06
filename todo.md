@@ -7,7 +7,6 @@ Evidence for these items is in `notes.md` (this repo's, unless another repo is n
 3. [decision] The arm64 full tier fails `test_fast_on_real_w39b_blocks[fast]`: on the W39b 2025-network fixture the matrix-free step's primal under `jvp` is not bitwise the plain step's (bitwise on x86-64).
 4. [owed] Re-baseline after the C25-C29 data and step-control fixes: the arm64 fixture manifest, the arm64 gate reading and the oracle comparisons (`oracle.yml`).
 5. [owed] Rebuild the CUDA kernel on the NAS and check `ffi` on a GH200: the code cleanup changed the kernel sources, and its proof of `ffi` ran on CPU only.
-6. [decision] Since C29's negativity rejection, HD189 photo off cannot certify at the shipped `nega_cut`: keep the rule or change the cut.
 
 ## 1. vulcan3 on PyPI
 
@@ -69,15 +68,3 @@ mode's transpose was removed; the optimized CPU program stayed equal apart from 
 was not run. Needs the maintainer's NAS login. Steps, after the commits are pushed: `git pull`,
 `python -m vulcan3.solver_fast --cuda`, then the kernel test job on a GH200. Done when
 the rebuilt library loads and the job passes.
-
-## 6. HD189 photo off under C29
-
-Evidence: notes "Forward mode". No shipped photo-on number moves: C29's code alone is bitwise
-on the three gates. The column is a test and fixture setup, and any user's `default` with
-`use_photo: false`: it ends on its step cap. Grepped `use_photo` false in vulcan-retrieval's
-and jwst-transit-authority's `src`: the planner's GUI offers it, with moldiff on or off, and
-its columns certify (notes). Choose: (a) keep the rule, photo-off HD189 needs `nega_cut: -inf` as the tests set it; (b) a
-looser shipped cut (-1e6 removes every rejection on this column); (c) exempt or scale by cell,
-which is not built: `-1e3` shows trace cells with VMR 1e-15 stop it next. (b) and (c) touch a
-settled item and need maxichem's 0-D case re-run, the case that motivated C29. Done when decided
-and recorded in the "Parity ledger" C29 row.

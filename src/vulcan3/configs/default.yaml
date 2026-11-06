@@ -145,7 +145,8 @@ atol: 0.1
 mtol: 1.0e-22
 mtol_conv: 1.0e-20
 pos_cut: 0
-nega_cut: -1.0
+# cm^-3, absolute: a trial below it rejects the step. HD189 photo off reaches -1075 (notes "Forward mode").
+nega_cut: -1.0e+4
 loss_eps: 0.1
 yconv_cri: 0.01
 slope_cri: 0.0001
