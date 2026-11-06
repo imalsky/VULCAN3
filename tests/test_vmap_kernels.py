@@ -20,17 +20,16 @@ from _helpers import relerr
 VMAP_RTOL = 1e-12
 
 
-@pytest.mark.parametrize(
-    "kernel", ["chem_rhs_codegen", "chem_jac_analytical", "compute_tau_jax"]
-)
+@pytest.mark.parametrize("kernel", ["chem_rhs_codegen", "chem_jac_analytical", "compute_tau_jax"])
 def test_hd189_kernel_vmap_matches_single_calls(hd189_state, kernel) -> None:
     """`vmap(kernel)` over perturbed HD189 columns agrees with single calls."""
     import jax
     import jax.numpy as jnp
+
     import vulcan3.chem as chem_mod
-    import vulcan3.chem_funs as chem_funs
     import vulcan3.network as net_mod
     import vulcan3.photo as photo_mod
+    from vulcan3 import chem_funs
     from vulcan3.config import default_config
 
     y = jnp.asarray(hd189_state.var.y, dtype=jnp.float64)

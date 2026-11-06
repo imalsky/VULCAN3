@@ -5,7 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
-import vulcan3.op_jax as op_jax
+
+from vulcan3 import op_jax
 from vulcan3.config import default_config
 
 vulcan_cfg = default_config()
@@ -15,14 +16,13 @@ RTOL = 1e-14  # the wrapper and the direct integral use the same arithmetic
 
 def _manual_jion(aflux, cross, split, dbin1, dbin2):
     left = np.sum(aflux[:, :split] * cross[:split], axis=1) * dbin1
-    left -= (
-        0.5 * (aflux[:, 0] * cross[0] + aflux[:, split - 1] * cross[split - 1]) * dbin1
-    )
+    left -= 0.5 * (aflux[:, 0] * cross[0] + aflux[:, split - 1] * cross[split - 1]) * dbin1
     right = np.sum(aflux[:, split:] * cross[split:], axis=1) * dbin2
     right -= 0.5 * (aflux[:, split] * cross[split] + aflux[:, -1] * cross[-1]) * dbin2
     return left + right
 
 
+# size-limit-ok: one oracle script, run in a subprocess on a copy of master
 def main() -> int:
     aflux = np.array(
         [
@@ -60,6 +60,7 @@ def main() -> int:
     # PhotoStaticInputs so its lazy `_ensure_photo_static` doesn't try to
     # read a full pre-loop state off the SimpleNamespace.
     import jax.numpy as jnp
+
     from vulcan3.state import PhotoStaticInputs
 
     nbin = aflux.shape[1]

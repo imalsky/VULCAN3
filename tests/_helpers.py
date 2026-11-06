@@ -34,8 +34,9 @@ def set_cfg(**overrides):
 
 
 def load_tpk_state():
-    """`(var, atm, make_atm)` after f_pico and load_TPK (and sp_sat under
-    use_condense) on the process default config, in the legacy containers.
+    """`(var, atm, make_atm)` after f_pico and load_TPK (and sp_sat under use_condense).
+
+    On the process default config, in the legacy containers.
 
     Partial setup: no rates, EQ seed or photo reads.
     """
@@ -54,7 +55,7 @@ def load_tpk_state():
 
 
 def fast_cfg(**overrides):
-    """The process default config, pinned for a fast, quiet, isothermal run.
+    """Return the process default config, pinned for a fast, quiet, isothermal run.
 
     Mutates and returns the shared cached `default_config()` object; callers
     rely on the mutation being visible to later `default_config()` readers.
@@ -63,8 +64,7 @@ def fast_cfg(**overrides):
     pinned: test_hybrid_vm_mol tests them, so each caller sets them
     explicitly.
     """
-    set_cfg(count_min=1, use_print_prog=False, use_photo=False, use_ion=False,
-            atm_type="isothermal", Kzz_prof="Pfunc")
+    set_cfg(count_min=1, use_print_prog=False, use_photo=False, use_ion=False, atm_type="isothermal", Kzz_prof="Pfunc")
     return set_cfg(**overrides)
 
 
@@ -110,28 +110,30 @@ def make_pco(P_b, P_t, nz):
 
 
 def tpk_cfg(**overrides):
-    """Partial config for `atm_setup.load_TPK`: isothermal, constant Kzz, the
-    HD189 radius and g = 2140 cm/s^2. `overrides` replace or add fields."""
+    """Partial config for `atm_setup.load_TPK`: isothermal, constant Kzz, the HD189 radius and g = 2140 cm/s^2.
+
+    `overrides` replace or add fields.
+    """
     from vulcan3._paths import PACKAGE_ROOT
 
-    fields = dict(
-        atm_type="isothermal",
-        Kzz_prof="const",
-        vz_prof="const",
-        use_Kzz=True,
-        use_vz=False,
-        const_Kzz=1e10,
-        const_vz=0.0,
-        K_max=1e5,
-        K_p_lev=0.1,
-        Tiso=1234.0,
-        P_b=1e9,
-        Rp=HD189_RP_CM,
-        Mp=mass_for_gravity(2140.0, HD189_RP_CM),
-        para_anaTP=[120.0, 1500.0, 0.1, 0.02, 1.0, 1.0],
-        atm_file=str(PACKAGE_ROOT / "atm" / "atm_HD189_Kzz.txt"),
-        vul_ini="output/",
-    )
+    fields = {
+        "atm_type": "isothermal",
+        "Kzz_prof": "const",
+        "vz_prof": "const",
+        "use_Kzz": True,
+        "use_vz": False,
+        "const_Kzz": 1e10,
+        "const_vz": 0.0,
+        "K_max": 1e5,
+        "K_p_lev": 0.1,
+        "Tiso": 1234.0,
+        "P_b": 1e9,
+        "Rp": HD189_RP_CM,
+        "Mp": mass_for_gravity(2140.0, HD189_RP_CM),
+        "para_anaTP": [120.0, 1500.0, 0.1, 0.02, 1.0, 1.0],
+        "atm_file": str(PACKAGE_ROOT / "atm" / "atm_HD189_Kzz.txt"),
+        "vul_ini": "output/",
+    }
     fields.update(overrides)
     return SimpleNamespace(**fields)
 
@@ -150,29 +152,37 @@ def load_adj_state(fixture: str, cfg_name: str):
     from vulcan3.jax_step import AtmStatic
 
     d = np.load(ROOT / "tests" / "data" / fixture)
-    atm = AtmStatic(**{
-        f: bool(d[f"atmbool__{f}"]) if f"atmbool__{f}" in d else jnp.asarray(d[f"atm__{f}"])
-        for f in AtmStatic._fields
-    })
+    atm = AtmStatic(
+        **{
+            f: bool(d[f"atmbool__{f}"]) if f"atmbool__{f}" in d else jnp.asarray(d[f"atm__{f}"])
+            for f in AtmStatic._fields
+        }
+    )
     net = chem_mod.to_jax(net_mod.parse_network(load_config(cfg_name).network))
     return atm, net, jnp.asarray(d["y_star"]), jnp.asarray(d["k_arr"])
 
 
 def run_self(test_file, *args, network: str, atom_list: str, cwd) -> None:
-    """Re-run `test_file` as a single-threaded script with `network` and
-    `atom_list` selected (both are import-frozen); assert a clean exit."""
-    env = dict(os.environ, VULCAN3_NETWORK=network,
-               VULCAN3_ATOM_LIST=atom_list, OMP_NUM_THREADS="1")
-    result = subprocess.run([sys.executable, str(Path(test_file).resolve()), *args],
-                            cwd=cwd, env=env, text=True, capture_output=True,
-                            timeout=SELF_RUN_TIMEOUT_S)
+    """Re-run `test_file` as a single-threaded script with `network` and `atom_list` selected.
+
+    (both are import-frozen); assert a clean exit.
+    """
+    env = dict(os.environ, VULCAN3_NETWORK=network, VULCAN3_ATOM_LIST=atom_list, OMP_NUM_THREADS="1")
+    result = subprocess.run(
+        [sys.executable, str(Path(test_file).resolve()), *args],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=SELF_RUN_TIMEOUT_S,
+    )
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def run_child(child_src: str, *, network: str, label: str, timeout: int = 600,
-              platforms: str = "cpu"):
-    """Run `child_src` in a fresh interpreter with `network` selected, on the
-    JAX `platforms` (CPU unless the caller checks a GPU path).
+def run_child(child_src: str, *, network: str, label: str, timeout: int = 600, platforms: str = "cpu"):
+    """Run `child_src` in a fresh interpreter with `network` selected.
+
+    On the JAX `platforms` (CPU unless the caller checks a GPU path).
 
     A cold start is required: the network is import-frozen, so it can only be
     chosen through the environment before `vulcan3` is first imported.
@@ -194,15 +204,13 @@ def run_child(child_src: str, *, network: str, label: str, timeout: int = 600,
         check=False,  # the assert below reports stdout/stderr on failure
     )
     assert res.returncode == 0, (
-        f"{label} subprocess exited {res.returncode}\n"
-        f"--- stdout ---\n{res.stdout}\n--- stderr ---\n{res.stderr}"
+        f"{label} subprocess exited {res.returncode}\n--- stdout ---\n{res.stdout}\n--- stderr ---\n{res.stderr}"
     )
     return res
 
 
 def stack_integ_states(states):
-    """Stack single-profile `JaxIntegState`s (same nz / ni / network) along a
-    leading batch axis."""
+    """Stack single-profile `JaxIntegState`s (same nz / ni / network) along a leading batch axis."""
     import jax
     import jax.numpy as jnp
 
@@ -217,15 +225,17 @@ def unstack_integ_states(batched, n):
 
 
 def stack_atm_statics(atms):
-    """Stack single-profile `AtmStatic`s for `run_batch`: the array fields gain
-    a batch axis; the toggle flags stay scalars and must agree."""
+    """Stack single-profile `AtmStatic`s for `run_batch`: the array fields gain a batch axis.
+
+    The toggle flags stay scalars and must agree.
+    """
     import jax.numpy as jnp
+
     from vulcan3.outer_loop import _ATM_ARRAY_FIELDS
 
     first = atms[0]
     flags = [f for f in first._fields if f not in _ATM_ARRAY_FIELDS]
     assert all(getattr(a, f) == getattr(first, f) for a in atms[1:] for f in flags)
-    return first._replace(**{
-        f: jnp.stack([jnp.asarray(getattr(a, f)) for a in atms], axis=0)
-        for f in _ATM_ARRAY_FIELDS
-    })
+    return first._replace(
+        **{f: jnp.stack([jnp.asarray(getattr(a, f)) for a in atms], axis=0) for f in _ATM_ARRAY_FIELDS}
+    )

@@ -13,8 +13,8 @@ relies on.
 from types import SimpleNamespace
 
 import jax
-import numpy as np
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 from vulcan3 import conden
@@ -57,7 +57,8 @@ def _profiles():
 
     Two pressure decades only: with a deep column the 1/p factor swamps the
     Clausius-Clapeyron drop and the sat-mix minimum pins to the bottom layer,
-    which would make the cold-trap assertions vacuous."""
+    which would make the cold-trap assertions vacuous.
+    """
     rng = np.random.default_rng(7)
     pco = np.logspace(6, 4, NZ)  # dyne/cm^2
     T_iso = np.full(NZ, 230.0)
@@ -94,7 +95,7 @@ def _oracle(spec, T, pco, n_0, Dzz):
     """Master-form conden arrays: op.conden rate inputs + _apply_condense sat_mix."""
     out = {}
     Dg_rows, sat_rows = [], []
-    for name, col in zip(spec.gas_names, spec.conden_sp_idx):
+    for name, col in zip(spec.gas_names, spec.conden_sp_idx, strict=False):
         Dg_rows.append(np.insert(Dzz[:, col], 0, Dzz[0, col]))
         sat_n = _sat_p_np(name, T) / kb / T
         if name == "H2O":
@@ -135,12 +136,13 @@ def test_make_conden_spec_metadata(spec):
     assert spec.coeff_per_re[0] == 0.0
     assert spec.coeff_per_re[1] == 0.0
     m_s8 = conden.GAS_MASS_G_PER_MOL["S8"] / Navo
-    assert spec.coeff_per_re[2] == pytest.approx(
-        m_s8 / (RHO_P["S8_l_s"] * R_P["S8_l_s"] ** 2), rel=1e-15
-    )
-    assert spec.h2o_active and spec.nh3_active
-    assert spec.h2o_idx == 0 and spec.h2o_l_s_idx == 3
-    assert spec.nh3_idx == 1 and spec.nh3_l_s_idx == 4
+    assert spec.coeff_per_re[2] == pytest.approx(m_s8 / (RHO_P["S8_l_s"] * R_P["S8_l_s"] ** 2), rel=1e-15)
+    assert spec.h2o_active
+    assert spec.nh3_active
+    assert spec.h2o_idx == 0
+    assert spec.h2o_l_s_idx == 3
+    assert spec.nh3_idx == 1
+    assert spec.nh3_l_s_idx == 4
     assert spec.humidity == HUMIDITY
     assert spec.fix_names == ("H2O", "H2O_l_s", "S8")
 
@@ -150,12 +152,15 @@ def test_make_conden_spec_inactive_species_skipped():
     cfg, var, atm = _fake_setup(condense_sp=("S8",), use_relax=(), fix_species=())
     sp = conden.make_conden_spec(cfg, var, atm, SPECIES_IDX)
     assert sp.gas_names == ("S8",)
-    assert not sp.h2o_active and not sp.nh3_active
+    assert not sp.h2o_active
+    assert not sp.nh3_active
 
 
 def test_builder_matches_upstream_formulas(spec):
-    """Machine-precision parity with the independent NumPy oracle, both on an
-    isothermal and a non-isothermal column."""
+    """Machine-precision parity with the independent NumPy oracle.
+
+    Both on an isothermal and a non-isothermal column.
+    """
     T_iso, T_slope, pco, n_0, Dzz = _profiles()
     for T in (T_iso, T_slope):
         prof = conden.build_conden_profile(spec, T, pco, n_0, Dzz)
@@ -166,9 +171,11 @@ def test_builder_matches_upstream_formulas(spec):
 
 
 def test_temperature_moves_saturation_and_boundaries(spec):
-    """Warming the column raises every saturation number density and moves the
-    supersaturation boundary; the NH3 cold-trap argmin follows the T minimum."""
-    T_iso, T_slope, pco, n_0, Dzz = _profiles()
+    """Warming the column raises every saturation number density and moves the supersaturation boundary.
+
+    The NH3 cold-trap argmin follows the T minimum.
+    """
+    _T_iso, T_slope, pco, n_0, Dzz = _profiles()
     p_cold = conden.build_conden_profile(spec, T_slope, pco, n_0, Dzz)
     p_warm = conden.build_conden_profile(spec, T_slope + 15.0, pco, n_0, Dzz)
     # d(sat_n)/dT > 0 for all three condensables in this regime
@@ -186,9 +193,7 @@ def test_temperature_moves_saturation_and_boundaries(spec):
     # Cold-trap index: mid-column T minimum vs a monotonically colder top.
     T_mono = np.linspace(260.0, 160.0, NZ)
     top_slope = int(p_cold.nh3_conden_top)
-    top_mono = int(
-        conden.build_conden_profile(spec, T_mono, pco, n_0, Dzz).nh3_conden_top
-    )
+    top_mono = int(conden.build_conden_profile(spec, T_mono, pco, n_0, Dzz).nh3_conden_top)
     assert top_slope != top_mono
 
 
@@ -207,9 +212,7 @@ def test_jit_and_vmap_consistency(spec):
             if f == "nh3_conden_top":
                 np.testing.assert_array_equal(a, b, err_msg=f"{f} {label}")
             else:
-                np.testing.assert_allclose(
-                    a, b, rtol=RTOL, atol=0.0, err_msg=f"{f} {label}"
-                )
+                np.testing.assert_allclose(a, b, rtol=RTOL, atol=0.0, err_msg=f"{f} {label}")
 
     eager = build(jnp.asarray(T_slope))
     jitted = jax.jit(build)(jnp.asarray(T_slope))
@@ -220,18 +223,17 @@ def test_jit_and_vmap_consistency(spec):
     for lane, T in enumerate((T_iso, T_slope)):
         solo = build(jnp.asarray(T))
         lane_prof = conden.CondenProfile(
-            *[
-                jnp.asarray(np.asarray(getattr(batched, f))[lane])
-                for f in conden.CondenProfile._fields
-            ]
+            *[jnp.asarray(np.asarray(getattr(batched, f))[lane]) for f in conden.CondenProfile._fields]
         )
         _assert_profile_close(lane_prof, solo, f"vmap lane {lane}")
 
 
 def test_jvp_matches_finite_difference(spec):
-    """Forward-mode d(sat quantities)/dT against centered finite differences,
-    away from the phase-boundary kinks (T in 160-250 K; H2O kink at 273 K,
-    S8 break at 413 K). The integer cold-trap index carries no tangent."""
+    """Forward-mode d(sat quantities)/dT against centered finite differences.
+
+    Away from the phase-boundary kinks (T in 160-250 K. H2O kink at 273 K, S8 break at 413 K). The integer cold-trap
+    index carries no tangent.
+    """
     _, T_slope, pco, n_0, Dzz = _profiles()
     T0 = jnp.asarray(T_slope)
     dT = jnp.ones_like(T0)
@@ -245,7 +247,7 @@ def test_jvp_matches_finite_difference(spec):
     plus = smooth_outputs(T0 + eps)
     minus = smooth_outputs(T0 - eps)
     for got, hi, lo, name in zip(
-        tangents, plus, minus, ("sat_n_per_re", "h2o_sat", "nh3_sat", "fix_sat_mix")
+        tangents, plus, minus, ("sat_n_per_re", "h2o_sat", "nh3_sat", "fix_sat_mix"), strict=False
     ):
         fd = (np.asarray(hi) - np.asarray(lo)) / (2 * eps)
         got = np.asarray(got)
@@ -254,14 +256,14 @@ def test_jvp_matches_finite_difference(spec):
         # fix_sat_mix rows clipped at 1.0 have exactly-zero derivative on both
         # sides; compare only where FD is nonzero.
         mask = fd != 0.0
-        np.testing.assert_allclose(
-            got[mask] / scale[mask], fd[mask] / scale[mask], rtol=5e-6, err_msg=name
-        )
+        np.testing.assert_allclose(got[mask] / scale[mask], fd[mask] / scale[mask], rtol=5e-6, err_msg=name)
 
 
 def test_zero_reaction_and_inactive_blocks_shapes():
-    """use_condense with no live reactions/relax blocks packs zero-size or
-    zero-filled arrays with stable shapes (the runner still builds a branch)."""
+    """use_condense with no live reactions/relax blocks packs zero-size or zero-filled arrays with stable shapes.
+
+    (the runner still builds a branch).
+    """
     cfg, var, atm = _fake_setup(condense_sp=(), use_relax=(), fix_species=())
     sp = conden.make_conden_spec(cfg, var, atm, SPECIES_IDX)
     T_iso, _, pco, n_0, Dzz = _profiles()

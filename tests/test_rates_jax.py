@@ -9,10 +9,10 @@ silently wreck every T-profile / rate-uncertainty sensitivity.
 
 from __future__ import annotations
 
-import numpy as np
-import pytest
 import jax
 import jax.numpy as jnp
+import numpy as np
+import pytest
 
 RTOL = 1e-12  # the same rate expression evaluated two ways
 
@@ -22,8 +22,8 @@ def test_rate_build_tangents_are_finite(hd189_state):
 
     vulcan_cfg = default_config()
     from vulcan3 import network as net_mod, rates_jax
-    from vulcan3.gibbs import load_nasa9
     from vulcan3._paths import resolve_data_path
+    from vulcan3.gibbs import load_nasa9
 
     atm = hd189_state.atm
     network = net_mod.parse_network(str(resolve_data_path(vulcan_cfg.network)))
@@ -36,9 +36,7 @@ def test_rate_build_tangents_are_finite(hd189_state):
     # Forward-mode AD w.r.t. a uniform T shift must be finite (this is the whole
     # point: T -> k on the graph).
     def k_of_T(Tj):
-        return rates_jax.build_rate_array(
-            network, Tj, jnp.asarray(M), nasa9, remove_list=remove_list
-        )
+        return rates_jax.build_rate_array(network, Tj, jnp.asarray(M), nasa9, remove_list=remove_list)
 
     _, dk = jax.jvp(k_of_T, (jnp.asarray(T),), (jnp.ones_like(jnp.asarray(T)),))
     assert bool(jnp.all(jnp.isfinite(dk))), "non-finite jvp of rates_jax wrt T"
@@ -58,29 +56,19 @@ def test_rate_build_tangents_are_finite(hd189_state):
             use_lowT_caps=True,
         )
 
-    kf = rates_jax.compute_forward_k(
-        network, jnp.asarray(T_cool), jnp.asarray(M)
-    )
-    kf_capped = rates_jax.apply_lowT_caps(
-        network, kf, jnp.asarray(T_cool), jnp.asarray(M)
-    )
+    kf = rates_jax.compute_forward_k(network, jnp.asarray(T_cool), jnp.asarray(M))
+    kf_capped = rates_jax.apply_lowT_caps(network, kf, jnp.asarray(T_cool), jnp.asarray(M))
     changed = np.nonzero(np.any(np.asarray(kf_capped) != np.asarray(kf), axis=1))[0]
     assert changed.size >= 1, "lowT caps did not fire at 250 K"
 
-    _, dkc = jax.jvp(
-        k_capped_of_T, (jnp.asarray(T_cool),), (jnp.ones_like(jnp.asarray(T_cool)),)
-    )
+    _, dkc = jax.jvp(k_capped_of_T, (jnp.asarray(T_cool),), (jnp.ones_like(jnp.asarray(T_cool)),))
     assert bool(jnp.all(jnp.isfinite(dkc))), "non-finite jvp of capped rates_jax wrt T"
 
     # Arrhenius rate-coefficient overrides: passing the network's own `a` matches
     # the default build, and a jvp w.r.t. `a` is finite (rate-uncertainty path).
     a0 = jnp.asarray(np.asarray(network.a, dtype=np.float64))
-    k_ovr = np.asarray(
-        rates_jax.compute_forward_k(network, jnp.asarray(T), jnp.asarray(M), a=a0)
-    )
-    k_def = np.asarray(
-        rates_jax.compute_forward_k(network, jnp.asarray(T), jnp.asarray(M))
-    )
+    k_ovr = np.asarray(rates_jax.compute_forward_k(network, jnp.asarray(T), jnp.asarray(M), a=a0))
+    k_def = np.asarray(rates_jax.compute_forward_k(network, jnp.asarray(T), jnp.asarray(M)))
     onz = np.abs(k_def) > 0
     assert np.abs(k_ovr[onz] - k_def[onz]).max() / np.abs(k_def[onz]).max() < RTOL
 
@@ -95,24 +83,19 @@ def test_rate_build_tangents_are_finite(hd189_state):
         )
 
     _, dka = jax.jvp(k_of_a, (a0,), (a0,))
-    assert bool(jnp.all(jnp.isfinite(dka))), (
-        "non-finite jvp of rates_jax wrt Arrhenius a"
-    )
+    assert bool(jnp.all(jnp.isfinite(dka))), "non-finite jvp of rates_jax wrt Arrhenius a"
 
 
-@pytest.mark.parametrize(
-    "T, Pr", [(1000.0, 0.1), (1500.0, 0.1), (1000.0, 1.0), (1500.0, 10.0)]
-)
+@pytest.mark.parametrize(("T", "Pr"), [(1000.0, 0.1), (1500.0, 0.1), (1000.0, 1.0), (1500.0, 10.0)])
 def test_troe_oh_ch3_is_visscher_moses_eq14(T, Pr):
-    """The OH+CH3+M row follows Visscher & Moses 2011 eqs 13-14 (log10 Troe
-    width; upstream op.py:204-205 uses ln) with the eq 24-26 fits. The only
-    guard against a transcription error: the oracle comparison carries the
-    same declared correction on its side."""
+    """The OH+CH3+M row follows Visscher & Moses 2011 eqs 13-14.
+
+    (log10 Troe width; upstream op.py:204-205 uses ln) with the eq 24-26 fits. The only guard against a
+    transcription error: the oracle comparison carries the same declared correction on its side.
+    """
     from vulcan3 import rates_jax
 
-    k0 = 1.932e3 * T**-9.88 * np.exp(-7544.0 / T) + 5.109e-11 * T**-6.25 * np.exp(
-        -1433.0 / T
-    )
+    k0 = 1.932e3 * T**-9.88 * np.exp(-7544.0 / T) + 5.109e-11 * T**-6.25 * np.exp(-1433.0 / T)
     kinf = 1.031e-10 * T**-0.018 * np.exp(16.74 / T)
     Fc = 0.1855 * np.exp(-T / 155.8) + 0.8145 * np.exp(-T / 1675.0) + np.exp(-4531.0 / T)
     beta = 1.0 / (1.0 + (np.log10(Pr) / (0.75 - 1.27 * np.log10(Fc))) ** 2)
@@ -123,12 +106,12 @@ def test_troe_oh_ch3_is_visscher_moses_eq14(T, Pr):
 
 
 def test_lindemann_with_zero_k_inf_is_the_zero_rate_limit():
-    """`k_inf == 0` on a falloff row is the zero-rate limit: the row reads
-    exactly 0, with a finite tangent, not the guard value's low-pressure
-    `arr / (1 + arr*M)`. A mis-shaped M raises instead of broadcasting the
-    bottom layer's density over the column."""
-    from vulcan3 import network as net_mod
-    from vulcan3 import rates_jax
+    """`k_inf == 0` on a falloff row is the zero-rate limit: the row reads exactly 0, with a finite tangent.
+
+    Not the guard value's low-pressure `arr / (1 + arr*M)`. A mis-shaped M raises instead of broadcasting the bottom
+    layer's density over the column.
+    """
+    from vulcan3 import network as net_mod, rates_jax
     from vulcan3._paths import resolve_data_path
     from vulcan3.config import default_config
 
@@ -146,10 +129,12 @@ def test_lindemann_with_zero_k_inf_is_the_zero_rate_limit():
     a_inf = jnp.asarray(net.a_inf, dtype=jnp.float64).at[rows].set(0.0)
     k, dk = jax.jvp(
         lambda a: rates_jax.compute_forward_k(net, T, M, a_inf=a),
-        (a_inf,), (jnp.ones_like(a_inf),),
+        (a_inf,),
+        (jnp.ones_like(a_inf),),
     )
     assert bool(jnp.all(k[rows] == 0.0))
-    assert bool(jnp.all(jnp.isfinite(k))) and bool(jnp.all(jnp.isfinite(dk)))
+    assert bool(jnp.all(jnp.isfinite(k)))
+    assert bool(jnp.all(jnp.isfinite(dk)))
 
     with pytest.raises(ValueError, match="same shape"):
         rates_jax.compute_forward_k(net, T, M[:1])

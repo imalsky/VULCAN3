@@ -1,24 +1,23 @@
-"""Regenerate the converged-state oracle fixtures under tests/data/.
+"""Regenerate the converged-state oracle fixtures under tests/data/."""
 
-Writes `adj_state_hd189.npz` (HD189, photo OFF, C-H-N-O network) and
-`adj_state_w39b.npz` (WASP-39 b, photo ON, SNCHO network): a converged state
-plus the operator inputs the reverse-mode adjoint tests replay, so the adjoint
-linear algebra can be iterated without re-converging a run. Also
-`state_hd209.npz`: the shipped HD209 run's final y, M and rate table, the
-column test_chem_rhs_codegen's projection tests take a layer from.
-
-The network is import-locked, so the states cannot be built in one
-process; each case runs in its own process (`tests/gen_fixtures.py` handles
-the fan-out; running this module directly builds exactly one case).
-
-Run from VULCAN-JAX/:
-    python tests/_gen_adj_state.py hd189
-    python tests/_gen_adj_state.py w39b
-    python tests/_gen_adj_state.py hd209
-
-Prefer `python tests/gen_fixtures.py --all`, which drives these plus the two
-photo fixtures and writes the provenance manifest.
-"""
+# Writes `adj_state_hd189.npz` (HD189, photo OFF, C-H-N-O network) and
+# `adj_state_w39b.npz` (WASP-39 b, photo ON, SNCHO network): a converged state
+# plus the operator inputs the reverse-mode adjoint tests replay, so the adjoint
+# linear algebra can be iterated without re-converging a run. Also
+# `state_hd209.npz`: the shipped HD209 run's final y, M and rate table, the
+# column test_chem_rhs_codegen's projection tests take a layer from.
+#
+# The network is import-locked, so the states cannot be built in one
+# process; each case runs in its own process (`tests/gen_fixtures.py` handles
+# the fan-out; running this module directly builds exactly one case).
+#
+# Run from VULCAN-JAX/:
+#     python tests/_gen_adj_state.py hd189
+#     python tests/_gen_adj_state.py w39b
+#     python tests/_gen_adj_state.py hd209
+#
+# Prefer `python tests/gen_fixtures.py --all`, which drives these plus the two
+# photo fixtures and writes the provenance manifest.
 
 from __future__ import annotations
 
@@ -50,10 +49,12 @@ W39B_ATOM_LIST = "H,O,C,N,S"
 def _atm_step_arrays(atm_step) -> dict:
     """Split an AtmStatic into npz-safe array and bool groups."""
     fields = atm_step._fields
-    arrays = {f"atm__{f}": np.asarray(getattr(atm_step, f))
-              for f in fields if not isinstance(getattr(atm_step, f), bool)}
-    bools = {f"atmbool__{f}": np.asarray(getattr(atm_step, f))
-             for f in fields if isinstance(getattr(atm_step, f), bool)}
+    arrays = {
+        f"atm__{f}": np.asarray(getattr(atm_step, f)) for f in fields if not isinstance(getattr(atm_step, f), bool)
+    }
+    bools = {
+        f"atmbool__{f}": np.asarray(getattr(atm_step, f)) for f in fields if isinstance(getattr(atm_step, f), bool)
+    }
     return {**arrays, **bools}
 
 
@@ -77,12 +78,10 @@ def build_hd189(out_dir: Path) -> Path:
     cfg.count_max = 3000
     cfg.runtime = 1e14
 
-    from vulcan3 import chem as chem_mod, composition, network as net_mod
+    import vulcan3.legacy_io as op
+    from vulcan3 import chem as chem_mod, composition, network as net_mod, op_jax, outer_loop
     from vulcan3.jax_step import jax_ros2_step, make_atm_static
     from vulcan3.state import RunState, legacy_view
-    import vulcan3.legacy_io as op
-    import vulcan3.op_jax as op_jax
-    import vulcan3.outer_loop as outer_loop
 
     rs = RunState.with_pre_loop_setup(cfg)
     network = net_mod.parse_network(cfg.network)
@@ -99,8 +98,7 @@ def build_hd189(out_dir: Path) -> Path:
     state0 = integ._pack_state_from_runstate(rs)
     final = integ._runner(state0, atm_static)
     y0 = final.y
-    atm_step = atm_static._replace(g=final.g, dzi=final.dzi, Hpi=final.Hpi,
-                                   top_flux=final.top_flux, vs=final.vs)
+    atm_step = atm_static._replace(g=final.g, dzi=final.dzi, Hpi=final.Hpi, top_flux=final.top_flux, vs=final.vs)
     kj = jnp.asarray(state0.k_arr)
     M_col = atm_step.M[:, None]
     dtj = jnp.float64(DT)
@@ -116,8 +114,7 @@ def build_hd189(out_dir: Path) -> Path:
     fp = float("inf")
     for i in range(N_POLISH):
         y_next = G(y_star)
-        fp = float(jnp.max(jnp.abs(y_next - y_star))
-                   / jnp.maximum(jnp.max(jnp.abs(y_star)), 1e-300))
+        fp = float(jnp.max(jnp.abs(y_next - y_star)) / jnp.maximum(jnp.max(jnp.abs(y_star)), 1e-300))
         y_star = y_next
         if i % 5 == 0 or fp < 1e-12:
             print(f"  polish {i:3d} fp_err={fp:.2e}", flush=True)
@@ -132,11 +129,12 @@ def build_hd189(out_dir: Path) -> Path:
         k_arr=np.asarray(kj),
         dz=np.asarray(atm_d.dz),
         compo=np.asarray(composition.compo_array)[:ni],
-        dt=DT, nz=nz, ni=ni,
+        dt=DT,
+        nz=nz,
+        ni=ni,
         **_atm_step_arrays(atm_step),
     )
-    print(f"[hd189] wrote {path} (nz={nz} ni={ni} fp_err={fp:.2e}) "
-          f"in {time.time() - t0:.1f}s", flush=True)
+    print(f"[hd189] wrote {path} (nz={nz} ni={ni} fp_err={fp:.2e}) in {time.time() - t0:.1f}s", flush=True)
     return path
 
 
@@ -166,13 +164,11 @@ def build_w39b(out_dir: Path) -> Path:
     cfg.use_print_prog = False
     cfg.yconv_cri = 1e-3
 
-    from vulcan3 import composition, network as net_mod
+    import vulcan3.legacy_io as op
+    from vulcan3 import composition, network as net_mod, op_jax, outer_loop
     from vulcan3._paths import resolve_data_path
     from vulcan3.jax_step import make_atm_static
     from vulcan3.state import RunState, legacy_view
-    import vulcan3.legacy_io as op
-    import vulcan3.op_jax as op_jax
-    import vulcan3.outer_loop as outer_loop
 
     rs = RunState.with_pre_loop_setup(cfg)
     _var, atm, para = legacy_view(rs)
@@ -184,10 +180,10 @@ def build_w39b(out_dir: Path) -> Path:
         raise RuntimeError(
             f"SO2 is not in the network parsed from {cfg.network!r} "
             f"({ni} species). The W39b adjoint fixture is an SO2 sensitivity "
-            "state; check $VULCAN3_NETWORK.")
+            "state; check $VULCAN3_NETWORK."
+        )
     so2 = sidx["SO2"]
-    print(f"[w39b] setup {time.time() - t0:.1f}s nz={nz} ni={ni} nr={nr} "
-          f"SO2@{so2}", flush=True)
+    print(f"[w39b] setup {time.time() - t0:.1f}s nz={nz} ni={ni} nr={nr} SO2@{so2}", flush=True)
 
     solver = op_jax.Ros2JAX()
     if rs.photo_static is not None:
@@ -200,11 +196,9 @@ def build_w39b(out_dir: Path) -> Path:
     final = integ._runner(state0, atm_static)
     y_star = final.y
     k_frozen = final.k_arr
-    atm_step = atm_static._replace(g=final.g, dzi=final.dzi, Hpi=final.Hpi,
-                                   top_flux=final.top_flux, vs=final.vs)
+    atm_step = atm_static._replace(g=final.g, dzi=final.dzi, Hpi=final.Hpi, top_flux=final.top_flux, vs=final.vs)
     so2_mid = float(y_star[nz // 2, so2] / jnp.sum(y_star[nz // 2]))
-    print(f"[w39b] converged {time.time() - t0:.1f}s SO2(mid)={so2_mid:.2e}",
-          flush=True)
+    print(f"[w39b] converged {time.time() - t0:.1f}s SO2(mid)={so2_mid:.2e}", flush=True)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "adj_state_w39b.npz"
@@ -214,7 +208,10 @@ def build_w39b(out_dir: Path) -> Path:
         k_arr=np.asarray(k_frozen),
         dz=np.asarray(atm.dz),
         compo=np.asarray(composition.compo_array)[:ni],
-        nz=nz, ni=ni, nr=nr, so2=so2,
+        nz=nz,
+        ni=ni,
+        nr=nr,
+        so2=so2,
         **_atm_step_arrays(atm_step),
     )
     print(f"[w39b] wrote {path} ({time.time() - t0:.1f}s)", flush=True)
@@ -222,8 +219,10 @@ def build_w39b(out_dir: Path) -> Path:
 
 
 def build_hd209(out_dir: Path) -> Path:
-    """Run the shipped HD209 config (photo ON) to its certificate, as the CLI
-    does, and dump the final y, M and rate table (photolysis rows included)."""
+    """Run the shipped HD209 config (photo ON) to its certificate, as the CLI does, and dump the final y.
+
+    M and rate table (photolysis rows included).
+    """
     t0 = time.time()
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     os.chdir(ROOT)
@@ -232,12 +231,11 @@ def build_hd209(out_dir: Path) -> Path:
 
     jax.config.update("jax_enable_x64", True)
 
-    from vulcan3.config import load_config
-    from vulcan3.chem_funs import spec_list
-    from vulcan3.state import RunState, legacy_view
     import vulcan3.legacy_io as op
-    import vulcan3.op_jax as op_jax
-    import vulcan3.outer_loop as outer_loop
+    from vulcan3 import op_jax, outer_loop
+    from vulcan3.chem_funs import spec_list
+    from vulcan3.config import load_config
+    from vulcan3.state import RunState, legacy_view
 
     cfg = load_config("HD209")
     cfg.use_print_prog = False
@@ -247,14 +245,13 @@ def build_hd209(out_dir: Path) -> Path:
     if int(para.end_case) != 1:
         raise RuntimeError(
             f"HD209 ended with end_case {int(para.end_case)} after {int(para.count)} "
-            "steps, not on the certificate (1); the fixture must be a converged state.")
+            "steps, not on the certificate (1); the fixture must be a converged state."
+        )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "state_hd209.npz"
-    np.savez(path, y=var.y, M=atm.M, k_arr=var.k_arr,
-             species=np.asarray(spec_list), count=int(para.count))
-    print(f"[hd209] wrote {path} ({int(para.count)} steps) in {time.time() - t0:.1f}s",
-          flush=True)
+    np.savez(path, y=var.y, M=atm.M, k_arr=var.k_arr, species=np.asarray(spec_list), count=int(para.count))
+    print(f"[hd209] wrote {path} ({int(para.count)} steps) in {time.time() - t0:.1f}s", flush=True)
     return path
 
 
@@ -263,9 +260,11 @@ BUILDERS = {"hd189": build_hd189, "w39b": build_w39b, "hd209": build_hd209}
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("case", choices=sorted(BUILDERS),
-                    help="which adjoint state to build (one per process: the "
-                         "reaction network is import-locked)")
+    ap.add_argument(
+        "case",
+        choices=sorted(BUILDERS),
+        help="which adjoint state to build (one per process: the reaction network is import-locked)",
+    )
     args = ap.parse_args(argv)
     BUILDERS[args.case](FIXTURE_DIR)
     return 0

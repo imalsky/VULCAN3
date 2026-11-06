@@ -9,12 +9,14 @@ Ports vm_branch `build_atm.apply_high_temp_cut`. Two layers:
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 from _helpers import make_pco, tpk_cfg
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Pure selection/re-grid logic
 
@@ -49,9 +51,7 @@ def test_regrid_floors_at_Pmin_when_all_deep_too_hot():
     assert new_pco[0] == pytest.approx(1e6)  # floored at P_min
 
 
-@pytest.mark.parametrize(
-    "P_b, T", [(1e9, 1500.0), (1e5, 4000.0)], ids=["cool_column", "no_deep_layers"]
-)
+@pytest.mark.parametrize(("P_b", "T"), [(1e9, 1500.0), (1e5, 4000.0)], ids=["cool_column", "no_deep_layers"])
 def test_regrid_noop(P_b, T):
     """No regrid when nothing exceeds T_max, or when P_b < P_min leaves no deep layer."""
     from vulcan3.atm_setup import high_temp_cut_regrid
@@ -73,8 +73,7 @@ def _write_hot_tp_file(path: Path) -> None:
     with open(path, "w") as f:
         f.write("# synthetic hot atmosphere for high_temp_cut test\n")
         f.write("Pressure\tTemp\tKzz\n")
-        for pi, ti, ki in zip(p, T, Kzz):
-            f.write("{:.6e}\t{:.6e}\t{:.6e}\n".format(pi, ti, ki))
+        f.writelines(f"{pi:.6e}\t{ti:.6e}\t{ki:.6e}\n" for pi, ti, ki in zip(p, T, Kzz, strict=False))
 
 
 def test_end_to_end_file_mode_cut(tmp_path):

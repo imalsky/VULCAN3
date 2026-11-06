@@ -1,5 +1,4 @@
-"""Validate chem_jac_analytical against the jacrev-based dense
-Jacobian on the HD189 reference state.
+"""Validate chem_jac_analytical against the jacrev-based dense Jacobian on the HD189 reference state.
 
 The analytical Jacobian is built from stoichiometry directly:
     J[i, j] = Σ_{rxns r} Σ_{out slot s_i, reac slot s_j}
@@ -13,17 +12,16 @@ from __future__ import annotations
 
 import numpy as np
 
-
 JAC_RTOL = 1e-12  # the same matrix by two summation orders
 SIGNIFICANT_FRAC = 1e-12  # entries below this fraction of the peak are cancellation noise
 
 
 def test_main(hd189_state):
     """chem_jac_analytical vs the jacrev chem_jac on the HD189 state."""
+    import jax.numpy as jnp
     from _oracles import chem_jac
 
     import vulcan3.chem as chem_mod
-    import jax.numpy as jnp
     import vulcan3.network as net_mod
     from vulcan3.config import default_config
 
@@ -38,9 +36,7 @@ def test_main(hd189_state):
     k_arr = jnp.asarray(np.asarray(data_var.k_arr, dtype=np.float64))
 
     J_dense = np.asarray(chem_jac(y, M, k_arr, net_jax))  # [nz, ni, ni]
-    J_anal = np.asarray(
-        chem_mod.chem_jac_analytical(y, M, k_arr, net_jax)
-    )  # [nz, ni, ni]
+    J_anal = np.asarray(chem_mod.chem_jac_analytical(y, M, k_arr, net_jax))  # [nz, ni, ni]
 
     diff = np.abs(J_anal - J_dense)
     abs_max_dense = max(np.abs(J_dense).max(), 1e-300)

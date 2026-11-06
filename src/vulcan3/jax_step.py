@@ -4,34 +4,35 @@
 snapshot (Kzz, Dzz, Hpi, ... plus the third-body density `atm.M`); ysum(y) is
 handled inside the step. For batch parallelism over multiple atmospheres, vmap
 over the leading axis of (y, k_arr, atm).
+
+Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, length in cm, time in s.
 """
 
 from __future__ import annotations
 
 import functools
-import os
 from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from . import composition as _composition
+from . import _settings, composition as _composition
 from .chem import NetworkArrays, chem_jac_analytical
-from .chem_funs import chem_rhs_codegen as _chem_rhs
-from .chem_funs import spec_list as _SPEC_LIST
+from .chem_funs import chem_rhs_codegen as _chem_rhs, spec_list as _spec_list
 from .config import REPAIR_ABS_FLOOR, default_config
 from .phy_const import UNDERFLOW_DENOM, Navo, kb
 
-_SOLVER = os.environ.get("VULCAN3_SOLVER", "fast")  # import-frozen: reference | fast | ffi
+__all__ = ["IMPORT_ATOM_LIST", "AtmStatic", "DiffGrav", "compute_diff_grav", "jax_ros2_step", "make_atm_static"]
+
+_SOLVER = _settings.solver()  # import-frozen
 if _SOLVER == "reference":
     from .solver import (
         factor_block_thomas_diag_offdiag,
         solve_block_thomas_diag_offdiag,
     )
 else:  # see solver_fast.py
-    from .solver_fast import factor as factor_block_thomas_diag_offdiag
-    from .solver_fast import solve as solve_block_thomas_diag_offdiag
+    from .solver_fast import factor as factor_block_thomas_diag_offdiag, solve as solve_block_thomas_diag_offdiag
 
 _CFG = default_config()
 
@@ -50,9 +51,7 @@ _ATOM_RESERVOIRS = (
 )
 
 
-def _build_chem_projection_tables() -> tuple[
-    bool, jnp.ndarray, jnp.ndarray, jnp.ndarray
-]:
+def _build_chem_projection_tables() -> tuple[bool, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Build static reservoir-projection tables for chemistry conservation.
 
     Conserves every atom in ``cfg.atom_list`` that has a composition column and
@@ -65,12 +64,12 @@ def _build_chem_projection_tables() -> tuple[
     pairs = tuple(
         (atom, reservoir)
         for atom, reservoir in _ATOM_RESERVOIRS
-        if atom in cfg_atoms and atom in compo_names and reservoir in _SPEC_LIST
+        if atom in cfg_atoms and atom in compo_names and reservoir in _spec_list
     )
     if not pairs:
         return (
             False,
-            jnp.zeros((len(_SPEC_LIST), 0), dtype=jnp.float64),
+            jnp.zeros((len(_spec_list), 0), dtype=jnp.float64),
             jnp.zeros((0,), dtype=jnp.int32),
             jnp.zeros((0, 0), dtype=jnp.float64),
         )
@@ -80,14 +79,11 @@ def _build_chem_projection_tables() -> tuple[
 
     row_by_species = {str(row["species"]): row for row in _composition.compo}
     atom_counts = np.asarray(
-        [
-            [float(row_by_species[sp][atom]) for atom in project_atoms]
-            for sp in _SPEC_LIST
-        ],
+        [[float(row_by_species[sp][atom]) for atom in project_atoms] for sp in _spec_list],
         dtype=np.float64,
     )
     reservoir_idx = np.asarray(
-        [_SPEC_LIST.index(sp) for sp in reservoir_species],
+        [_spec_list.index(sp) for sp in reservoir_species],
         dtype=np.int32,
     )
     reservoir_counts = atom_counts[reservoir_idx]
@@ -134,21 +130,19 @@ def _project_chem_jac(chem_jac: jnp.ndarray) -> jnp.ndarray:
     return chem_jac.at[:, _CHEM_RESERVOIR_IDX, :].add(correction)
 
 
-def _projected_chem_rhs(
-    y: jnp.ndarray, M: jnp.ndarray, k_arr: jnp.ndarray
-) -> jnp.ndarray:
+def _projected_chem_rhs(y: jnp.ndarray, M: jnp.ndarray, k_arr: jnp.ndarray) -> jnp.ndarray:
     """Evaluate and conservatively project the generated chemistry RHS."""
     return _project_chem_rhs(_chem_rhs(y, M, k_arr))
 
 
 def _stage_defect(k, b_tr, c0, diag_d, sup_d, sub_d, with_scale=False):
-    """Per-layer element defect `c0 a^T k - a^T (T k) - a^T b_tr` of a Ros2
-    stage vector, shape (nz, n_atoms); zero for the exact solution of the
-    stage system because the projected chemistry terms carry no element
-    residual. `T` is the species-diagonal transport tridiagonal of the
-    matrix (bands `diag_d`, `sup_d`, `sub_d`). With `with_scale` also
-    returns the atom-weighted sum of the terms' absolute sizes, the scale
-    against which the defect's roundoff floor is set."""
+    """Per-layer element defect `c0 a^T k - a^T (T k) - a^T b_tr` of a Ros2 stage vector, shape (nz, n_atoms).
+
+    Zero for the exact solution of the stage system because the projected chemistry terms carry no element residual.
+    `T` is the species-diagonal transport tridiagonal of the matrix (bands `diag_d`, `sup_d`, `sub_d`). With
+    `with_scale` also returns the atom-weighted sum of the terms' absolute sizes, the scale against which the
+    defect's roundoff floor is set.
+    """
     Tk = diag_d * k
     Tk = Tk.at[:-1].add(sup_d * k[1:])
     Tk = Tk.at[1:].add(sub_d * k[:-1])
@@ -176,14 +170,16 @@ _REPAIR_SWEEP_UNROLL = 8
 
 
 def _tridiagonal_solve(dl, d, du, g):
-    """Solve `dl x[i-1] + d x[i] + du x[i+1] = g` along axis 0, one system
-    per trailing index (`dl[0]`, `du[-1]` unused).
+    """Solve `dl x[i-1] + d x[i] + du x[i+1] = g` along axis 0.
+
+    One system per trailing index (`dl[0]`, `du[-1]` unused).
 
     LAPACK dgtsv partial-pivoting elimination as two rolled `lax.scan`s of
     elementwise ops, so lanes, reservoirs and tangent directions share
     kernels; pivoted because central-difference drift can zero an unpivoted
     pivot. Replaces `lax.linalg.tridiagonal_solve`, a per-system cuSPARSE
-    call on GPU."""
+    call on GPU.
+    """
     du = du.at[-1].set(0.0)  # the last swap reads it as the fill-in
 
     def fwd(row, below):
@@ -205,7 +201,9 @@ def _tridiagonal_solve(dl, d, du, g):
         return nxt, done
 
     (d_last, _, b_last), (dd, du1, du2, bb) = jax.lax.scan(
-        fwd, (d[0], du[0], g[0]), (dl[1:], d[1:], du[1:], g[1:]),
+        fwd,
+        (d[0], du[0], g[0]),
+        (dl[1:], d[1:], du[1:], g[1:]),
         unroll=_REPAIR_SWEEP_UNROLL,
     )
     x_last = b_last / d_last
@@ -217,16 +215,19 @@ def _tridiagonal_solve(dl, d, du, g):
         return (x, x1), x
 
     _, xs = jax.lax.scan(
-        bwd, (x_last, jnp.zeros_like(x_last)), (dd, du1, du2, bb),
-        unroll=_REPAIR_SWEEP_UNROLL, reverse=True,
+        bwd,
+        (x_last, jnp.zeros_like(x_last)),
+        (dd, du1, du2, bb),
+        unroll=_REPAIR_SWEEP_UNROLL,
+        reverse=True,
     )
     return jnp.concatenate([xs, x_last[None]])
 
 
 def _repair_stage(k, b_tr, c0, diag_d, sup_d, sub_d, fix_mask, n_tot, y):
-    """Move a Ros2 stage vector's per-layer element defect (`_stage_defect`)
-    onto the reservoir species with one scalar tridiagonal solve
-    `(c0 - T_rho) c = g` per reservoir. `n_tot` is the (nz, 1) layer density;
+    """Move a Ros2 stage vector's per-layer element defect (`_stage_defect`) onto the reservoir species.
+
+    One scalar tridiagonal solve `(c0 - T_rho) c = g` per reservoir. `n_tot` is the (nz, 1) layer density;
     the reservoir cells of `y` (the step's start state) bound the correction.
 
     At small c0 = 1/(gamma dt) the pivoted LU leaks elements.
@@ -263,25 +264,27 @@ def _repair_stage(k, b_tr, c0, diag_d, sup_d, sub_d, fix_mask, n_tot, y):
 
 
 class AtmStatic(NamedTuple):
-    """Atmosphere parameters held constant within a Ros2 step. nz from
-    Tco's leading axis, ni from ms's leading axis."""
+    """Atmosphere parameters held constant within a Ros2 step.
 
-    Kzz: jnp.ndarray  # (nz-1,)
-    Dzz: jnp.ndarray  # (nz-1, ni)
-    dzi: jnp.ndarray  # (nz-1,)
-    vz: jnp.ndarray  # (nz-1,)
-    Hpi: jnp.ndarray  # (nz-1,)
-    Ti: jnp.ndarray  # (nz-1,)
-    Tco: jnp.ndarray  # (nz,)
-    g: jnp.ndarray  # (nz,)
-    ms: jnp.ndarray  # (ni,)
-    alpha: jnp.ndarray  # (ni,)
-    M: jnp.ndarray  # (nz,)
-    vm: jnp.ndarray  # (nz-1, ni) interface molecular-diffusion drift velocity
-    vs: jnp.ndarray  # (nz-1, ni)
-    top_flux: jnp.ndarray  # (ni,)
-    bot_flux: jnp.ndarray  # (ni,)
-    bot_vdep: jnp.ndarray  # (ni,)
+    nz comes from Tco's leading axis, ni from ms's.
+    """
+
+    Kzz: jnp.ndarray  # (nz-1,), cm^2 s^-1
+    Dzz: jnp.ndarray  # (nz-1, ni), cm^2 s^-1
+    dzi: jnp.ndarray  # (nz-1,), cm
+    vz: jnp.ndarray  # (nz-1,), cm s^-1
+    Hpi: jnp.ndarray  # (nz-1,), cm
+    Ti: jnp.ndarray  # (nz-1,), K
+    Tco: jnp.ndarray  # (nz,), K
+    g: jnp.ndarray  # (nz,), cm s^-2
+    ms: jnp.ndarray  # (ni,), g mol^-1
+    alpha: jnp.ndarray  # (ni,), thermal diffusion factor
+    M: jnp.ndarray  # (nz,), cm^-3
+    vm: jnp.ndarray  # (nz-1, ni), cm s^-1, interface molecular-diffusion drift velocity
+    vs: jnp.ndarray  # (nz-1, ni), cm s^-1
+    top_flux: jnp.ndarray  # (ni,), cm^-2 s^-1
+    bot_flux: jnp.ndarray  # (ni,), cm^-2 s^-1
+    bot_vdep: jnp.ndarray  # (ni,), cm s^-1
     gas_indx_mask: jnp.ndarray  # (ni,) bool
     diff_esc_mask: jnp.ndarray  # (ni,) bool, species in cfg.diff_esc
     # Blend weight (1.0 upwind, 0.0 central): a bool at build, float64 when
@@ -308,6 +311,7 @@ class DiffGrav(NamedTuple):
     dz_ave: jnp.ndarray
 
 
+# size-limit-ok: notes "Do not retry": transport refactors moved a tangent
 def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
     """y-independent transport piece of the molecular-diffusion blocks."""
     dzi, Hpi, Ti, Tco, g, ms, alpha, Dzz = (
@@ -333,10 +337,7 @@ def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
     grav_j = (
         -1.0 / Hpi[j_int][:, None]
         + ms[None, :] * g[j_int][:, None] / (Navo * kb * Ti[j_int][:, None])
-        + alpha[None, :]
-        / Ti[j_int][:, None]
-        * (Tco[j_int + 1][:, None] - Tco[j_int][:, None])
-        / dzi[j_int][:, None]
+        + alpha[None, :] / Ti[j_int][:, None] * (Tco[j_int + 1][:, None] - Tco[j_int][:, None]) / dzi[j_int][:, None]
     )
     grav_jm = (
         -1.0 / Hpi[j_int - 1][:, None]
@@ -349,10 +350,7 @@ def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
     grav_jp_b = (
         -1.0 / Hpi[j_int][:, None]
         + ms[None, :] * g[j_int + 1][:, None] / (Navo * kb * Ti[j_int][:, None])
-        + alpha[None, :]
-        / Ti[j_int][:, None]
-        * (Tco[j_int + 1][:, None] - Tco[j_int][:, None])
-        / dzi[j_int][:, None]
+        + alpha[None, :] / Ti[j_int][:, None] * (Tco[j_int + 1][:, None] - Tco[j_int][:, None]) / dzi[j_int][:, None]
     )
     grav_jm_c = (
         -1.0 / Hpi[j_int - 1][:, None]
@@ -373,31 +371,20 @@ def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
         / dzi[0]
         * Dzz[0]
         / 2.0
-        * (
-            -1.0 / Hpi[0]
-            + ms * g[0] / (Navo * kb * Ti[0])
-            + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0]
-        )
+        * (-1.0 / Hpi[0] + ms * g[0] / (Navo * kb * Ti[0]) + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0])
     )
     bdry_top_grav = (
         -1.0
         / dzi[-1]
         * Dzz[-1]
         / 2.0
-        * (
-            -1.0 / Hpi[-1]
-            + ms * g[-1] / (Navo * kb * Ti[-1])
-            + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
-        )
+        * (-1.0 / Hpi[-1] + ms * g[-1] / (Navo * kb * Ti[-1]) + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1])
     )
 
     # Upwind molecular-diffusion advection variant (`use_vm_mol`). `vm` is the
     # interface drift velocity (nz-1, ni): vm[k] acts on the interface between
     # cells k and k+1, so vm[-1] is the top interface (matches op.diffdf_vm).
-    A_vm_int = (
-        -((vm[j_int] > 0) * vm[j_int] - (vm[j_int - 1] < 0) * vm[j_int - 1])
-        / dz_ave[:, None]
-    )
+    A_vm_int = -((vm[j_int] > 0) * vm[j_int] - (vm[j_int - 1] < 0) * vm[j_int - 1]) / dz_ave[:, None]
     B_vm_int = -((vm[j_int] < 0) * vm[j_int]) / dz_ave[:, None]
     C_vm_int = ((vm[j_int - 1] > 0) * vm[j_int - 1]) / dz_ave[:, None]
     bdry0_vm = -((vm[0] > 0) * vm[0]) / dzi[0]
@@ -406,10 +393,7 @@ def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
     bdry_top_vm_C = ((vm[-1] > 0) * vm[-1]) / dzi[-1]
 
     # Settling velocity is additive to either gravity-mode or vm-mode mol-diff.
-    A_vs_int = (
-        -((vs[j_int] > 0) * vs[j_int] - (vs[j_int - 1] < 0) * vs[j_int - 1])
-        / dz_ave[:, None]
-    )
+    A_vs_int = -((vs[j_int] > 0) * vs[j_int] - (vs[j_int - 1] < 0) * vs[j_int - 1]) / dz_ave[:, None]
     B_vs_int = -((vs[j_int] < 0) * vs[j_int]) / dz_ave[:, None]
     C_vs_int = ((vs[j_int - 1] > 0) * vs[j_int - 1]) / dz_ave[:, None]
     bdry0_vs = -((vs[0] > 0) * vs[0]) / dzi[0]
@@ -444,6 +428,7 @@ def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
     )
 
 
+# size-limit-ok: notes "Do not retry": transport refactors moved a tangent
 def _build_diff_coeffs_jax(y, atm: AtmStatic, grav: DiffGrav):
     """Diffusion (eddy + molecular) coefficient blocks for one Ros2 stage.
 
@@ -471,30 +456,13 @@ def _build_diff_coeffs_jax(y, atm: AtmStatic, grav: DiffGrav):
         )
         / ysum[j_int]
     )
-    B_eddy_int = (
-        1.0
-        / dz_ave
-        * Kzz[j_int]
-        / dzi[j_int]
-        * (ysum[j_int + 1] + ysum[j_int])
-        / 2.0
-        / ysum[j_int + 1]
-    )
+    B_eddy_int = 1.0 / dz_ave * Kzz[j_int] / dzi[j_int] * (ysum[j_int + 1] + ysum[j_int]) / 2.0 / ysum[j_int + 1]
     C_eddy_int = (
-        1.0
-        / dz_ave
-        * Kzz[j_int - 1]
-        / dzi[j_int - 1]
-        * (ysum[j_int] + ysum[j_int - 1])
-        / 2.0
-        / ysum[j_int - 1]
+        1.0 / dz_ave * Kzz[j_int - 1] / dzi[j_int - 1] * (ysum[j_int] + ysum[j_int - 1]) / 2.0 / ysum[j_int - 1]
     )
 
     # Vertical advection (bool*value gives the upwind switch).
-    A_eddy_int = (
-        A_eddy_int
-        - ((vz[j_int] > 0) * vz[j_int] - (vz[j_int - 1] < 0) * vz[j_int - 1]) / dz_ave
-    )
+    A_eddy_int = A_eddy_int - ((vz[j_int] > 0) * vz[j_int] - (vz[j_int - 1] < 0) * vz[j_int - 1]) / dz_ave
     B_eddy_int = B_eddy_int - ((vz[j_int] < 0) * vz[j_int]) / dz_ave
     C_eddy_int = C_eddy_int + ((vz[j_int - 1] > 0) * vz[j_int - 1]) / dz_ave
 
@@ -504,39 +472,23 @@ def _build_diff_coeffs_jax(y, atm: AtmStatic, grav: DiffGrav):
     B_eddy_0 = B_eddy_0 - ((vz[0] < 0) * vz[0]) / dzi[0]
     C_eddy_0 = 0.0
 
-    A_eddy_top = (
-        -1.0 / dzi[-1] * (Kzz[-1] / dzi[-1]) * (ysum[-1] + ysum[-2]) / 2.0 / ysum[-1]
-    )
+    A_eddy_top = -1.0 / dzi[-1] * (Kzz[-1] / dzi[-1]) * (ysum[-1] + ysum[-2]) / 2.0 / ysum[-1]
     A_eddy_top = A_eddy_top + ((vz[-1] < 0) * vz[-1]) / dzi[-1]
-    C_eddy_top = (
-        1.0 / dzi[-1] * (Kzz[-1] / dzi[-1]) * (ysum[-1] + ysum[-2]) / 2.0 / ysum[-2]
-    )
+    C_eddy_top = 1.0 / dzi[-1] * (Kzz[-1] / dzi[-1]) * (ysum[-1] + ysum[-2]) / 2.0 / ysum[-2]
     C_eddy_top = C_eddy_top + ((vz[-1] > 0) * vz[-1]) / dzi[-1]
     B_eddy_top = 0.0
 
-    A_eddy = jnp.concatenate(
-        [jnp.array([A_eddy_0]), A_eddy_int, jnp.array([A_eddy_top])]
-    )
-    B_eddy = jnp.concatenate(
-        [jnp.array([B_eddy_0]), B_eddy_int, jnp.array([B_eddy_top])]
-    )
-    C_eddy = jnp.concatenate(
-        [jnp.array([C_eddy_0]), C_eddy_int, jnp.array([C_eddy_top])]
-    )
+    A_eddy = jnp.concatenate([jnp.array([A_eddy_0]), A_eddy_int, jnp.array([A_eddy_top])])
+    B_eddy = jnp.concatenate([jnp.array([B_eddy_0]), B_eddy_int, jnp.array([B_eddy_top])])
+    C_eddy = jnp.concatenate([jnp.array([C_eddy_0]), C_eddy_int, jnp.array([C_eddy_top])])
 
     # Molecular-diffusion per-species blocks: y-dependent part + pre-baked grav.
     Ai_int = (
         -1.0
         / dz_ave[:, None]
         * (
-            Dzz[j_int]
-            / dzi[j_int][:, None]
-            * (ysum[j_int + 1][:, None] + ysum[j_int][:, None])
-            / 2.0
-            + Dzz[j_int - 1]
-            / dzi[j_int - 1][:, None]
-            * (ysum[j_int][:, None] + ysum[j_int - 1][:, None])
-            / 2.0
+            Dzz[j_int] / dzi[j_int][:, None] * (ysum[j_int + 1][:, None] + ysum[j_int][:, None]) / 2.0
+            + Dzz[j_int - 1] / dzi[j_int - 1][:, None] * (ysum[j_int][:, None] + ysum[j_int - 1][:, None]) / 2.0
         )
         / ysum[j_int][:, None]
     )
@@ -564,24 +516,12 @@ def _build_diff_coeffs_jax(y, atm: AtmStatic, grav: DiffGrav):
     )
     Ci_int = Ci_int + grav.C_grav_int
 
-    Ai_0 = (
-        -1.0 / dzi[0] * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[0]
-        + grav.bdry0_grav[0]
-    )
-    Bi_0 = (
-        1.0 / dzi[0] * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[1]
-        + grav.bdry0_grav[1]
-    )
+    Ai_0 = -1.0 / dzi[0] * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[0] + grav.bdry0_grav[0]
+    Bi_0 = 1.0 / dzi[0] * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[1] + grav.bdry0_grav[1]
     Ci_0 = jnp.zeros(ni)
 
-    Ai_top = (
-        -1.0 / dzi[-1] * (Dzz[-1] / dzi[-1]) * (ysum[-1] + ysum[-2]) / 2.0 / ysum[-1]
-        + grav.bdry_top_grav[0]
-    )
-    Ci_top = (
-        1.0 / dzi[-1] * (Dzz[-1] / dzi[-1]) * (ysum[-1] + ysum[-2]) / 2.0 / ysum[-2]
-        + grav.bdry_top_grav[1]
-    )
+    Ai_top = -1.0 / dzi[-1] * (Dzz[-1] / dzi[-1]) * (ysum[-1] + ysum[-2]) / 2.0 / ysum[-1] + grav.bdry_top_grav[0]
+    Ci_top = 1.0 / dzi[-1] * (Dzz[-1] / dzi[-1]) * (ysum[-1] + ysum[-2]) / 2.0 / ysum[-2] + grav.bdry_top_grav[1]
     Bi_top = jnp.zeros(ni)
 
     A_mol = jnp.concatenate([Ai_0[None], Ai_int, Ai_top[None]], axis=0)
@@ -591,9 +531,7 @@ def _build_diff_coeffs_jax(y, atm: AtmStatic, grav: DiffGrav):
     return A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, ysum
 
 
-def _apply_diffusion_jax(
-    y, A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, atm: AtmStatic
-):
+def _apply_diffusion_jax(y, A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, atm: AtmStatic):
     """diff[j] = (A+Ai)*y[j] + (B+Bi)*y[j+1] + (C+Ci)*y[j-1], plus BC fluxes."""
     A_total = A_eddy[:, None] + A_mol
     B_total = B_eddy[:, None] + B_mol
@@ -602,19 +540,14 @@ def _apply_diffusion_jax(
     diff_top = A_total[-1] * y[-1] + C_total[-1] * y[-2]
     diff_int = A_total[1:-1] * y[1:-1] + B_total[1:-1] * y[2:] + C_total[1:-1] * y[:-2]
     diff = jnp.concatenate([diff_0[None], diff_int, diff_top[None]], axis=0)
-    diff = diff.at[-1].add(
-        jnp.where(
-            atm.use_topflux, atm.top_flux / atm.dzi[-1], jnp.zeros_like(atm.top_flux)
-        )
-    )
-    diff = diff.at[0].add(
+    diff = diff.at[-1].add(jnp.where(atm.use_topflux, atm.top_flux / atm.dzi[-1], jnp.zeros_like(atm.top_flux)))
+    return diff.at[0].add(
         jnp.where(
             atm.use_botflux,
             (atm.bot_flux - y[0] * atm.bot_vdep) / atm.dzi[0],
             jnp.zeros_like(atm.bot_flux),
         )
     )
-    return diff
 
 
 # gamma = 1 + 1/sqrt(2) (Verwer et al. 1997; op.py). The transport Jacobian
@@ -623,12 +556,14 @@ def _apply_diffusion_jax(
 _ROS2_GAMMA = 1.0 + 2.0**-0.5
 
 
-def _ros2_stages(y, k_arr, dt, atm: AtmStatic, net: NetworkArrays, fix_mask,
-                 matrix_free=True):
-    """The two Ros2 stage solves. Returns (k1, k2, yk2, ident) with `ident` =
-    (c0, diag_d, sup_d, sub_d, b_tr1, b_tr2): the matrix's transport bands and
-    the transport part of each stage RHS, which is what the per-layer element
-    identity of a stage vector needs (`_stage_defect`)."""
+# size-limit-ok: the two stages share their locals; a change moves the program
+def _ros2_stages(y, k_arr, dt, atm: AtmStatic, net: NetworkArrays, fix_mask, matrix_free=True):
+    """Return the two Ros2 stage solves.
+
+    Returns (k1, k2, yk2, ident) with `ident` = (c0, diag_d, sup_d, sub_d, b_tr1, b_tr2): the matrix's transport
+    bands and the transport part of each stage RHS, which is what the per-layer element identity of a stage vector
+    needs (`_stage_defect`).
+    """
     r = _ROS2_GAMMA
     c0 = 1.0 / (r * dt)
     ni = atm.ms.shape[0]
@@ -637,13 +572,9 @@ def _ros2_stages(y, k_arr, dt, atm: AtmStatic, net: NetworkArrays, fix_mask,
     # y-independent gravity terms; reused for the y and yk2 evaluations.
     grav = compute_diff_grav(atm)
 
-    A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, _ = _build_diff_coeffs_jax(
-        y, atm, grav
-    )
+    A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, _ = _build_diff_coeffs_jax(y, atm, grav)
 
-    diff_at_y = _apply_diffusion_jax(
-        y, A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, atm
-    )
+    diff_at_y = _apply_diffusion_jax(y, A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, atm)
     rhs_y = _projected_chem_rhs(y, M, k_arr) + diff_at_y
     # Analytical Jacobian: <= 1e-13 vs the AD (jacrev) oracle, a gather along
     # the network's static tables.
@@ -674,9 +605,7 @@ def _ros2_stages(y, k_arr, dt, atm: AtmStatic, net: NetworkArrays, fix_mask,
         atm.top_flux / jnp.where(y_top_pos, y[-1], 1.0),
         0.0,
     )
-    diag_d = diag_d.at[-1].add(
-        diff_lim * jnp.asarray(atm.use_vm_mol, dtype=jnp.float64)
-    )
+    diag_d = diag_d.at[-1].add(diff_lim * jnp.asarray(atm.use_vm_mol, dtype=jnp.float64))
 
     eye = jnp.eye(ni)
     on_diag = eye[None] != 0.0  # (1, ni, ni), the block diagonal
@@ -690,9 +619,7 @@ def _ros2_stages(y, k_arr, dt, atm: AtmStatic, net: NetworkArrays, fix_mask,
 
     if fix_mask is not None:
         # A pinned row: zero off the diagonal, c0 on it.
-        diag = jnp.where(
-            fix_mask[:, :, None], jnp.where(on_diag, c0, 0.0), diag
-        )
+        diag = jnp.where(fix_mask[:, :, None], jnp.where(on_diag, c0, 0.0), diag)
         rhs_y = jnp.where(fix_mask, 0.0, rhs_y)
         sup_neg = jnp.where(fix_mask[:-1], 0.0, sup_neg)
         sub_neg = jnp.where(fix_mask[1:], 0.0, sub_neg)
@@ -720,12 +647,8 @@ def _ros2_stages(y, k_arr, dt, atm: AtmStatic, net: NetworkArrays, fix_mask,
     k1 = _repair_stage(k1, diff_at_y, c0, diag_d, sup_d, sub_d, fix_mask, n_tot, y)
 
     yk2 = y + k1 / r
-    A_eddy2, B_eddy2, C_eddy2, A_mol2, B_mol2, C_mol2, _ = _build_diff_coeffs_jax(
-        yk2, atm, grav
-    )
-    diff_at_yk2 = _apply_diffusion_jax(
-        yk2, A_eddy2, B_eddy2, C_eddy2, A_mol2, B_mol2, C_mol2, atm
-    )
+    A_eddy2, B_eddy2, C_eddy2, A_mol2, B_mol2, C_mol2, _ = _build_diff_coeffs_jax(yk2, atm, grav)
+    diff_at_yk2 = _apply_diffusion_jax(yk2, A_eddy2, B_eddy2, C_eddy2, A_mol2, B_mol2, C_mol2, atm)
     rhs_yk2 = _projected_chem_rhs(yk2, M, k_arr) + diff_at_yk2
     if fix_mask is not None:
         rhs_yk2 = jnp.where(fix_mask, 0.0, rhs_yk2)
@@ -740,8 +663,7 @@ def _ros2_stages(y, k_arr, dt, atm: AtmStatic, net: NetworkArrays, fix_mask,
 
 
 @functools.partial(jax.jit, static_argnames=("matrix_free",))
-def jax_ros2_step(y, k_arr, dt, atm: AtmStatic, net: NetworkArrays, fix_mask=None,
-                  matrix_free=True):
+def jax_ros2_step(y, k_arr, dt, atm: AtmStatic, net: NetworkArrays, fix_mask=None, matrix_free=True):
     """One 2nd-order Rosenbrock step.
 
     Returns (sol, delta_arr), both (nz, ni). `fix_mask` (nz, ni) optionally
@@ -777,7 +699,7 @@ def make_atm_static(atm, ni: int, nz: int, cfg=None) -> AtmStatic:
     # first, so a species not in the network raises ValueError here.
     diff_esc_np = np.zeros((ni,), dtype=bool)
     for _sp in cfg.diff_esc:
-        diff_esc_np[_SPEC_LIST.index(_sp)] = True
+        diff_esc_np[_spec_list.index(_sp)] = True
     vm = atm.vm if use_vm else jnp.zeros((nz - 1, ni), dtype=jnp.float64)
     vs = atm.vs if use_set else jnp.zeros((nz - 1, ni), dtype=jnp.float64)
     Dzz = atm.Dzz if cfg.use_moldiff else jnp.zeros((nz - 1, ni), dtype=jnp.float64)

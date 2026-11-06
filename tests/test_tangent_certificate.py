@@ -17,15 +17,13 @@ import pytest
 # above 1e-8 on the photo-on column, top-layer radicals respond too
 # nonlinearly to +/-H.
 CASES = {
-    "HD209_photo_off": ("HD209", False, "thermo/NCHO_photo_network.txt",
-                        "H,O,C,N", 1e-8, 0.1),
-    "W39b_photo_on": ("W39b", True, "thermo/SNCHO_photo_network_2025.txt",
-                      "H,O,C,N,S", 1e-4, 0.05),
+    "HD209_photo_off": ("HD209", False, "thermo/NCHO_photo_network.txt", "H,O,C,N", 1e-8, 0.1),
+    "W39b_photo_on": ("W39b", True, "thermo/SNCHO_photo_network_2025.txt", "H,O,C,N,S", 1e-4, 0.05),
 }
 
-H = 0.1            # ln Kzz step: the unit the tangent is certified in
-FD_TOL = 0.01      # measured 6e-4 (HD209) / 6.7e-3 (W39b) per H
-CONTINUE_TOL = 0.01   # measured: the tangent moves 2.8e-4 over 1000 more steps
+H = 0.1  # ln Kzz step: the unit the tangent is certified in
+FD_TOL = 0.01  # measured 6e-4 (HD209) / 6.7e-3 (W39b) per H
+CONTINUE_TOL = 0.01  # measured: the tangent moves 2.8e-4 over 1000 more steps
 CONTINUE_STEPS = 1000
 
 
@@ -37,8 +35,7 @@ def _build(case, kzz_scale=1.0):
     from vulcan3.state import RunState
 
     name, use_photo = CASES[case][:2]
-    cfg = load_config(name, use_photo=use_photo, use_print_prog=False,
-                      count_max=6000)
+    cfg = load_config(name, use_photo=use_photo, use_print_prog=False, count_max=6000)
     integ = OuterLoop(Ros2JAX(), Output(cfg=cfg), cfg=cfg)
     state, static = integ.prepare_runstate(RunState.with_pre_loop_setup(cfg))
     if kzz_scale != 1.0:
@@ -57,6 +54,7 @@ def _zero_tangent(tree):
         if getattr(x, "dtype", None) is not None and jnp.issubdtype(x.dtype, jnp.floating):
             return jnp.zeros_like(x)
         return np.zeros(np.shape(x), dtype=jax.dtypes.float0)
+
     return jax.tree_util.tree_map(z, tree)
 
 
@@ -64,19 +62,22 @@ def _check(case):
     import jax
     import jax.numpy as jnp
     import numpy as np
+
     jax.config.update("jax_enable_x64", True)
 
     integ, state, static = _build(case)
-    dstate = _zero_tangent(state)._replace(
-        pv=_zero_tangent(state.pv)._replace(Kzz=state.pv.Kzz * H))
+    dstate = _zero_tangent(state)._replace(pv=_zero_tangent(state.pv)._replace(Kzz=state.pv.Kzz * H))
     datm = _zero_tangent(static)._replace(Kzz=static.Kzz * H)
 
     final, dfinal, tl, ok = integ.run_jvp(state, static, dstate, datm)
     n = int(final.accept_count)
-    print(f"run_jvp: {n} steps, reason {int(final.termination_reason)}, "
-          f"tangent_longdy {float(tl):.3g}, longdy {float(final.longdy):.3g}",
-          flush=True)
-    assert int(final.termination_reason) == 1 and bool(ok)
+    print(
+        f"run_jvp: {n} steps, reason {int(final.termination_reason)}, "
+        f"tangent_longdy {float(tl):.3g}, longdy {float(final.longdy):.3g}",
+        flush=True,
+    )
+    assert int(final.termination_reason) == 1
+    assert bool(ok)
     ymix = np.asarray(final.ymix)
     dln_ad = np.asarray(dfinal.ymix) / ymix
 
@@ -84,7 +85,8 @@ def _check(case):
     # must certify (reason 1) or the reference is a budget exit
     fp = integ._runner(*_build(case, float(np.exp(H)))[1:])
     fm = integ._runner(*_build(case, float(np.exp(-H)))[1:])
-    assert int(fp.termination_reason) == 1 and int(fm.termination_reason) == 1
+    assert int(fp.termination_reason) == 1
+    assert int(fm.termination_reason) == 1
     yp, ym = np.asarray(fp.ymix), np.asarray(fm.ymix)
     vmr_floor, fd_signal_min = CASES[case][4:]
     m = (ymix > vmr_floor) & (yp > 0) & (ym > 0)
@@ -92,21 +94,21 @@ def _check(case):
     dln_fd[m] = (np.log(yp[m]) - np.log(ym[m])) / 2.0
     worst = float(np.max(np.abs(dln_ad - dln_fd)[m]))
     signal = float(np.max(np.abs(dln_fd[m])))
-    print(f"certified tangent vs FD over {int(m.sum())} cells: max |diff| "
-          f"{worst:.3g}, max |FD| {signal:.3g}", flush=True)
+    print(
+        f"certified tangent vs FD over {int(m.sum())} cells: max |diff| {worst:.3g}, max |FD| {signal:.3g}", flush=True
+    )
     assert signal > fd_signal_min, signal
     assert worst < FD_TOL, worst
 
     # continue the SAME carry (primal and tangent) past the certificate: the
     # certified tangent must already be the settled one
-    cont = final._replace(count_min_dyn=jnp.int32(n + CONTINUE_STEPS),
-                          count_max_dyn=jnp.int32(n + 3 * CONTINUE_STEPS))
+    cont = final._replace(count_min_dyn=jnp.int32(n + CONTINUE_STEPS), count_max_dyn=jnp.int32(n + 3 * CONTINUE_STEPS))
     final2, dfinal2, _tl2, ok2 = integ.run_jvp(cont, static, dfinal, datm)
-    assert int(final2.termination_reason) == 1 and bool(ok2)
+    assert int(final2.termination_reason) == 1
+    assert bool(ok2)
     dln_ad2 = np.asarray(dfinal2.ymix) / np.asarray(final2.ymix)
     moved = float(np.max(np.abs(dln_ad2 - dln_ad)[m]))
-    print(f"continued to {int(final2.accept_count)} steps: tangent moved "
-          f"{moved:.3g}", flush=True)
+    print(f"continued to {int(final2.accept_count)} steps: tangent moved {moved:.3g}", flush=True)
     assert moved < CONTINUE_TOL, moved
 
 

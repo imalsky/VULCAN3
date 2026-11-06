@@ -26,10 +26,11 @@ LAPACK_RTOL = 1e-12  # the repair sweep vs lax.linalg.tridiagonal_solve
 
 def test_projection_conserves_atoms_on_reservoir_rows_only(hd189_state):
     """An injected CH4 defect and the real codegen RHS both project to an atom
-    residual under PROJECTION_TOL of their scale, changing reservoir columns only."""
+    residual under PROJECTION_TOL of their scale, changing reservoir columns only.
+    """
     import jax.numpy as jnp
-    import vulcan3.chem_funs as chem_funs
-    import vulcan3.jax_step as jax_step
+
+    from vulcan3 import chem_funs, jax_step
 
     # Active for the HD189 default: atoms H/O/C/N, all four reservoirs present.
     assert jax_step._CHEM_PROJECTION_ENABLED
@@ -37,27 +38,23 @@ def test_projection_conserves_atoms_on_reservoir_rows_only(hd189_state):
     atom_counts = atom_count_matrix(net, _ATOMS)
     reservoir_idx = [net.species_idx[sp] for sp in _RESERVOIRS]
     var, atm = hd189_state.var, hd189_state.atm
-    raw = np.asarray(chem_funs.chem_rhs_codegen(
-        jnp.asarray(var.y), jnp.asarray(atm.M), jnp.asarray(var.k_arr)))
+    raw = np.asarray(chem_funs.chem_rhs_codegen(jnp.asarray(var.y), jnp.asarray(atm.M), jnp.asarray(var.k_arr)))
     injected = raw.copy()
     injected[:, net.species_idx["CH4"]] += max(float(np.max(np.abs(raw))), 1.0)
     # The RHS spans ~29 orders of magnitude, so the residual is judged in
     # absolute terms against its scale (the injected defect, or the per-atom
     # production peak); a per-cell floor drowns in float64 cancellation noise.
-    for rhs, scale in ((injected, np.max(np.abs(injected @ atom_counts))),
-                       (raw, np.max(np.abs(raw) @ atom_counts))):
+    for rhs, scale in ((injected, np.max(np.abs(injected @ atom_counts))), (raw, np.max(np.abs(raw) @ atom_counts))):
         proj = np.asarray(jax_step._project_chem_rhs(jnp.asarray(rhs)))
         assert scale > 0.0
         assert np.max(np.abs(proj @ atom_counts)) < PROJECTION_TOL * scale
-        assert np.array_equal(np.delete(proj, reservoir_idx, axis=1),
-                              np.delete(rhs, reservoir_idx, axis=1))
+        assert np.array_equal(np.delete(proj, reservoir_idx, axis=1), np.delete(rhs, reservoir_idx, axis=1))
 
 
 def _hd189_step_inputs(state):
     """(y, k_arr, atm_static, net_jax) from the HD189 pre-loop fixture state."""
+    from vulcan3 import chem_funs, jax_step
     from vulcan3.config import default_config
-    import vulcan3.chem_funs as chem_funs
-    import vulcan3.jax_step as jax_step
 
     cfg = default_config()
     data_var, data_atm = state.var, state.atm
@@ -68,22 +65,21 @@ def _hd189_step_inputs(state):
 
 
 def test_stage_vectors_satisfy_the_per_layer_element_identity(monkeypatch, hd189_state):
-    """Both Ros2 stage vectors satisfy `c0 a^T k - a^T T k = a^T b_tr` in every
-    layer at every dt, and with transport off a step changes no layer's element
-    content by more than REPAIR_ABS_FLOOR of its density. The
-    identity bar is set by the correction tridiagonal's conditioning (~T/c0),
-    not by roundoff."""
+    """Both Ros2 stage vectors satisfy `c0 a^T k - a^T T k = a^T b_tr` in every layer at every dt.
+
+    And with transport off a step changes no layer's element content by more than REPAIR_ABS_FLOOR of its density.
+    The identity bar is set by the correction tridiagonal's conditioning (~T/c0), not by roundoff.
+    """
     import jax
     import jax.numpy as jnp
-    import vulcan3.jax_step as jax_step
     from _oracles import stage_defects
+
+    from vulcan3 import jax_step
 
     y, k_arr, atm, net = _hd189_step_inputs(hd189_state)
     y, k_arr = jnp.asarray(y), jnp.asarray(k_arr)
     ac = jax_step._CHEM_ATOM_COUNTS
-    zero = atm._replace(
-        Kzz=0 * atm.Kzz, Dzz=0 * atm.Dzz, vz=0 * atm.vz, vm=0 * atm.vm, vs=0 * atm.vs
-    )
+    zero = atm._replace(Kzz=0 * atm.Kzz, Dzz=0 * atm.Dzz, vz=0 * atm.vz, vm=0 * atm.vm, vs=0 * atm.vs)
     # These are the repair's contracts, so the trace-carrier guard
     # (_REPAIR_MAX_CELL_FRAC, test_stage_repair_guard.py) is lifted. Fresh
     # lambdas make jit trace after the patch (jax caches a trace per function).
@@ -101,19 +97,21 @@ def test_stage_vectors_satisfy_the_per_layer_element_identity(monkeypatch, hd189
     # REPAIR_ABS_FLOOR of the layer density at every dt (worst 4x over two
     # stages; bar 10x).
     from vulcan3.config import REPAIR_ABS_FLOOR
+
     for dt in (1e4, 1e6, 1e8, 1e11, 1e13, 1e15):
         sol, _ = step(y, k_arr, jnp.float64(dt), zero, net)
-        change = jnp.abs(sol @ ac - y @ ac)                       # (nz, n_atoms)
+        change = jnp.abs(sol @ ac - y @ ac)  # (nz, n_atoms)
         n_lay = jnp.sum(jnp.abs(sol), axis=1) + jnp.sum(jnp.abs(y), axis=1)
         worst = float(jnp.max(change / n_lay[:, None]))
         assert worst < 10.0 * REPAIR_ABS_FLOOR, (dt, worst)
 
 
 def test_repair_tridiagonal_solve_is_lapack_gtsv_with_its_tangent(hd189_state):
-    """`jax_step._tridiagonal_solve`, the repair's partial-pivoting sweep, is
-    LAPACK dgtsv: backward stable on the HD189 repair matrices from dt 1e4 s to
-    the 1e15 s cap, within 1e-12 of `lax.linalg.tridiagonal_solve` on
-    swap-forcing systems, with a matching JVP and vmap over directions."""
+    """`jax_step._tridiagonal_solve`, the repair's partial-pivoting sweep, is LAPACK dgtsv.
+
+    Backward stable on the HD189 repair matrices from dt 1e4 s to the 1e15 s cap, within 1e-12 of
+    `lax.linalg.tridiagonal_solve` on swap-forcing systems, with a matching JVP and vmap over directions.
+    """
     import jax
     import jax.numpy as jnp
     from jax.lax.linalg import tridiagonal_solve
@@ -132,6 +130,7 @@ def test_repair_tridiagonal_solve_is_lapack_gtsv_with_its_tangent(hd189_state):
     du = jnp.concatenate([-(B_e[:-1, None] + B_m[:-1])[:, ridx], pad])
     dl = jnp.concatenate([pad, -(C_e[1:, None] + C_m[1:])[:, ridx]])
     g = jax.random.normal(jax.random.PRNGKey(1), diag_d[:, ridx].shape)
+
     def backward_error(dl, d, du, g, x):
         # componentwise (Oettli-Prager) residual; ~1e-16 for a stable solve
         z = jnp.zeros((1, x.shape[1]))
@@ -162,14 +161,14 @@ def test_repair_tridiagonal_solve_is_lapack_gtsv_with_its_tangent(hd189_state):
     assert bool(jnp.any(jnp.abs(d[:-1]) < jnp.abs(dl[1:])))
     assert close(js._tridiagonal_solve(dl, d, du, g), lapack(dl, d, du, g), LAPACK_RTOL)
     # independent directions (a common scaling of A and g has a zero tangent)
-    tans = tuple(jax.random.normal(jax.random.PRNGKey(10 + i), a.shape) * 1e-2
-                 for i, a in enumerate((dl, d, du, g)))
+    tans = tuple(jax.random.normal(jax.random.PRNGKey(10 + i), a.shape) * 1e-2 for i, a in enumerate((dl, d, du, g)))
     tans = (tans[0].at[0].set(0.0), tans[1], tans[2].at[-1].set(0.0), tans[3])
     t_new = jax.jvp(js._tridiagonal_solve, (dl, d, du, g), tans)[1]
     t_ref = jax.jvp(lapack, (dl, d, du, g), tans)[1]
     scale = float(jnp.max(jnp.abs(t_ref)))
     assert float(jnp.max(jnp.abs(t_new - t_ref))) < LAPACK_RTOL * scale
     dirs = jnp.stack([g * s for s in (1.0, -0.5, 0.25)])
+
     def solve_g(gg):
         return js._tridiagonal_solve(dl, d, du, gg)
 

@@ -1,5 +1,6 @@
-"""Formula correctness of the three pure-JAX conden kernels in `conden.py`,
-fed synthetic but physically-shaped inputs:
+"""Formula correctness of the three pure-JAX conden kernels in `conden.py`.
+
+Fed synthetic but physically-shaped inputs.
 
     1. `update_conden_rates` vs the `op.conden` loop body (op.py:1119-1148).
     2. `apply_h2o_relax_jax` vs `op.h2o_conden_evap_relax` (op.py:1331-1367).
@@ -12,15 +13,15 @@ condensation integration is out of scope here (HD189 has use_condense=False).
 
 from __future__ import annotations
 
-import numpy as np
 import jax
+import numpy as np
 
 # KERNEL_RTOL = 1e-13 needs float64.
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp  # noqa: E402
 from _helpers import relerr  # noqa: E402
-from vulcan3.phy_const import UNDERFLOW_DENOM  # noqa: E402
 
+from vulcan3.phy_const import UNDERFLOW_DENOM  # noqa: E402
 
 KERNEL_RTOL = 1e-13
 
@@ -95,9 +96,10 @@ def _make_static(
 
 
 def _nh3_case(seed):
-    """NH3 (column 0) and NH3_l_s (column 1) with condensing and evaporating
-    layers, some at and above the cold trap so the conden_top clamp triggers.
-    Returns (y, ymix, n_0, Dg, sat)."""
+    """NH3 (column 0) and NH3_l_s (column 1) with condensing and evaporating layers.
+
+    Some at and above the cold trap so the conden_top clamp triggers. Returns (y, ymix, n_0, Dg, sat).
+    """
     rng = np.random.default_rng(seed)
     nz, ni = 7, 3
     sat = rng.uniform(0.05, 1.0, size=nz)
@@ -112,8 +114,9 @@ def _nh3_case(seed):
 
 
 def test_update_conden_rates():
-    """Scatter, sign split, and the use_relax short-circuit (coeff=0 gives
-    an all-zero rate) over two condensation reactions.
+    """Scatter, sign split, and the use_relax short-circuit.
+
+    (coeff=0 gives an all-zero rate) over two condensation reactions.
     """
     import vulcan3.conden as _conden_mod
 
@@ -132,13 +135,9 @@ def test_update_conden_rates():
     k_arr = rng.uniform(1.0, 10.0, size=(nr + 1, nz))
     y = rng.uniform(0.05, 1.5, size=(nz, ni))
 
-    st = _make_static(
-        nz, ni, conden_re_idx, conden_sp_idx, Dg_per_re, sat_n_per_re, coeff_per_re
-    )
+    st = _make_static(nz, ni, conden_re_idx, conden_sp_idx, Dg_per_re, sat_n_per_re, coeff_per_re)
 
-    k_jax = np.asarray(
-        _conden_mod.update_conden_rates(jnp.asarray(k_arr), jnp.asarray(y), st)
-    )
+    k_jax = np.asarray(_conden_mod.update_conden_rates(jnp.asarray(k_arr), jnp.asarray(y), st))
 
     # Reference: per-reaction loop in numpy.
     k_ref = k_arr.copy()
@@ -195,9 +194,7 @@ def test_apply_h2o_relax_jax():
         n_0=n_0,
     )
 
-    y_jax, ymix_jax = _conden_mod.apply_h2o_relax_jax(
-        jnp.asarray(y), jnp.asarray(ymix), jnp.asarray(dt), st
-    )
+    y_jax, ymix_jax = _conden_mod.apply_h2o_relax_jax(jnp.asarray(y), jnp.asarray(ymix), jnp.asarray(dt), st)
     y_jax = np.asarray(y_jax)
     ymix_jax = np.asarray(ymix_jax)
 
@@ -211,9 +208,7 @@ def test_apply_h2o_relax_jax():
     evap_mask = tau < 0
 
     ymix_ref = ymix.copy()
-    ymix_ref[conden_mask, h2o_l_s_idx] += (
-        ymix_ref[conden_mask, h2o_idx] - y_conden[conden_mask]
-    )
+    ymix_ref[conden_mask, h2o_l_s_idx] += ymix_ref[conden_mask, h2o_idx] - y_conden[conden_mask]
     ymix_ref[conden_mask, h2o_idx] = y_conden[conden_mask]
     ymix_ref[evap_mask, h2o_idx] += ice_loss[evap_mask] / n_0[evap_mask]
     ymix_ref[evap_mask, h2o_l_s_idx] -= ice_loss[evap_mask] / n_0[evap_mask]
@@ -230,8 +225,10 @@ def test_apply_h2o_relax_jax():
 
 
 def test_apply_nh3_relax_jax():
-    """Match a per-cell numpy port of op.nh3_conden_evap_relax, including
-    the conden_top clamp and the NH3_l_s >= 0 clip."""
+    """Match a per-cell numpy port of op.nh3_conden_evap_relax.
+
+    Including the conden_top clamp and the NH3_l_s >= 0 clip.
+    """
     import vulcan3.conden as _conden_mod
 
     y, ymix, n_0, Dg, sat = _nh3_case(11)
@@ -255,9 +252,7 @@ def test_apply_nh3_relax_jax():
         n_0=n_0,
     )
 
-    y_jax, ymix_jax = _conden_mod.apply_nh3_relax_jax(
-        jnp.asarray(y), jnp.asarray(ymix), jnp.asarray(dt), st
-    )
+    y_jax, ymix_jax = _conden_mod.apply_nh3_relax_jax(jnp.asarray(y), jnp.asarray(ymix), jnp.asarray(dt), st)
     y_jax = np.asarray(y_jax)
     ymix_jax = np.asarray(ymix_jax)
 
@@ -271,9 +266,7 @@ def test_apply_nh3_relax_jax():
     evap_mask = tau < 0
 
     ymix_ref = ymix.copy()
-    ymix_ref[conden_mask, nh3_l_s_idx] += (
-        ymix_ref[conden_mask, nh3_idx] - y_conden[conden_mask]
-    )
+    ymix_ref[conden_mask, nh3_l_s_idx] += ymix_ref[conden_mask, nh3_idx] - y_conden[conden_mask]
     ymix_ref[conden_mask, nh3_idx] = y_conden[conden_mask]
     ymix_ref[evap_mask, nh3_idx] += ice_loss[evap_mask] / n_0[evap_mask]
     ymix_ref[evap_mask, nh3_l_s_idx] -= ice_loss[evap_mask] / n_0[evap_mask]
@@ -291,8 +284,10 @@ def test_apply_nh3_relax_jax():
 
 
 def test_nh3_conden_top_traced_scalar_bitwise():
-    """A 0-d int32 `nh3_conden_top` (the batched ProfileVars form) must be
-    BITWISE identical to the Python-int closure form under jit."""
+    """A 0-d int32 `nh3_conden_top`.
+
+    (the batched ProfileVars form) must be BITWISE identical to the Python-int closure form under jit.
+    """
     import vulcan3.conden as _conden_mod
 
     y, ymix, n_0, Dg, sat = _nh3_case(11)
@@ -321,9 +316,7 @@ def test_nh3_conden_top_traced_scalar_bitwise():
 
     @jax.jit
     def run_arr(y_, ymix_, dt_, top_):
-        return _conden_mod.apply_nh3_relax_jax(
-            y_, ymix_, dt_, st_int._replace(nh3_conden_top=top_)
-        )
+        return _conden_mod.apply_nh3_relax_jax(y_, ymix_, dt_, st_int._replace(nh3_conden_top=top_))
 
     y_i, ymix_i = run_int(jnp.asarray(y), jnp.asarray(ymix), jnp.asarray(0.6))
     y_a, ymix_a = run_arr(
@@ -338,8 +331,10 @@ def test_nh3_conden_top_traced_scalar_bitwise():
 
 
 def test_nh3_conden_top_vmap_per_lane():
-    """vmap over a batch where ONLY `nh3_conden_top` differs per lane must
-    match per-lane single calls (the mechanism run_batch relies on)."""
+    """Vmap over a batch where ONLY `nh3_conden_top` differs per lane must match per-lane single calls.
+
+    (the mechanism run_batch relies on).
+    """
     import vulcan3.conden as _conden_mod
 
     y, ymix, n_0, Dg, sat = _nh3_case(23)
@@ -361,9 +356,7 @@ def test_nh3_conden_top_vmap_per_lane():
     y_j, ymix_j, dt_j = jnp.asarray(y), jnp.asarray(ymix), jnp.asarray(0.6)
 
     def call(top):
-        return _conden_mod.apply_nh3_relax_jax(
-            y_j, ymix_j, dt_j, st._replace(nh3_conden_top=top)
-        )
+        return _conden_mod.apply_nh3_relax_jax(y_j, ymix_j, dt_j, st._replace(nh3_conden_top=top))
 
     yb, ymixb = jax.vmap(call)(tops)
     lanes_differ = 0
@@ -375,4 +368,3 @@ def test_nh3_conden_top_vmap_per_lane():
             lanes_differ += 1
     # Vacuity guard: different tops must actually change the result.
     assert lanes_differ > 0, "all lanes identical; conden_top had no effect"
-

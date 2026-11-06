@@ -24,6 +24,18 @@ from typing import Any
 
 import yaml
 
+from . import _settings
+
+__all__ = [
+    "DT_MAX_S",
+    "REPAIR_ABS_FLOOR",
+    "Config",
+    "default_config",
+    "dump_config",
+    "load_config",
+    "validate_overrides",
+]
+
 
 class _StrictLoader(yaml.SafeLoader):
     """Strict YAML loader for config files.
@@ -58,11 +70,9 @@ _FLOAT_RE = re.compile(
         |[-+]?[0-9][0-9_]*[eE][-+]?[0-9]+
         |[-+]?\.(?:inf|Inf|INF)
         |\.(?:nan|NaN|NAN))$""",
-    re.X,
+    re.VERBOSE,
 )
-_StrictLoader.add_implicit_resolver(
-    "tag:yaml.org,2002:float", _FLOAT_RE, list("-+0123456789.")
-)
+_StrictLoader.add_implicit_resolver("tag:yaml.org,2002:float", _FLOAT_RE, list("-+0123456789."))
 
 # Import-frozen knobs (read at the first `import vulcan3`): each honors an
 # environment override so a non-default network / atom set / composition can be
@@ -73,14 +83,7 @@ _FROZEN_ENV = {
     "com_file": "VULCAN3_COM_FILE",
 }
 
-# The VULCAN_JAX_* variables are VULCAN3_* now; one still exported would be
-# ignored (a job asking for VULCAN_JAX_SOLVER=fast would run the default).
-_OLD_ENV = sorted(k for k in os.environ if k.startswith("VULCAN_JAX_"))
-if _OLD_ENV:
-    raise ImportError(
-        f"{_OLD_ENV} were renamed: use the VULCAN3_ prefix "
-        "(e.g. VULCAN3_SOLVER) in the environment or job script."
-    )
+_settings.refuse_old_prefix()
 
 # Largest step the Ros2 stage repair (jax_step._repair_stage) can resolve;
 # its correction system is as singular as the stage system by 1e17 s.
@@ -96,8 +99,7 @@ _PHOTO_SWITCH_LONGDY_FACTOR = 10.0
 # explicit YAML/override value always wins (they are only filled when absent).
 _DERIVED = (
     ("dt_max", lambda d: min(d["runtime"] * _DT_MAX_RUNTIME_FRAC, DT_MAX_S)),
-    ("photo_switch_longdy_thresh",
-     lambda d: d["yconv_min"] * _PHOTO_SWITCH_LONGDY_FACTOR),
+    ("photo_switch_longdy_thresh", lambda d: d["yconv_min"] * _PHOTO_SWITCH_LONGDY_FACTOR),
     ("para_anaTP", lambda d: copy.deepcopy(d["para_warm"])),
 )
 
@@ -105,16 +107,10 @@ _DERIVED = (
 # (tools/audit_master_parity.py reads the names).
 _REMOVED_KEYS: dict[str, str] = {
     "gs": (
-        "gravity is derived as G*Mp/Rp**2; set `Mp` (planet mass, g) and `Rp` "
-        "(planet radius, cm) and remove the key"
+        "gravity is derived as G*Mp/Rp**2; set `Mp` (planet mass, g) and `Rp` (planet radius, cm) and remove the key"
     ),
-    "fix_species_time": (
-        "the fix_species pin starts at `stop_conden_time`; set that and "
-        "remove the key"
-    ),
-    "use_print_delta": (
-        "no per-step delta print; use `use_print_prog` and remove the key"
-    ),
+    "fix_species_time": ("the fix_species pin starts at `stop_conden_time`; set that and remove the key"),
+    "use_print_delta": ("no per-step delta print; use `use_print_prog` and remove the key"),
     "fastchem_met_scale": (
         "the equilibrium seed carries only the network's own elements; set "
         "`<X>_H` for the elements of `atom_list` or pick another "
@@ -133,38 +129,40 @@ _REMOVED_KEYS: dict[str, str] = {
         ("use_pi_controller", "pi_controller_alpha", "pi_controller_beta"),
         "the master-faithful I-controller is the only dt control; remove the key",
     ),
-    "use_allFC_ele": (
-        "the equilibrium seed carries only the network's own elements; "
-        "remove the key"
-    ),
-    "wall_clock_max": (
-        "a run ends on the convergence certificate, `count_max` or `runtime`; "
-        "remove the key"
-    ),
+    "use_allFC_ele": ("the equilibrium seed carries only the network's own elements; remove the key"),
+    "wall_clock_max": ("a run ends on the convergence certificate, `count_max` or `runtime`; remove the key"),
     "use_chunked_runner": (
-        "the CLI always runs in chunks of `print_prog_num` steps; from Python "
-        "call `integ(rs, chunk=N)`; remove the key"
+        "the CLI always runs in chunks of `print_prog_num` steps; from Python call `integ(rs, chunk=N)`; remove the key"
     ),
     "ode_solver": "Ros2 is the only solver; remove the key",
     "use_fix_all_bot": (
         "VULCAN 2 never selects the all-species bottom pin (op.py:3080-3088); "
         "pin species with `use_fix_sp_bot` and remove the key"
     ),
-    "gibbs_text": (
-        "reverse rates read thermo/NASA9/<species>.txt (gibbs.py); remove "
-        "the key"
-    ),
+    "gibbs_text": ("reverse rates read thermo/NASA9/<species>.txt (gibbs.py); remove the key"),
 }
 
 
 # Master's display-only keys (live plot, movies, text output). They change
 # nothing in a run, so a master-style config warns and drops them instead of
 # failing.
-_IGNORED_KEYS = frozenset((
-    "movie_dir", "plot_TP", "use_live_plot", "use_live_flux", "use_save_movie",
-    "use_flux_movie", "plot_height", "use_PIL", "live_plot_frq",
-    "save_movie_rate", "y_time_freq", "output_humanread", "use_shark",
-))
+_IGNORED_KEYS = frozenset(
+    (
+        "movie_dir",
+        "plot_TP",
+        "use_live_plot",
+        "use_live_flux",
+        "use_save_movie",
+        "use_flux_movie",
+        "plot_height",
+        "use_PIL",
+        "live_plot_frq",
+        "save_movie_rate",
+        "y_time_freq",
+        "output_humanread",
+        "use_shark",
+    )
+)
 
 
 # `<X>_H` elemental ratios: default.yaml declares the shipped elements; a
@@ -187,15 +185,16 @@ def _known_config_keys() -> frozenset[str]:
 
 @functools.cache
 def _packaged_defaults() -> dict[str, Any]:
-    """The packaged ``default.yaml``, read raw once: the value of every knob a
-    config file omits."""
+    """Return the packaged ``default.yaml``, read raw once: the value of every knob a config file omits."""
     pkg = resources.files("vulcan3").joinpath("configs", "default.yaml")
     return yaml.load(pkg.read_text(), Loader=_StrictLoader)
 
 
 def _validate_keys(d: dict[str, Any], source: str) -> list[str]:
-    """Reject removed or unknown config keys before they silently do nothing;
-    warn about display-only keys and return them for the caller to drop."""
+    """Reject removed or unknown config keys before they silently do nothing.
+
+    Warn about display-only keys and return them for the caller to drop.
+    """
     removed = sorted(k for k in d if k in _REMOVED_KEYS)
     if removed:
         detail = "; ".join(f"`{k}` -- {_REMOVED_KEYS[k]}" for k in removed)
@@ -203,14 +202,10 @@ def _validate_keys(d: dict[str, Any], source: str) -> list[str]:
     ignored = sorted(k for k in d if k in _IGNORED_KEYS)
     if ignored:
         warnings.warn(
-            f"{source}: ignoring display-only key(s) {ignored}; VULCAN3 has "
-            "no live plot, movie or text output.",
+            f"{source}: ignoring display-only key(s) {ignored}; VULCAN3 has no live plot, movie or text output.",
             stacklevel=3,
         )
-    unknown = sorted(
-        k for k in set(d) - _known_config_keys() - _IGNORED_KEYS
-        if not _ELEMENT_RATIO_KEY.fullmatch(k)
-    )
+    unknown = sorted(k for k in set(d) - _known_config_keys() - _IGNORED_KEYS if not _ELEMENT_RATIO_KEY.fullmatch(k))
     if unknown:
         raise ValueError(
             f"{source}: unknown config key(s) {unknown}. Every knob is declared in "
@@ -220,15 +215,14 @@ def _validate_keys(d: dict[str, Any], source: str) -> list[str]:
 
 
 def validate_overrides(overrides: dict[str, Any]) -> None:
-    """Refuse removed or unknown keys in an override dict, as
-    ``load_config(**overrides)`` does, for a caller that applies the dict to a
-    loaded Config with ``setattr`` (which checks nothing). Display-only keys
-    are refused here: setattr would apply them, and code has no reason to
-    pass one."""
+    """Refuse removed or unknown keys in an override dict, as ``load_config(**overrides)`` does.
+
+    For a caller that applies the dict to a loaded Config with ``setattr`` (which checks nothing). Display-only keys
+    are refused here: setattr would apply them, and code has no reason to pass one.
+    """
     ignored = sorted(set(overrides) & _IGNORED_KEYS)
     if ignored:
-        raise ValueError(f"config overrides: display-only key(s) {ignored} do "
-                         "nothing in VULCAN3; remove them.")
+        raise ValueError(f"config overrides: display-only key(s) {ignored} do nothing in VULCAN3; remove them.")
     _validate_keys(overrides, "config overrides")
 
 
@@ -266,15 +260,14 @@ def _read_text(name_or_path: str | os.PathLike) -> str:
         return pkg.read_text()
 
     raise FileNotFoundError(
-        f"no config named {name_or_path!r}: looked for ./configs/{fname} and "
-        f"the packaged vulcan3/configs/{fname}."
+        f"no config named {name_or_path!r}: looked for ./configs/{fname} and the packaged vulcan3/configs/{fname}."
     )
 
 
 def _apply_frozen_env(d: dict[str, Any]) -> None:
     """Overlay the import-frozen knobs from ``$VULCAN3_*`` (env wins)."""
     for key, env in _FROZEN_ENV.items():
-        val = os.environ.get(env)
+        val = _settings.frozen_override(env)
         if val is None:
             continue
         if key == "atom_list":
@@ -293,9 +286,7 @@ def _resolve_derived(d: dict[str, Any]) -> None:
         d["count_max"] = int(d["count_max"])
 
 
-def load_config(
-    name_or_path: str | os.PathLike = "default", /, **overrides: Any
-) -> Config:
+def load_config(name_or_path: str | os.PathLike = "default", /, **overrides: Any) -> Config:
     """Load a YAML config, apply env + caller overrides, resolve derived values.
 
     Args:
@@ -304,12 +295,15 @@ def load_config(
         **overrides: attribute overrides applied after the YAML (and after the
             frozen-env fold), before derived resolution.
 
-    Returns:
+    Returns
+    -------
         A ``Config`` namespace with the full runtime attribute surface.
     """
     raw = yaml.load(_read_text(name_or_path), Loader=_StrictLoader)
     if not isinstance(raw, dict):
-        raise ValueError(f"config {name_or_path!r} did not parse to a mapping.")
+        raise ValueError(  # noqa: TRY004 (a bad file, not a bad argument)
+            f"config {name_or_path!r} did not parse to a mapping."
+        )
     # A config file overlays default.yaml: a knob it omits takes that value.
     d: dict[str, Any] = {**copy.deepcopy(_packaged_defaults()), **raw}
     _apply_frozen_env(d)
@@ -326,17 +320,13 @@ def dump_config(cfg: Config, path: str | os.PathLike) -> None:
     Dumps the full attribute set (including the derived values), so re-loading
     the file with ``load_config`` reconstructs the same run inputs verbatim.
     """
-    d = {
-        k: v for k, v in vars(cfg).items() if not k.startswith("_") and not callable(v)
-    }
-    Path(path).write_text(
-        yaml.safe_dump(d, sort_keys=False, default_flow_style=False, width=100)
-    )
+    d = {k: v for k, v in vars(cfg).items() if not k.startswith("_") and not callable(v)}
+    Path(path).write_text(yaml.safe_dump(d, sort_keys=False, default_flow_style=False, width=100))
 
 
 @functools.cache
 def default_config() -> Config:
-    """The process-wide default Config (loaded once from ``configs/default.yaml``).
+    """Return the process-wide default Config (loaded once from ``configs/default.yaml``).
 
     Resolves the import-frozen knobs, folding any ``$VULCAN3_*`` overrides,
     at the first ``import vulcan3``. Cached: the

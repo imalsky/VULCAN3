@@ -11,15 +11,15 @@ def _check_gradient():
     import jax
     import jax.numpy as jnp
     import numpy as np
+
     from vulcan3.config import load_config
-    from vulcan3.state import RunState
+    from vulcan3.legacy_io import Output
     from vulcan3.op_jax import Ros2JAX
     from vulcan3.outer_loop import OuterLoop
-    from vulcan3.legacy_io import Output
+    from vulcan3.state import RunState
 
     jax.config.update("jax_enable_x64", True)
-    cfg = load_config("default", use_photo=False, use_print_prog=False,
-                      yconv_cri=1e-3, yconv_min=1e-3)
+    cfg = load_config("default", use_photo=False, use_print_prog=False, yconv_cri=1e-3, yconv_min=1e-3)
     integ = OuterLoop(Ros2JAX(), Output(), cfg=cfg)
     state0, static = integ.prepare_runstate(RunState.with_pre_loop_setup(cfg))
 
@@ -35,12 +35,12 @@ def _check_gradient():
         assert integ._classify_end_case(final) == 1, "FD/JVP column did not converge"
     fd = np.asarray((plus - minus) / (2 * eps))
     tangent = np.asarray(tangent)
-    assert np.isfinite(fd).all() and np.isfinite(tangent).all()
+    assert np.isfinite(fd).all()
+    assert np.isfinite(tangent).all()
     high = np.abs(fd) >= np.quantile(np.abs(fd), 0.99)
     assert np.min(np.abs(fd[high])) > 0
     relative = np.abs((tangent[high] - fd[high]) / fd[high])
-    print(f"Kzz JVP/FD: median={np.median(relative):.6g}, "
-          f"max={relative.max():.6g}, cells={high.sum()}", flush=True)
+    print(f"Kzz JVP/FD: median={np.median(relative):.6g}, max={relative.max():.6g}, cells={high.sum()}", flush=True)
     # Paper comparison is below 0.1% on these cells; cutting the adaptive
     # controller's tangent produces roughly 40% error despite identical primals.
     assert relative.max() < 1e-3
@@ -50,8 +50,7 @@ def _check_gradient():
 def test_kzz_jvp_matches_reconverged_finite_difference(tmp_path):
     from _helpers import run_self
 
-    run_self(__file__, network="thermo/NCHO_photo_network.txt",
-             atom_list="H,O,C,N", cwd=tmp_path)
+    run_self(__file__, network="thermo/NCHO_photo_network.txt", atom_list="H,O,C,N", cwd=tmp_path)
 
 
 if __name__ == "__main__":

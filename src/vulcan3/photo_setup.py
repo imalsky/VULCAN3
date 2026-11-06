@@ -16,9 +16,11 @@ import os
 import jax.numpy as jnp
 import numpy as np
 
+from ._paths import resolve_data_path
 from .config import default_config
 from .state import PhotoStaticInputs
-from ._paths import resolve_data_path
+
+__all__ = ["populate_photo"]
 
 logger = logging.getLogger(__name__)
 
@@ -42,33 +44,33 @@ def _cross_folder() -> str:
 
 
 def _load_thresholds(species_in_network) -> dict[str, float]:
-    """Read `cross_folder/thresholds.txt`; return per-species photodissociation
-    wavelength threshold (nm), filtered to species in the network."""
+    """Read `cross_folder/thresholds.txt`; return per-species photodissociation wavelength threshold (nm).
+
+    Filtered to species in the network.
+    """
     folder = _cross_folder()
     sp_label = np.genfromtxt(folder + "thresholds.txt", dtype=str, usecols=0)
     lmd_data = np.genfromtxt(folder + "thresholds.txt", skip_header=1)[:, 1]
     species_set = set(species_in_network)
-    return {
-        str(label): float(row)
-        for label, row in zip(sp_label, lmd_data)
-        if str(label) in species_set
-    }
+    return {str(label): float(row) for label, row in zip(sp_label, lmd_data, strict=False) if str(label) in species_set}
 
 
 def _read_table(path: str, names, delimiter: str | None = ",") -> np.ndarray:
-    """Read a cross-section / branch-ratio / Rayleigh table with a one-line
-    header. `names` lists the columns, or True to take them from the header."""
-    return np.genfromtxt(
-        path, dtype=float, delimiter=delimiter, skip_header=1, names=names
-    )
+    """Read a cross-section / branch-ratio / Rayleigh table with a one-line header.
+
+    `names` lists the columns, or True to take them from the header.
+    """
+    return np.genfromtxt(path, dtype=float, delimiter=delimiter, skip_header=1, names=names)
 
 
 def _discover_T_cross_files(sp: str) -> list[int]:
-    """Scan `thermo/photo_cross/{sp}/` for `{sp}_cross_{T}K.csv` files;
-    return the integer T list. Path is hardcoded (not via cfg.cross_folder)."""
+    """Scan `thermo/photo_cross/{sp}/` for `{sp}_cross_{T}K.csv` files; return the integer T list.
+
+    Path is hardcoded (not via cfg.cross_folder).
+    """
     T_list: list[int] = []
     folder = str(resolve_data_path("thermo/photo_cross/" + sp + "/"))
-    for temp_file in os.listdir(folder):
+    for temp_file in os.listdir(folder):  # noqa: PTH208 (only the plain names are read)
         if temp_file.startswith(sp) and temp_file.endswith("K.csv"):
             temp = temp_file.replace(sp, "").replace("_cross_", "").replace("K.csv", "")
             T_list.append(int(temp))
@@ -99,7 +101,8 @@ def _make_bins(
     if not bin_min < dbin_12trans < bin_max:
         raise ValueError(
             f"dbin_12trans={dbin_12trans:g} nm must lie strictly inside "
-            f"the photolysis interval [{bin_min:g}, {bin_max:g}] nm")
+            f"the photolysis interval [{bin_min:g}, {bin_max:g}] nm"
+        )
     return np.concatenate(
         (
             np.arange(bin_min, dbin_12trans, dbin1),
@@ -109,9 +112,12 @@ def _make_bins(
 
 
 def _sort_pairs(xp: np.ndarray, fp: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Sort `(xp, fp)` by `xp`. scipy.interpolate.interp1d sorts internally;
-    np.interp does not, so non-monotonic data files (e.g. CH3SH_branch.csv
-    has a typo `354.0` between `253.5` and `309.5`) need an explicit sort."""
+    """Sort `(xp, fp)` by `xp`.
+
+    scipy.interpolate.interp1d sorts internally; np.interp does not. So non-monotonic data files (e.g. CH3SH_branch.csv
+    has a typo `354.0` between `253.5` and `309.5`) need an
+    explicit sort.
+    """
     order = np.argsort(xp, kind="stable")
     return xp[order], fp[order]
 
@@ -123,8 +129,9 @@ def _interp_zero_extrap(xp: np.ndarray, fp: np.ndarray, x: np.ndarray) -> np.nda
 
 
 def _interp_edge_extrap(xp: np.ndarray, fp: np.ndarray, x: np.ndarray) -> np.ndarray:
-    """Linear interpolation with `fill_value=(fp[0], fp[-1])` outside
-    [xp[0], xp[-1]] -- the asymmetric branch-ratio extrapolation rule.
+    """Linear interpolation with `fill_value=(fp[0], fp[-1])` outside [xp[0], xp[-1]].
+
+    This is the asymmetric branch-ratio extrapolation rule.
 
     Fill values are read from the *unsorted* fp[0]/fp[-1] to match scipy's
     exact behavior, while the in-bounds interpolation uses sorted pairs.
@@ -162,8 +169,10 @@ def _bin_cross_and_branches(
     n_branch: int,
     bins: np.ndarray,
 ) -> tuple[np.ndarray, dict[int, np.ndarray], dict[int, np.ndarray]]:
-    """Build `cross[bin]`, `cross_J[branch_i][bin]` and the binned branch
-    ratios `ratio[branch_i][bin]` for one photodissociation species."""
+    """Build the binned cross sections of one photodissociation species.
+
+    `cross[bin]`, `cross_J[branch_i][bin]` and the branch ratios `ratio[branch_i][bin]`.
+    """
     lam = cross_raw["lambda"]
     cross_at_bins = _interp_zero_extrap(lam, cross_raw["cross"], bins)
     disso_at_bins = _interp_zero_extrap(lam, cross_raw["disso"], bins)
@@ -180,14 +189,14 @@ def _bin_cross_and_branches(
             )
         except ValueError as e:
             raise ValueError(
-                "The branches in the network file do not match the "
-                f"branching ratio file for {sp} ({br_key})"
+                f"The branches in the network file do not match the branching ratio file for {sp} ({br_key})"
             ) from e
         ratios[i] = ratio_at_bins
         branches[i] = disso_at_bins * ratio_at_bins
     return cross_at_bins, branches, ratios
 
 
+# size-limit-ok: one binning pass over the cross-section tables
 def _bin_T_dependent(
     sp: str,
     n_branch: int,
@@ -210,9 +219,7 @@ def _bin_T_dependent(
     min_T_sp = int(T_list_arr.min())
 
     cross_T = np.zeros((nz, nbin), dtype=np.float64)
-    cross_J_T = {
-        i: np.zeros((nz, nbin), dtype=np.float64) for i in range(1, n_branch + 1)
-    }
+    cross_J_T = {i: np.zeros((nz, nbin), dtype=np.float64) for i in range(1, n_branch + 1)}
 
     for lev in range(nz):
         Tz = float(Tco[lev])
@@ -302,14 +309,13 @@ def _bin_T_dependent(
                     else:
                         cross_T[lev, n] = float(cross_edge_at_bins[n])
                         for i in range(1, n_branch + 1):
-                            cross_J_T[i][lev, n] = (
-                                float(disso_edge_at_bins[n]) * inter_ratio_at_bins[i][n]
-                            )
+                            cross_J_T[i][lev, n] = float(disso_edge_at_bins[n]) * inter_ratio_at_bins[i][n]
 
     return cross_T, cross_J_T
 
 
-def _build_photo_static_dense(var, atm) -> PhotoStaticInputs:
+# size-limit-ok: packs one long pytree, one field per line
+def _build_photo_static_dense(var, atm) -> PhotoStaticInputs:  # noqa: C901 (packs one long pytree, one field per line)
     """Pure builder of the dense `PhotoStaticInputs` pytree.
 
     `din12_indx` initializes to `-1`; the caller sets it with
@@ -352,14 +358,12 @@ def _build_photo_static_dense(var, atm) -> PhotoStaticInputs:
             T_list = _discover_T_cross_files(sp)
             cross_T_sp_list_local[sp] = T_list
             for tt in T_list:
-                cross_T_raw[(sp, tt)] = _read_table(
-                    sp_path + "_cross_" + str(tt) + "K.csv", cross_cols
-                )
+                cross_T_raw[(sp, tt)] = _read_table(sp_path + "_cross_" + str(tt) + "K.csv", cross_cols)
             cross_T_raw[(sp, _ROOM_T_SAMPLE_K)] = cross_raw[sp]
             cross_T_sp_list_local[sp].append(_ROOM_T_SAMPLE_K)
 
         if cross_raw[sp]["cross"][0] == 0 or cross_raw[sp]["cross"][-1] == 0:
-            raise IOError("\n Please remove the zeros in the cross file of " + sp)
+            raise OSError("\n Please remove the zeros in the cross file of " + sp)
 
         if sp not in threshold:
             raise KeyError(f"{sp} not in {folder}thresholds.txt")
@@ -370,29 +374,18 @@ def _build_photo_static_dense(var, atm) -> PhotoStaticInputs:
     diss_max = max(diss)
     bin_min = max(min(lam_lo), var.def_bin_min)
     bin_max = min(max(lam_hi), var.def_bin_max, diss_max)
-    logger.info(
-        "Input stellar spectrum from "
-        + "{:.1f}".format(var.def_bin_min)
-        + " to "
-        + "{:.1f}".format(var.def_bin_max)
-    )
-    logger.info("Photodissociation threshold: " + "{:.1f}".format(diss_max))
-    logger.info(
-        "Using wavelength bins from " + "{:.1f}".format(bin_min) + " to " + str(bin_max)
-    )
+    logger.info("Input stellar spectrum from %.1f to %.1f", var.def_bin_min, var.def_bin_max)
+    logger.info("Photodissociation threshold: %.1f", diss_max)
+    logger.info("Using wavelength bins from %.1f to %s", bin_min, bin_max)
 
     dbin1 = float(_CFG.dbin1)
     dbin2 = float(_CFG.dbin2)
     bins = _make_bins(bin_min, bin_max, dbin1, dbin2, _CFG.dbin_12trans)
     nbin = int(bins.shape[0])
 
-    cross_per_sp: dict[str, np.ndarray] = {
-        sp: np.zeros(nbin, dtype=np.float64) for sp in absp_sp_list
-    }
+    cross_per_sp: dict[str, np.ndarray] = {sp: np.zeros(nbin, dtype=np.float64) for sp in absp_sp_list}
     cross_J_per_key: dict[tuple[str, int], np.ndarray] = {}
-    cross_T_per_sp: dict[str, np.ndarray] = {
-        sp: np.zeros((nz, nbin), dtype=np.float64) for sp in T_cross_sp
-    }
+    cross_T_per_sp: dict[str, np.ndarray] = {sp: np.zeros((nz, nbin), dtype=np.float64) for sp in T_cross_sp}
     cross_J_T_per_key: dict[tuple[str, int], np.ndarray] = {}
 
     for sp in photo_sp:
@@ -448,9 +441,7 @@ def _build_photo_static_dense(var, atm) -> PhotoStaticInputs:
 
     cross_scat_per_sp: dict[str, np.ndarray] = {}
     for sp in scat_sp_list:
-        scat_raw = _read_table(
-            folder + "rayleigh/" + sp + "_scat.txt", ["lambda", "cross"], None
-        )
+        scat_raw = _read_table(folder + "rayleigh/" + sp + "_scat.txt", ["lambda", "cross"], None)
         cross_scat_per_sp[sp] = _interp_zero_extrap(
             scat_raw["lambda"],
             scat_raw["cross"],
@@ -463,21 +454,13 @@ def _build_photo_static_dense(var, atm) -> PhotoStaticInputs:
     absp_T_sp_ordered = tuple(sp for sp in absp_sp_list if sp in T_cross_sp)
     scat_sp_ordered = tuple(scat_sp_list)
     branch_keys_ordered = tuple(
-        (sp, i)
-        for sp in sorted(photo_sp)
-        if sp not in T_cross_sp
-        for i in range(1, var.n_branch[sp] + 1)
+        (sp, i) for sp in sorted(photo_sp) if sp not in T_cross_sp for i in range(1, var.n_branch[sp] + 1)
     )
     branch_T_keys_ordered = tuple(
-        (sp, i)
-        for sp in sorted(photo_sp)
-        if sp in T_cross_sp
-        for i in range(1, var.n_branch[sp] + 1)
+        (sp, i) for sp in sorted(photo_sp) if sp in T_cross_sp for i in range(1, var.n_branch[sp] + 1)
     )
     if use_ion:
-        ion_branch_keys_ordered = tuple(
-            (sp, i) for sp in sorted(ion_sp) for i in range(1, var.ion_branch[sp] + 1)
-        )
+        ion_branch_keys_ordered = tuple((sp, i) for sp in sorted(ion_sp) for i in range(1, var.ion_branch[sp] + 1))
     else:
         ion_branch_keys_ordered = ()
 
@@ -523,8 +506,9 @@ def _alloc_runtime_buffers(var, nbin: int, nz: int) -> None:
 
 
 def populate_photo(var, atm) -> PhotoStaticInputs:
-    """Build the dense `PhotoStaticInputs` pytree, write scalar grid metadata
-    to `var`, and zero-allocate the runtime mutable buffers.
+    """Build the dense `PhotoStaticInputs` pytree and write scalar grid metadata to `var`.
+
+    Also zero-allocates the runtime mutable buffers.
 
     After `read_sflux` populates `var.sflux_din12_indx`, re-attach via
     `static = static.with_din12_indx(int(var.sflux_din12_indx))`.

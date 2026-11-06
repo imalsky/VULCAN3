@@ -1,6 +1,8 @@
-"""Input-grid contracts: every vendored stellar spectrum loads (upstream accepts
-duplicate wavelengths -- sflux-epseri.txt keeps 20), and malformed inputs
-fail loud instead of interpolating garbage."""
+"""Input-grid contracts: every vendored stellar spectrum loads (upstream accepts duplicate wavelengths.
+
+Sflux-epseri.txt keeps 20), and malformed inputs fail loud instead of interpolating garbage.
+"""
+
 from types import SimpleNamespace
 
 import numpy as np
@@ -10,18 +12,19 @@ from vulcan3._paths import PACKAGE_ROOT
 from vulcan3.atm_setup import read_sflux_binned
 from vulcan3.photo_setup import _make_bins
 
-_SFLUX_FILES = sorted(
-    p.name for p in (PACKAGE_ROOT / "atm/stellar_flux").glob("sflux-*.txt")
-)
+_SFLUX_FILES = sorted(p.name for p in (PACKAGE_ROOT / "atm/stellar_flux").glob("sflux-*.txt"))
 
 
 @pytest.mark.parametrize("name", _SFLUX_FILES)
 def test_every_vendored_stellar_spectrum_loads(name):
     sf = np.genfromtxt(
         PACKAGE_ROOT / "atm/stellar_flux" / name,
-        dtype=float, skip_header=1, names=["lambda", "flux"],
+        dtype=float,
+        skip_header=1,
+        names=["lambda", "flux"],
     )
-    assert np.all(np.diff(sf["lambda"]) >= 0.0) and np.all(np.isfinite(sf["flux"]))
+    assert np.all(np.diff(sf["lambda"]) >= 0.0)
+    assert np.all(np.isfinite(sf["flux"]))
 
 
 def _sflux(*rows):
@@ -29,7 +32,11 @@ def _sflux(*rows):
 
 
 _CFG = SimpleNamespace(
-    dbin1=1.0, dbin2=2.0, dbin_12trans=4.0, r_star=1.0, orbit_radius=1.0,
+    dbin1=1.0,
+    dbin2=2.0,
+    dbin_12trans=4.0,
+    r_star=1.0,
+    orbit_radius=1.0,
     sflux_file="synthetic",
 )
 
@@ -42,12 +49,14 @@ _CFG = SimpleNamespace(
         lambda: _make_bins(1.0, 10.0, 0.1, 1.0, 11.0),
         # decreasing wavelength column
         lambda: read_sflux_binned(
-            _CFG, np.array([2.0, 3.0, 4.0, 6.0, 8.0]),
+            _CFG,
+            np.array([2.0, 3.0, 4.0, 6.0, 8.0]),
             _sflux((1.0, 1.0), (5.0, 1.0), (4.0, 1.0), (9.0, 1.0)),
         ),
         # grid without the dbin_12trans node
         lambda: read_sflux_binned(
-            _CFG, np.array([2.0, 3.0, 5.0, 7.0, 8.0]),
+            _CFG,
+            np.array([2.0, 3.0, 5.0, 7.0, 8.0]),
             _sflux((1.0, 1.0), (4.0, 1.0), (9.0, 1.0)),
         ),
     ],

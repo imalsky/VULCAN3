@@ -1,0 +1,20 @@
+# Tested on NVRTC kernels with no CUDA toolkit (compile_flags.txt) and with one.
+# Left out because they were noise on real kernels:
+#   bugprone-signed-bitwise: 66 of 160 findings on one kernel, nearly all lane and mask arithmetic on int.
+#   bugprone-easily-swappable-parameters: 22 of 160, every kernel helper takes several doubles.
+#   bugprone-reserved-identifier: 30 of 160, CUDA's own __device__ style names.
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  performance-*,
+  misc-unused-*,
+  misc-redundant-expression,
+  readability-misleading-indentation,
+  readability-duplicate-include,
+  cppcoreguidelines-init-variables,
+  -bugprone-signed-bitwise,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-reserved-identifier,
+  -clang-analyzer-optin.*
+HeaderFilterRegex: '.*'

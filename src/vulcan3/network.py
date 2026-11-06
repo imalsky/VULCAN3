@@ -1,30 +1,18 @@
 """Parse a VULCAN reaction-network text file into a typed Network.
 
-Forward reactions sit at odd parser-indices (1, 3, 5, ...) with a reverse
-slot at i+1; reverse rates are filled in later from NASA-9 Gibbs energies.
-Thermal reverse rates fill only slots below `stop_rev_indx` and skip
-condensation, photo and ion rows: photo and ion reverse slots stay zero,
-and a condensation reverse slot holds the evaporation rate set at runtime.
-Radiative-recombination networks are refused.
-
-Sections in file order: two-body, 3-body w/ k_inf (Lindemann), 3-body
-w/o k_inf, special (hardcoded), condensation, radiative recombination,
-photo, ionisation.
-
-Species ordering follows first appearance in the network file. Species
-that appear only in the config (e.g. an inert `const_mix` gas like Ar)
-are not appended; `runtime_validation` rejects such configs upfront.
+Public names: `Network`, `parse_network`. The file format and index conventions are in docs/method.md.
 """
 
 from __future__ import annotations
 
 import re
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
+__all__ = ["Network", "parse_network"]
 
 _SECTION_TWO_BODY = "two_body"
 _SECTION_THREE_BODY_KINF = "three_body_kinf"
@@ -155,13 +143,12 @@ def _parse_temp_ranges(tokens: list[str]) -> tuple[tuple[float, float], ...]:
         break
     return tuple(reversed(out))
 
+
 # Duplicate reactions listed by name in the parse error.
 _DUPS_SHOWN = 4
 
 
-def _announce_duplicate_reactions(
-    network_path: str, dups: list[tuple[str, int, int]], duplicates_ok: bool
-) -> None:
+def _announce_duplicate_reactions(network_path: str, dups: list[tuple[str, int, int]], duplicates_ok: bool) -> None:
     """Refuse (or, with `duplicates_ok`, warn about) repeated reactions.
 
     The parser is positional and appends every row, so both copies of a
@@ -175,10 +162,7 @@ def _announce_duplicate_reactions(
     """
     if not dups:
         return
-    shown = "; ".join(
-        f"{eq!r} at positions {first} and {second}"
-        for eq, first, second in dups[:_DUPS_SHOWN]
-    )
+    shown = "; ".join(f"{eq!r} at positions {first} and {second}" for eq, first, second in dups[:_DUPS_SHOWN])
     more = f" (+{len(dups) - _DUPS_SHOWN} more)" if len(dups) > _DUPS_SHOWN else ""
     msg = (
         f"Network {network_path} contains {len(dups)} duplicated reaction(s) "
@@ -241,47 +225,127 @@ def _detect_section(line: str) -> str | None:
     return None
 
 
-def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> Network:
-    """Parse a VULCAN network file. See module docstring.
-
-    Raises ValueError if a reaction is duplicated within one section (its
-    contribution would be silently double-counted); `duplicates_ok=True`
-    downgrades that to a RuntimeWarning for inspection/file-sweep uses.
-    """
-    from ._paths import resolve_data_path
-
-    network_path = str(resolve_data_path(str(network_path)))
-
-    species_order: list[str] = []
-    species_idx: dict[str, int] = {}
+@dataclass
+class _ParseState:
+    """What the reader accumulates while it walks a network file."""
 
     section: str = _SECTION_TWO_BODY
-    parser_i = 1  # forwards: 1, 3, 5, ...
+    parser_i: int = 1  # forwards: 1, 3, 5, ...
     stop_rev_indx: int | None = None
     conden_indx: int | None = None
     photo_indx: int | None = None
+    species_order: list[str] = field(default_factory=list)
+    species_idx: dict[str, int] = field(default_factory=dict)
+    photo_sp: list[str] = field(default_factory=list)
+    pho_rate_index: dict[tuple[str, int], int] = field(default_factory=dict)
+    n_branch: dict[str, int] = field(default_factory=dict)
+    ion_sp: list[str] = field(default_factory=list)
+    ion_rate_index: dict[tuple[str, int], int] = field(default_factory=dict)
+    ion_branch: dict[str, int] = field(default_factory=dict)
+    forward_records: list[dict] = field(default_factory=list)
+    Rf_text: dict[int, str] = field(default_factory=dict)
+    temp_ranges: dict[int, tuple[tuple[float, float], ...]] = field(default_factory=dict)
+    stale_ids: list[tuple[int, int, str]] = field(default_factory=list)
 
-    photo_sp: list[str] = []
-    pho_rate_index: dict[tuple[str, int], int] = {}
-    n_branch: dict[str, int] = {}
-    ion_sp: list[str] = []
-    ion_rate_index: dict[tuple[str, int], int] = {}
-    ion_branch: dict[str, int] = {}
 
-    forward_records: list[dict] = []
-    Rf_text: dict[int, str] = {}
-    temp_ranges: dict[int, tuple[tuple[float, float], ...]] = {}
-    stale_ids: list[tuple[int, int, str]] = []
+def _enter_section(st: _ParseState, section: str, network_path: str, lineno: int) -> None:
+    """Switch to `section`, recording where the condensation and photo sections start."""
+    st.section = section
+    if section == _SECTION_CONDEN and st.conden_indx is None:
+        st.conden_indx = st.parser_i
+    if section == _SECTION_RADIATIVE:
+        raise ValueError(
+            f"{network_path}:{lineno}: radiative-recombination networks are "
+            "not supported -- rates_jax.py excludes those slots, "
+            "so their reactions would be silently dropped."
+        )
+    if section == _SECTION_PHOTO and st.photo_indx is None:
+        st.photo_indx = st.parser_i
 
-    def _intern_species(sp: str) -> int:
+
+def _collapse_side(side, species_idx: dict[str, int]) -> dict[int, float]:
+    """Collapse one side of a reaction to species index -> stoichiometry, without M."""
+    collapsed: dict[int, float] = {}
+    for stoich, sp in side:
         if sp == "M":
-            return -1
-        if sp not in species_idx:
-            species_idx[sp] = len(species_order)
-            species_order.append(sp)
-        return species_idx[sp]
+            continue
+        collapsed[species_idx[sp]] = collapsed.get(species_idx[sp], 0.0) + float(stoich)
+    return collapsed
 
-    with open(network_path) as f:
+
+def _numeric_prefix(cols: list[str]) -> list[float]:
+    """Return the leading numeric columns (Arrhenius and aux); the rest is commentary."""
+    num_cols: list[float] = []
+    for c in cols:
+        try:
+            num_cols.append(float(c))
+        except ValueError:
+            break
+    return num_cols
+
+
+def _read_reaction(st: _ParseState, file_id_str: str, eq: str, tail: str) -> None:
+    """Record one reaction row at the current parser index."""
+    section, parser_i = st.section, st.parser_i
+    # A blank id column is legitimate: upstream never reads it and
+    # renumbers from its own counter, so such rows are real reactions
+    # (NCHO_full_photo_network.txt, SNCHO_photo_network_C3.txt).
+    file_id = int(file_id_str) if file_id_str else 0
+    eq = eq.strip()
+    reactants, products = _parse_eq(eq)
+
+    for _stoich, sp in reactants + products:
+        if sp != "M" and sp not in st.species_idx:
+            st.species_idx[sp] = len(st.species_order)
+            st.species_order.append(sp)
+
+    cols = tail.split()
+    num_cols = _numeric_prefix(cols)
+    rec = {
+        "parser_i": parser_i,
+        "section": section,
+        "Rf": eq,
+        "reactants_collapsed": _collapse_side(reactants, st.species_idx),
+        "products_collapsed": _collapse_side(products, st.species_idx),
+        # M is tracked per side: a row with M on one side only gets
+        # different M-factors forward and reverse. The only such row in
+        # the shipped networks is the inherited HNCO + M -> H + NCO
+        # typo, kept at parity.
+        "has_M_reac": any(sp == "M" for _, sp in reactants),
+        "has_M_prod": any(sp == "M" for _, sp in products),
+        "num_cols": num_cols,
+        # Photo/ion-specific metadata: columns[0]=species, columns[1]=branch
+        "photo_meta": (cols[0], int(cols[1]))
+        if (section in (_SECTION_PHOTO, _SECTION_ION) and len(cols) >= 2 and cols[1].isdigit())
+        else None,
+    }
+    st.forward_records.append(rec)
+    st.Rf_text[parser_i] = eq
+    if section in _THERMAL_SECTIONS:
+        st.temp_ranges[parser_i] = _parse_temp_ranges(cols[len(num_cols) :])
+
+    if section in (_SECTION_PHOTO, _SECTION_ION):
+        if file_id != parser_i:
+            st.stale_ids.append((parser_i, file_id, eq))
+        sp_list, rate_index, n_br = (
+            (st.photo_sp, st.pho_rate_index, st.n_branch)
+            if section == _SECTION_PHOTO
+            else (st.ion_sp, st.ion_rate_index, st.ion_branch)
+        )
+        target_sp = cols[0] if cols else eq.split()[0]
+        if target_sp not in sp_list:
+            sp_list.append(target_sp)
+        if rec["photo_meta"] is not None:
+            rate_index[rec["photo_meta"]] = parser_i
+            n_br[target_sp] = max(n_br.get(target_sp, 0), rec["photo_meta"][1])
+
+    st.parser_i += 2
+
+
+def _read_file(network_path: str) -> _ParseState:
+    """Walk the file once, in order."""
+    st = _ParseState()
+    with Path(network_path).open() as f:
         for lineno, raw_line in enumerate(f, 1):
             line = raw_line.rstrip("\n")
             if not line.strip():
@@ -290,123 +354,25 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
             # Section markers must be checked before the # reverse-stops marker.
             new_sec = _detect_section(line)
             if new_sec is not None:
-                section = new_sec
-                if section == _SECTION_CONDEN and conden_indx is None:
-                    conden_indx = parser_i
-                if section == _SECTION_RADIATIVE:
-                    raise ValueError(
-                        f"{network_path}:{lineno}: radiative-recombination networks are "
-                        "not supported -- rates_jax.py excludes those slots, "
-                        "so their reactions would be silently dropped."
-                    )
-                if section == _SECTION_PHOTO and photo_indx is None:
-                    photo_indx = parser_i
+                _enter_section(st, new_sec, network_path, lineno)
                 continue
 
             stripped = line.lstrip()
             if stripped.startswith("# reverse stops"):
-                stop_rev_indx = parser_i
+                st.stop_rev_indx = st.parser_i
                 continue
             if stripped.startswith("#"):
                 continue
 
             m = _RE_LINE.match(line)
             if m is None:
-                raise ValueError(
-                    f"{network_path}:{lineno}: not a reaction row and not a comment: "
-                    f"{line.rstrip()!r}"
-                )
+                raise ValueError(f"{network_path}:{lineno}: not a reaction row and not a comment: {line!r}")
+            _read_reaction(st, m.group(1), m.group(2), m.group(3))
+    return st
 
-            file_id_str, eq, tail = m.group(1), m.group(2), m.group(3)
-            # A blank id column is legitimate: upstream never reads it and
-            # renumbers from its own counter, so such rows are real reactions
-            # (NCHO_full_photo_network.txt, SNCHO_photo_network_C3.txt).
-            file_id = int(file_id_str) if file_id_str else 0
-            eq = eq.strip()
-            reactants, products = _parse_eq(eq)
 
-            for _stoich, sp in reactants + products:
-                _intern_species(sp)
-
-            # Collapse species -> stoich (M dropped here; tracked via has_M_*).
-            r_collapsed: dict[int, float] = {}
-            for stoich, sp in reactants:
-                if sp == "M":
-                    continue
-                r_collapsed[species_idx[sp]] = r_collapsed.get(
-                    species_idx[sp], 0.0
-                ) + float(stoich)
-            p_collapsed: dict[int, float] = {}
-            for stoich, sp in products:
-                if sp == "M":
-                    continue
-                p_collapsed[species_idx[sp]] = p_collapsed.get(
-                    species_idx[sp], 0.0
-                ) + float(stoich)
-
-            # M is tracked per side: a row with M on one side only gets
-            # different M-factors forward and reverse. The only such row in
-            # the shipped networks is the inherited HNCO + M -> H + NCO
-            # typo, kept at parity.
-            has_M_reac = any(sp == "M" for _, sp in reactants)
-            has_M_prod = any(sp == "M" for _, sp in products)
-
-            # Parse the numeric prefix of `tail` (Arrhenius / aux); the
-            # rest of `tail` is reference / temperature commentary.
-            cols = tail.split()
-            num_cols: list[float] = []
-            for c in cols:
-                try:
-                    num_cols.append(float(c))
-                except ValueError:
-                    break
-
-            rec = {
-                "parser_i": parser_i,
-                "section": section,
-                "Rf": eq,
-                "reactants_collapsed": r_collapsed,
-                "products_collapsed": p_collapsed,
-                "has_M_reac": has_M_reac,
-                "has_M_prod": has_M_prod,
-                "num_cols": num_cols,
-                # Photo/ion-specific metadata: columns[0]=species, columns[1]=branch
-                "photo_meta": (cols[0], int(cols[1]))
-                if (
-                    section in (_SECTION_PHOTO, _SECTION_ION)
-                    and len(cols) >= 2
-                    and cols[1].isdigit()
-                )
-                else None,
-            }
-            forward_records.append(rec)
-            Rf_text[parser_i] = eq
-            if section in _THERMAL_SECTIONS:
-                temp_ranges[parser_i] = _parse_temp_ranges(cols[len(num_cols):])
-
-            if section in (_SECTION_PHOTO, _SECTION_ION):
-                if file_id != parser_i:
-                    stale_ids.append((parser_i, file_id, eq))
-                sp_list, rate_index, n_br = (
-                    (photo_sp, pho_rate_index, n_branch)
-                    if section == _SECTION_PHOTO
-                    else (ion_sp, ion_rate_index, ion_branch)
-                )
-                target_sp = cols[0] if cols else eq.split()[0]
-                if target_sp not in sp_list:
-                    sp_list.append(target_sp)
-                if rec["photo_meta"] is not None:
-                    rate_index[rec["photo_meta"]] = parser_i
-                    n_br[target_sp] = max(n_br.get(target_sp, 0), rec["photo_meta"][1])
-
-            parser_i += 2
-
-    # parser_i has been bumped past the last reverse -> nr = parser_i - 1.
-    nr = parser_i - 1
-    ni = len(species_order)
-
-    # A reaction repeated within one section is double-counted by this
-    # positional parser: refuse (upstream's check_duplicate() only prints).
+def _find_duplicates(forward_records: list[dict]) -> list[tuple[str, int, int]]:
+    """Find reactions repeated within one section, which this positional parser would double-count."""
     seen_eq: dict[tuple, int] = {}
     dups: list[tuple[str, int, int]] = []
     for rec in forward_records:
@@ -421,124 +387,120 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
         first_i = seen_eq.setdefault(key, rec["parser_i"])
         if first_i != rec["parser_i"]:
             dups.append((rec["Rf"], first_i, rec["parser_i"]))
-    _announce_duplicate_reactions(network_path, dups, duplicates_ok)
+    return dups
 
-    if stop_rev_indx is None:
-        # Older networks may omit `# reverse stops`; default: reverses are
-        # computed up to the photo section.
-        stop_rev_indx = photo_indx if photo_indx is not None else nr + 1
-    if conden_indx is None:
-        conden_indx = nr + 1
 
+def _fill_stoichiometry(forward_records: list[dict], nr: int, ni: int) -> dict[str, np.ndarray]:
+    """Build the reactant and product tables of both directions."""
     PAD = ni  # pad -> y[ni]=1, a no-op multiplier; RHS codegen and Jacobian tables skip it.
 
     # Reverse reactions store the forward's products in their reactant slot,
     # so both directions need to fit in the same `max_terms` width.
-    max_terms = max(
-        [1]
-        + [
-            max(len(r["reactants_collapsed"]), len(r["products_collapsed"]))
-            for r in forward_records
-        ]
-    )
+    max_terms = max([1] + [max(len(r["reactants_collapsed"]), len(r["products_collapsed"])) for r in forward_records])
     reactant_idx = np.full((nr + 1, max_terms), PAD, dtype=np.int64)
     product_idx = np.full((nr + 1, max_terms), PAD, dtype=np.int64)
     reactant_stoich = np.zeros((nr + 1, max_terms), dtype=np.float64)
     product_stoich = np.zeros((nr + 1, max_terms), dtype=np.float64)
-
-    a = np.zeros(nr + 1, dtype=np.float64)
-    n = np.zeros(nr + 1, dtype=np.float64)
-    E = np.zeros(nr + 1, dtype=np.float64)
-    a_inf = np.zeros(nr + 1, dtype=np.float64)
-    n_inf = np.zeros(nr + 1, dtype=np.float64)
-    E_inf = np.zeros(nr + 1, dtype=np.float64)
-
-    is_forward = np.zeros(nr + 1, dtype=bool)
-    is_three_body = np.zeros(nr + 1, dtype=bool)
-    has_kinf = np.zeros(nr + 1, dtype=bool)
-    is_special = np.zeros(nr + 1, dtype=bool)
-    is_conden = np.zeros(nr + 1, dtype=bool)
-    is_photo = np.zeros(nr + 1, dtype=bool)
-    is_ion = np.zeros(nr + 1, dtype=bool)
-
     for rec in forward_records:
         i = rec["parser_i"]
-        is_forward[i] = True
+        ir = i + 1
         for k_slot, (sp_idx, stoich) in enumerate(rec["reactants_collapsed"].items()):
             reactant_idx[i, k_slot] = sp_idx
             reactant_stoich[i, k_slot] = stoich
+            product_idx[ir, k_slot] = sp_idx
+            product_stoich[ir, k_slot] = stoich
         for k_slot, (sp_idx, stoich) in enumerate(rec["products_collapsed"].items()):
             product_idx[i, k_slot] = sp_idx
             product_stoich[i, k_slot] = stoich
-        ir = i + 1
-        is_forward[ir] = False
-        for k_slot, (sp_idx, stoich) in enumerate(rec["products_collapsed"].items()):
             reactant_idx[ir, k_slot] = sp_idx
             reactant_stoich[ir, k_slot] = stoich
-        for k_slot, (sp_idx, stoich) in enumerate(rec["reactants_collapsed"].items()):
-            product_idx[ir, k_slot] = sp_idx
-            product_stoich[ir, k_slot] = stoich
+    return {
+        "reactant_idx": reactant_idx,
+        "product_idx": product_idx,
+        "reactant_stoich": reactant_stoich,
+        "product_stoich": product_stoich,
+    }
 
+
+def _fill_rows(forward_records: list[dict], nr: int) -> dict[str, np.ndarray]:
+    """Build the Arrhenius coefficients and the per-row type masks."""
+    arrays = {key: np.zeros(nr + 1, dtype=np.float64) for key in ("a", "n", "E", "a_inf", "n_inf", "E_inf")}
+    masks = {
+        key: np.zeros(nr + 1, dtype=bool)
+        for key in ("is_forward", "is_three_body", "has_kinf", "is_special", "is_conden", "is_photo", "is_ion")
+    }
+    for rec in forward_records:
+        i = rec["parser_i"]
+        ir = i + 1
+        masks["is_forward"][i] = True
         # M per side: a row with M on the LHS only gets a reverse without M.
-        is_three_body[i] = rec["has_M_reac"]
-        is_three_body[ir] = rec["has_M_prod"]
+        masks["is_three_body"][i] = rec["has_M_reac"]
+        masks["is_three_body"][ir] = rec["has_M_prod"]
 
         sec = rec["section"]
         if sec == _SECTION_THREE_BODY_KINF:
-            has_kinf[i] = True
-            has_kinf[ir] = True
+            masks["has_kinf"][[i, ir]] = True
         if sec == _SECTION_SPECIAL:
-            is_special[i] = True
-            is_special[ir] = True
+            masks["is_special"][[i, ir]] = True
         if sec == _SECTION_CONDEN:
-            is_conden[i] = True
-            is_conden[ir] = True
+            masks["is_conden"][[i, ir]] = True
         if sec == _SECTION_PHOTO:
-            is_photo[i] = True
-            # Photo has no reverse; guarded via stop_rev_indx.
+            masks["is_photo"][i] = True  # photo has no reverse; guarded via stop_rev_indx
         if sec == _SECTION_ION:
-            is_ion[i] = True
+            masks["is_ion"][i] = True
 
         cols = rec["num_cols"]
         if sec in _THERMAL_SECTIONS:
             if len(cols) >= 3:
-                a[i], n[i], E[i] = cols[0], cols[1], cols[2]
+                arrays["a"][i], arrays["n"][i], arrays["E"][i] = cols[0], cols[1], cols[2]
             if sec == _SECTION_THREE_BODY_KINF and len(cols) >= 6:
-                a_inf[i], n_inf[i], E_inf[i] = cols[3], cols[4], cols[5]
+                arrays["a_inf"][i], arrays["n_inf"][i], arrays["E_inf"][i] = cols[3], cols[4], cols[5]
+    return {**arrays, **masks}
 
-    species = tuple(species_order)
+
+def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> Network:
+    """Parse a VULCAN network file; the format is in docs/method.md.
+
+    Raises ValueError if a reaction is duplicated within one section (its
+    contribution would be silently double-counted); `duplicates_ok=True`
+    downgrades that to a RuntimeWarning for inspection/file-sweep uses.
+    """
+    from ._paths import resolve_data_path
+
+    network_path = str(resolve_data_path(str(network_path)))
+    st = _read_file(network_path)
+
+    # parser_i has been bumped past the last reverse -> nr = parser_i - 1.
+    nr = st.parser_i - 1
+    ni = len(st.species_order)
+
+    # upstream's check_duplicate() only prints; this parser refuses.
+    _announce_duplicate_reactions(network_path, _find_duplicates(st.forward_records), duplicates_ok)
+
+    stop_rev_indx = st.stop_rev_indx
+    if stop_rev_indx is None:
+        # Older networks may omit `# reverse stops`; default: reverses are
+        # computed up to the photo section.
+        stop_rev_indx = st.photo_indx if st.photo_indx is not None else nr + 1
+    conden_indx = st.conden_indx if st.conden_indx is not None else nr + 1
+
     return Network(
-        species=species,
-        species_idx=dict(species_idx),
+        species=tuple(st.species_order),
+        species_idx=dict(st.species_idx),
         ni=ni,
         nr=nr,
-        reactant_idx=reactant_idx,
-        product_idx=product_idx,
-        reactant_stoich=reactant_stoich,
-        product_stoich=product_stoich,
-        a=a,
-        n=n,
-        E=E,
-        a_inf=a_inf,
-        n_inf=n_inf,
-        E_inf=E_inf,
-        is_forward=is_forward,
-        is_three_body=is_three_body,
-        has_kinf=has_kinf,
-        is_special=is_special,
-        is_conden=is_conden,
-        is_photo=is_photo,
-        is_ion=is_ion,
+        **_fill_stoichiometry(st.forward_records, nr, ni),
+        **_fill_rows(st.forward_records, nr),
         stop_rev_indx=stop_rev_indx,
         conden_indx=conden_indx,
-        photo_sp=tuple(photo_sp),
-        pho_rate_index=dict(pho_rate_index),
-        n_branch=dict(n_branch),
-        ion_sp=tuple(ion_sp),
-        ion_rate_index=dict(ion_rate_index),
-        ion_branch=dict(ion_branch),
-        Rf=dict(Rf_text),
+        photo_sp=tuple(st.photo_sp),
+        pho_rate_index=dict(st.pho_rate_index),
+        n_branch=dict(st.n_branch),
+        ion_sp=tuple(st.ion_sp),
+        ion_rate_index=dict(st.ion_rate_index),
+        ion_branch=dict(st.ion_branch),
+        Rf=dict(st.Rf_text),
         network_path=network_path,
-        temp_ranges=dict(temp_ranges),
-        stale_ids=tuple(stale_ids),
+        temp_ranges=dict(st.temp_ranges),
+        stale_ids=tuple(st.stale_ids),
     )

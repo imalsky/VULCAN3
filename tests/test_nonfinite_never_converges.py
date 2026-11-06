@@ -15,7 +15,7 @@ import pytest
 
 
 def _longdy(y, ymix, y_old, n_0, *, atol=1e-2, mtol_conv=1e-20):
-    """The shipped reduction, imported so deleting the guard fails this file."""
+    """Return the shipped reduction, imported so deleting the guard fails this file."""
     from vulcan3.outer_loop import _longdy_reduce
 
     return _longdy_reduce(y, ymix, y_old, n_0, atol=atol, mtol_conv=mtol_conv)[0]
@@ -48,23 +48,23 @@ def _poisoned(case, y, ymix):
     return y.at[0, 0].set(jnp.inf if case == "pos_inf" else -jnp.inf), ymix
 
 
-@pytest.mark.parametrize(
-    "case", ["nan_signal_cell", "all_nan", "pos_inf", "neg_inf", "nan_ymix_only"]
-)
+@pytest.mark.parametrize("case", ["nan_signal_cell", "all_nan", "pos_inf", "neg_inf", "nan_ymix_only"])
 def test_nonfinite_state_is_never_converged(case):
-    """Any non-finite y or ymix cell forces longdy = +inf, so neither
-    convergence branch can admit it; a NaN on the one signal-carrying cell
-    must not erase the signal."""
+    """Any non-finite y or ymix cell forces longdy = +inf, so neither convergence branch can admit it.
+
+    A NaN on the one signal-carrying cell must not erase the signal.
+    """
     y, ymix, y_old, n_0 = _mk()
     longdy = float(_longdy(*_poisoned(case, y, ymix), y_old, n_0))
     assert longdy == np.inf, f"{case}: longdy={longdy}"
 
 
 def test_sub_atol_cell_gives_a_finite_batch_independent_tangent():
-    """A positive sub-atol cell (TOI-7169 b S8 at 1e-160) must give finite
-    plain and vmapped tangents that agree. A masked numerator over the raw tiny
-    denominator gives 0 * inf in the batched max tangent, which the unbatched
-    select rewrite hides."""
+    """A positive sub-atol cell (TOI-7169 b S8 at 1e-160) must give finite plain and vmapped tangents that agree.
+
+    A masked numerator over the raw tiny denominator gives 0 * inf in the batched max tangent, which the unbatched
+    select rewrite hides.
+    """
     # The shipped step-acceptance reduction (same import rule as `_longdy`).
     from vulcan3.outer_loop import _make_aggregate_delta_fn
 
@@ -94,10 +94,11 @@ def test_sub_atol_cell_gives_a_finite_batch_independent_tangent():
 
 
 def test_end_case_is_not_success_for_a_frozen_or_yielded_lane():
-    """`termination_reason` 0 (still running) and 5 (non-finite freeze) both
-    stop below both caps, so neither cap fires and a fall-through would
-    report end_case=1 "Integration successful". A converged state that is
-    not finite is not a success either."""
+    """`termination_reason` 0 (still running) and 5 (non-finite freeze) both stop below both caps.
+
+    So neither cap fires and a fall-through would report end_case=1 "Integration successful". A converged state that
+    is not finite is not a success either.
+    """
     from vulcan3.outer_loop import OuterLoop
 
     class _S:
@@ -113,19 +114,20 @@ def test_end_case_is_not_success_for_a_frozen_or_yielded_lane():
     bad = _S(1)
     bad.y = jnp.asarray([[1.0, jnp.nan], [1.0, 1.0]])
     assert clf(None, bad) == 5
-    assert clf(None, _S(3)) == 3 and clf(None, _S(2)) == 2
+    assert clf(None, _S(3)) == 3
+    assert clf(None, _S(2)) == 2
 
 
 _COUNT_MAX = 8  # small: the control run must exhaust it in seconds
 
 
 @pytest.mark.strict_isolation
-@pytest.mark.parametrize("poison,want_reason", [(False, 3), (True, 5)])
+@pytest.mark.parametrize(("poison", "want_reason"), [(False, 3), (True, 5)])
 def test_single_profile_run_stops_on_a_nonfinite_state(poison, want_reason):
-    """End to end: the single-profile `cond_fn` must bail on a non-finite
-    state with the batched path's reason 5 (`body_fn_batch`) instead of
-    burning the whole step budget. The finite case is the control: unchanged
-    predicate, so it still runs out its budget (reason 3).
+    """End to end: the single-profile `cond_fn` must bail on a non-finite state with the batched path's reason 5.
+
+    (`body_fn_batch`) instead of burning the whole step budget. The finite case is the control: unchanged predicate,
+    so it still runs out its budget (reason 3).
     """
     from _helpers import fast_cfg
 
@@ -133,9 +135,7 @@ def test_single_profile_run_stops_on_a_nonfinite_state(poison, want_reason):
     from vulcan3.outer_loop import OuterLoop
     from vulcan3.state import RunState
 
-    cfg = fast_cfg(
-        count_max=_COUNT_MAX, Tiso=900.0, use_vm_mol=False, use_hybrid_vm_mol=False
-    )
+    cfg = fast_cfg(count_max=_COUNT_MAX, Tiso=900.0, use_vm_mol=False, use_hybrid_vm_mol=False)
     integ = OuterLoop(op_jax.Ros2JAX(), legacy_io.Output())
     state, atm_static = integ.prepare_runstate(RunState.with_pre_loop_setup(cfg))
     if poison:
@@ -148,10 +148,8 @@ def test_single_profile_run_stops_on_a_nonfinite_state(poison, want_reason):
     final = integ._runner(state, atm_static)
     steps = int(final.accept_count)
     assert int(final.termination_reason) == want_reason, (
-        f"poison={poison}: reason {int(final.termination_reason)} after "
-        f"{steps} steps (want {want_reason})"
+        f"poison={poison}: reason {int(final.termination_reason)} after {steps} steps (want {want_reason})"
     )
     assert (steps <= 1) if poison else (steps > _COUNT_MAX), (
-        f"poison={poison}: {steps} accepted steps against count_max "
-        f"{_COUNT_MAX}"
+        f"poison={poison}: {steps} accepted steps against count_max {_COUNT_MAX}"
     )

@@ -23,8 +23,8 @@ MAX_ATOM_LOSS = 1.0e-8
 
 @pytest.mark.strict_isolation
 def test_count_capped_run_conv_ring_and_termination():
-    import vulcan3.outer_loop as outer_loop
     import vulcan3.legacy_io as op
+    from vulcan3 import outer_loop
 
     vulcan_cfg = op.default_config()
 
@@ -37,7 +37,7 @@ def test_count_capped_run_conv_ring_and_termination():
     vulcan_cfg.use_hybrid_vm_mol = False
     vulcan_cfg.use_print_prog = False
 
-    import vulcan3.op_jax as op_jax
+    from vulcan3 import op_jax
     from vulcan3.state import RunState
 
     rs = RunState.with_pre_loop_setup(vulcan_cfg)
@@ -68,7 +68,7 @@ def test_count_capped_run_conv_ring_and_termination():
     assert int(rs_out.params.end_case) == 3, "expected end_case 3 (count_max exceeded)"
 
     # ---- 4. Conservation and a finite clock ----
-    for atom, loss in zip(rs_out.atoms.atom_order, np.asarray(rs_out.atoms.atom_loss)):
+    for atom, loss in zip(rs_out.atoms.atom_order, np.asarray(rs_out.atoms.atom_loss), strict=False):
         assert abs(loss) <= MAX_ATOM_LOSS, f"atom_loss[{atom}] = {loss:.3e}"
     t, dt = float(rs_out.step.t), float(rs_out.step.dt)
     assert dt > 0 and math.isfinite(dt), dt

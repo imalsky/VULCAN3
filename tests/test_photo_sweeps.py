@@ -11,6 +11,7 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import numpy as np
+
 import vulcan3.photo as photo_mod
 
 # Roundoff bars, relative to the largest entry of the sequential result.
@@ -27,9 +28,7 @@ def _sweeps_sequential(chi, phi, xi, i_d, i_u, dflux_u_prev, mu_ang):
         # dflux_u_j is the prior call's dflux_u, not the current up sweep's value.
         dflux_u_j = dflux_u_prev[j]
         dflux_d_jp1 = carry
-        dflux_d_j = (1.0 / chi[j]) * (
-            phi[j] * dflux_d_jp1 - xi[j] * dflux_u_j + i_d[j] / mu_ang
-        )
+        dflux_d_j = (1.0 / chi[j]) * (phi[j] * dflux_d_jp1 - xi[j] * dflux_u_j + i_d[j] / mu_ang)
         return dflux_d_j, dflux_d_j
 
     js_down = jnp.arange(nz - 1, -1, -1)
@@ -40,9 +39,7 @@ def _sweeps_sequential(chi, phi, xi, i_d, i_u, dflux_u_prev, mu_ang):
 
     def up_step(carry, j):
         dflux_u_jm1 = carry
-        dflux_u_j = (1.0 / chi[j - 1]) * (
-            phi[j - 1] * dflux_u_jm1 - xi[j - 1] * dflux_d[j] + i_u[j - 1] / mu_ang
-        )
+        dflux_u_j = (1.0 / chi[j - 1]) * (phi[j - 1] * dflux_u_jm1 - xi[j - 1] * dflux_d[j] + i_u[j - 1] / mu_ang)
         return dflux_u_j, dflux_u_j
 
     js_up = jnp.arange(1, nz + 1)
@@ -111,9 +108,7 @@ def test_associative_sweeps_on_hd189_state(hd189_state):
     )
     ag0_is_zero = ag0 == 0.0
 
-    aflux, _, dflux_d, dflux_u = photo_mod.compute_flux_jax(
-        *args, ag0_is_zero=ag0_is_zero
-    )
+    aflux, _, dflux_d, dflux_u = photo_mod.compute_flux_jax(*args, ag0_is_zero=ag0_is_zero)
 
     original = photo_mod._two_stream_sweeps
     photo_mod._two_stream_sweeps = _sweeps_sequential

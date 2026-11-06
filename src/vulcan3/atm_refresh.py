@@ -4,6 +4,8 @@ The hydrostatic loop is a true sequential dependency
 (`zco[i+1] = zco[i] + dz[i]`) and uses two `lax.scan`s: one upward from
 `pref_indx` and one downward to 0; the downward scan is length-0 when
 `pref_indx == 0`.
+
+Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, length in cm, time in s.
 """
 
 from __future__ import annotations
@@ -14,6 +16,8 @@ import jax
 import jax.numpy as jnp
 
 from .phy_const import UNDERFLOW_DENOM
+
+__all__ = ["AtmRefreshStatic", "hydrostatic_step", "recompute_vm_jax", "update_mu_dz_jax", "update_phi_esc_jax"]
 
 
 def hydrostatic_step(T, mu, g, p_lo, p_hi, kb, Navo):
@@ -37,9 +41,7 @@ class AtmRefreshStatic(NamedTuple):
     pico: jnp.ndarray  # (nz+1,)      interface pressure (dyne/cm^2)
     ms: jnp.ndarray  # (ni,)        molar mass per species (g/mol; /Navo in formulas)
     Dzz_top: jnp.ndarray  # (ni,)        molecular diffusion at the top interface
-    diff_esc_idx: (
-        jnp.ndarray
-    )  # (n_esc,) int32  species indices for diffusion-limited escape
+    diff_esc_idx: jnp.ndarray  # (n_esc,) int32  species indices for diffusion-limited escape
     pref_indx: int  # static       reference layer index (zco==zco_pref here)
     zco_pref: float  # static       z at the reference layer (0.0 for gas giants)
     gs: float  # surface gravity at zco_pref (cm/s^2)
@@ -75,9 +77,7 @@ def update_mu_dz_jax(ymix: jnp.ndarray, st: AtmRefreshStatic):
         # the inverse-square law from Rp+zco[i].
         is_pref = i == pref_indx
         g_i = jnp.where(is_pref, gs, gs * (Rp / (Rp + zco_i)) ** 2)
-        Hp_i, dz_i = hydrostatic_step(
-            Tco[i], mu[i], g_i, pico[i], pico[i + 1], kb, Navo
-        )
+        Hp_i, dz_i = hydrostatic_step(Tco[i], mu[i], g_i, pico[i], pico[i + 1], kb, Navo)
         zco_ip1 = zco_i + dz_i
         return zco_ip1, (g_i, Hp_i, dz_i, zco_ip1)
 
@@ -92,9 +92,7 @@ def update_mu_dz_jax(ymix: jnp.ndarray, st: AtmRefreshStatic):
     def bwd_step(zco_ip1, i):
         # The layer sits below zco[i+1], so g uses Rp+zco[i+1].
         g_i = gs * (Rp / (Rp + zco_ip1)) ** 2
-        Hp_i, dz_i = hydrostatic_step(
-            Tco[i], mu[i], g_i, pico[i], pico[i + 1], kb, Navo
-        )
+        Hp_i, dz_i = hydrostatic_step(Tco[i], mu[i], g_i, pico[i], pico[i + 1], kb, Navo)
         zco_i = zco_ip1 - dz_i
         return zco_i, (g_i, Hp_i, dz_i, zco_i)
 
@@ -144,11 +142,7 @@ def recompute_vm_jax(
     inv_Hi = ms[None, :] * g[:, None] / (Navo * kb * Tco[:, None])  # (nz, ni)
     H_cell = 1.0 / inv_Hi
     Hi_interf = 1.0 / (0.5 * (H_cell[:-1] + H_cell[1:]))  # (nz-1, ni)
-    drift = (
-        Hi_interf
-        - 1.0 / Hpi[:, None]
-        + alpha[None, :] / Ti[:, None] * delta_Ti[:, None] / dzi[:, None]
-    )
+    drift = Hi_interf - 1.0 / Hpi[:, None] + alpha[None, :] / Ti[:, None] * delta_Ti[:, None] / dzi[:, None]
     return -Dzz * drift  # (nz-1, ni)
 
 
@@ -159,8 +153,9 @@ def update_phi_esc_jax(
     top_flux_in: jnp.ndarray,
     st: AtmRefreshStatic,
 ) -> jnp.ndarray:
-    """Diffusion-limited escape flux at TOA for each species in `diff_esc_idx`,
-    floored at `-max_flux`; other species pass through unchanged.
+    """Diffusion-limited escape flux at TOA for each species in `diff_esc_idx`, floored at `-max_flux`.
+
+    Other species pass through unchanged.
 
     Inputs: y (nz, ni) number densities, g / Hp (nz,) (only the top layer is
     used), top_flux_in (ni,). Returns (ni,), the top boundary flux with the

@@ -24,12 +24,17 @@ _FROZEN_ENV = ("VULCAN3_NETWORK", "VULCAN3_ATOM_LIST", "VULCAN3_CLI_RELAUNCHED")
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("name, count", list(_GATES.items()))
+@pytest.mark.parametrize(("name", "count"), list(_GATES.items()))
 def test_cli_step_count_gate(name, count, tmp_path):
     env = {k: v for k, v in os.environ.items() if k not in _FROZEN_ENV}
     res = subprocess.run(
         [sys.executable, "-m", "vulcan3.cli", "--config", name],
-        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=3600, check=False,
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=3600,
+        check=False,
     )
     assert res.returncode == 0, res.stdout[-3000:] + res.stderr[-3000:]
     cfg = load_config(name)

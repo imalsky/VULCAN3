@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -57,8 +58,15 @@ GJ_KERNEL_RTOL = 1e-12
 # The widest block the CUDA kernel takes (block_thomas_cuda.cu kGjMaxNi).
 GJ_MAX_NI = 96
 # (nz, ni, kind) of `_kernel_case` compared with the CPU kernel.
-KERNEL_CASES = [(1, 5, "random"), (3, 16, "random"), (4, 33, "random"), (6, 64, "random"),
-                (3, 16, "tie"), (3, 16, "singular"), (3, 16, "huge")]
+KERNEL_CASES = [
+    (1, 5, "random"),
+    (3, 16, "random"),
+    (4, 33, "random"),
+    (6, 64, "random"),
+    (3, 16, "tie"),
+    (3, 16, "singular"),
+    (3, 16, "huge"),
+]
 
 
 @pytest.fixture(params=["fast", "ffi"])
@@ -68,9 +76,11 @@ def fast(request, monkeypatch):
     # would check only the C++ CPU twin, which no run uses, so its cases skip.
     if request.param == "ffi":
         if not fast_mod._on_cuda():
-            pytest.skip(f"ffi is the GH200 CUDA solver and JAX's default backend here is "
-                        f"{jax.default_backend()!r}: its cases run only on a CUDA device "
-                        "(JAX_PLATFORMS=cuda)")
+            pytest.skip(
+                f"ffi is the GH200 CUDA solver and JAX's default backend here is "
+                f"{jax.default_backend()!r}: its cases run only on a CUDA device "
+                "(JAX_PLATFORMS=cuda)"
+            )
         try:
             fast_mod.build()
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
@@ -102,19 +112,29 @@ def _system(nz, ni, seed, boost, scale):
 
 
 def compare(diag, sup, sub, rhs, tans, seed=1):
-    """Both arms jitted (the production condition). Returns a dict of the
-    agreement numbers; the callers assert on them."""
+    """Both arms jitted (the production condition).
+
+    Returns a dict of the agreement numbers; the callers assert on them.
+    """
     x0, dx0 = jax.jit(lambda *a: jax.jvp(block_thomas_diag_offdiag, a, tans))(diag, sup, sub, rhs)
     x1, dx1 = jax.jit(lambda *a: jax.jvp(_cand, a, tans))(diag, sup, sub, rhs)
     w = jnp.asarray(np.random.default_rng(seed).standard_normal(rhs.shape))
-    g0 = jax.jit(jax.grad(lambda *a: jnp.sum(w * block_thomas_diag_offdiag(*a)),
-                          argnums=(0, 1, 2, 3)))(diag, sup, sub, rhs)
-    g1 = jax.jit(jax.grad(lambda *a: jnp.sum(w * _cand(*a)), argnums=(0, 1, 2, 3)))(diag, sup, sub, rhs)
+    g0 = jax.jit(jax.grad(lambda *a: jnp.sum(w * block_thomas_diag_offdiag(*a)), argnums=(0, 1, 2, 3)))(
+        diag, sup, sub, rhs
+    )
+    grad_cand = jax.jit(jax.grad(lambda *a: jnp.sum(w * _cand(*a)), argnums=(0, 1, 2, 3)))
+    if fast_mod.BACKEND == "ffi":  # the kernel has no transpose: reverse mode is refused
+        with pytest.raises(TypeError, match="transpose_solve"):
+            grad_cand(diag, sup, sub, rhs)
+        g1 = g0
+    else:
+        g1 = grad_cand(diag, sup, sub, rhs)
     batched = jax.jit(jax.vmap(_cand))(*(jnp.stack([a, a]) for a in (diag, sup, sub, rhs)))
     # the linearised equation A dx = db - dA x, satisfied by the exact tangent
     b_lin = tans[3] - fast_mod._matvec(tans[0], tans[1], tans[2], x0)
     # the rhs-cotangent solves the transposed system, A^T g = w
     diag_t = jnp.swapaxes(diag, 1, 2)
+
     def gres(g):
         return _resid(diag_t, sub, sup, g, w)
 
@@ -127,7 +147,7 @@ def compare(diag, sup, sub, rhs, tans, seed=1):
         "tangent_rel": _rel(dx0, dx1),
         "tres_cur": _resid(diag, sup, sub, dx0, b_lin),
         "tres_cand": _resid(diag, sup, sub, dx1, b_lin),
-        "grad_rel": max(_rel(a, b) for a, b in zip(g0, g1)),
+        "grad_rel": max(_rel(a, b) for a, b in zip(g0, g1, strict=False)),
         "gres_cur": gres(g0[3]),
         "gres_cand": gres(g1[3]),
         "resid_dense": _resid(diag, sup, sub, banded_solve(diag, sup, sub, rhs), rhs),
@@ -155,11 +175,12 @@ def test_fast_matches_reference_on_random_system(fast):
 
 @pytest.mark.parametrize("nested", [False, True])
 def test_ffi_solve_takes_a_stack_of_rhs_on_shared_factors(fast, nested):
-    """The tangent directions' pattern: several right-hand sides on ONE
-    factorisation, flat and inside an outer vmap over lanes. The stack must equal
-    the single solves bit for bit, and (vmap_method="expand_dims") the lowered
-    custom call must keep the factors' direction axis at 1 instead of one copy of
-    `lu` per direction."""
+    """The tangent directions' pattern: several right-hand sides on ONE factorisation.
+
+    Flat and inside an outer vmap over lanes. The stack must equal the single solves bit for bit, and
+    (vmap_method="expand_dims") the lowered custom call must keep the factors' direction axis at 1 instead of one
+    copy of `lu` per direction.
+    """
     if fast.BACKEND != "ffi":
         pytest.skip("the stacked-rhs handler is the C++ kernel's")
     nz, ni, ndir = 12, 7, 3
@@ -168,10 +189,9 @@ def test_ffi_solve_takes_a_stack_of_rhs_on_shared_factors(fast, nested):
         f = jax.vmap(fast.factor)(*(jnp.stack([ln[j] for ln in lanes]) for j in range(3)))
         b = jnp.stack([jnp.stack([ln[3] * (1.0 + 0.1 * k) for k in range(ndir)]) for ln in lanes])
         fn = jax.jit(jax.vmap(lambda fa, bs: jax.vmap(fast.solve, in_axes=(None, 0))(fa, bs)))
-        want = jnp.stack([
-            jnp.stack([jax.jit(fast.solve)(jax.tree.map(lambda a, i=i: a[i], f), r) for r in b[i]])
-            for i in range(2)
-        ])
+        want = jnp.stack(
+            [jnp.stack([jax.jit(fast.solve)(jax.tree.map(lambda a, i=i: a[i], f), r) for r in b[i]]) for i in range(2)]
+        )
     else:
         diag, sup, sub, rhs = _system(nz, ni, 11, boost=1e3, scale=1e-3)
         f = fast.factor(diag, sup, sub)
@@ -201,12 +221,13 @@ def _cuda_device():
 
 
 def _kernel_case(nz, ni, kind):
-    """Blocks without a diagonal boost, so rows swap. `tie`: rows 2 and 5 tie
-    for the first pivot (bit-equal |a|). `singular`: a duplicated row gives a
-    zero pivot. `huge`: row 7, scaled by 2^1003, is the first pivot, beyond the
-    2^1000 up to which the Gauss-Jordan pivot step multiplies by 1 / piv
-    (block_thomas_cuda.cu kGjRcpPivMax), so the warp divides; it stays finite
-    through the sweep."""
+    """Blocks without a diagonal boost, so rows swap.
+
+    `tie`: rows 2 and 5 tie for the first pivot (bit-equal |a|). `singular`: a duplicated row gives a zero pivot.
+    `huge`: row 7, scaled by 2^1003, is the first pivot, beyond the 2^1000 up to which the Gauss-Jordan pivot step
+    multiplies by 1 / piv (block_thomas_cuda.cu kGjRcpPivMax), so the warp divides; it stays finite through the
+    sweep.
+    """
     d, s, c, r = (np.array(a) for a in _system(nz, ni, ni, boost=0.0, scale=1.0))
     if kind == "tie":
         d[0, 2, 0] = 10.0 * np.abs(d[0, :, 0]).max()
@@ -221,20 +242,22 @@ def _kernel_case(nz, ni, kind):
 
 
 def _kernel_run(device, d, s, c, r):
-    """Raw factor and solve of the ffi kernel on `device`: [lu, perm, x, xs],
-    xs the solve of the stack (r, 2r, -r) on the same factors."""
+    """Raw factor and solve of the ffi kernel on `device`: [lu, perm, x, xs].
+
+    Xs the solve of the stack (r, 2r, -r) on the same factors.
+    """
     a = [jax.device_put(jnp.asarray(v), device) for v in (d, s, c, r, np.stack([r, 2.0 * r, -r]))]
     lu, perm = jax.jit(fast_mod._ffi_factor)(*a[:3])
     x = jax.jit(fast_mod._ffi_solve)(lu, perm, a[1], a[2], a[3])
-    xs = jax.jit(jax.vmap(fast_mod._ffi_solve, in_axes=(None, None, None, None, 0)))(
-        lu, perm, a[1], a[2], a[4])
+    xs = jax.jit(jax.vmap(fast_mod._ffi_solve, in_axes=(None, None, None, None, 0)))(lu, perm, a[1], a[2], a[4])
     return [np.asarray(v) for v in (lu, perm, x, xs)]
 
 
 def _assert_close(got, ref, rtol, name, same_nonfinite=True):
-    """`got` is finite where `ref` is, within rtol * max |ref| there, and
-    (`same_nonfinite`) holds `ref`'s inf/nan values elsewhere; returns the
-    normwise difference."""
+    """`got` is finite where `ref` is, within rtol * max |ref| there.
+
+    And (`same_nonfinite`) holds `ref`'s inf/nan values elsewhere; returns the normwise difference.
+    """
     fin = np.isfinite(ref)
     np.testing.assert_array_equal(np.isfinite(got), fin, err_msg=name)
     if same_nonfinite:
@@ -244,17 +267,16 @@ def _assert_close(got, ref, rtol, name, same_nonfinite=True):
     return err / scale if scale else 0.0
 
 
-@pytest.mark.parametrize("nz,ni,kind", KERNEL_CASES)
+@pytest.mark.parametrize(("nz", "ni", "kind"), KERNEL_CASES)
 def test_cuda_kernel_matches_cpu_kernel(nz, ni, kind):
-    """Raw factor and solve (one rhs and a stack on the same factors) of the
-    CUDA kernel against the CPU kernel (`_kernel_case`). On `tie` the smaller
-    row must win on both; on `singular` both kernels must put inf/nan in the
-    same places, and the same values there in the first layer (beyond it the
-    Gauss-Jordan inverse of the singular block is non-finite everywhere, as
-    the CPU kernel's, but not with the same inf/nan mix; a numpy emulation
-    reads two infs for nans in lu, all-nan solutions on both). Permutations
-    are equal in every layer, the first layer's lu within KERNEL_RTOL, the
-    rest of lu and the solutions within GJ_KERNEL_RTOL."""
+    """Raw factor and solve (one rhs and a stack on the same factors) of the CUDA kernel against the CPU kernel.
+
+    (`_kernel_case`). On `tie` the smaller row must win on both; on `singular` both kernels must put inf/nan in the
+    same places, and the same values there in the first layer (beyond it the Gauss-Jordan inverse of the singular
+    block is non-finite everywhere, as the CPU kernel's, but not with the same inf/nan mix; a numpy emulation reads
+    two infs for nans in lu, all-nan solutions on both). Permutations are equal in every layer, the first layer's lu
+    within KERNEL_RTOL, the rest of lu and the solutions within GJ_KERNEL_RTOL.
+    """
     dev = _cuda_device()
     d, s, c, r = _kernel_case(nz, ni, kind)
     cpu = _kernel_run(jax.devices("cpu")[0], d, s, c, r)
@@ -272,29 +294,34 @@ def test_cuda_kernel_matches_cpu_kernel(nz, ni, kind):
     print(f"\n{nz}_{ni}_{kind} vs CPU kernel: " + ", ".join(f"{k} {v:.1e}" for k, v in errs.items()))
 
 
-@pytest.mark.parametrize("ni,cuda,refused", [(GJ_MAX_NI + 1, True, True), (GJ_MAX_NI, True, False),
-                                             (GJ_MAX_NI + 1, False, False)])
+@pytest.mark.parametrize(
+    ("ni", "cuda", "refused"), [(GJ_MAX_NI + 1, True, True), (GJ_MAX_NI, True, False), (GJ_MAX_NI + 1, False, False)]
+)
 def test_cuda_ffi_refuses_more_than_96_species(ni, cuda, refused, monkeypatch):
-    """`ffi` on a CUDA backend refuses ni > GJ_MAX_NI while the step is traced,
-    before the kernel library is loaded; ni 96 on CUDA, and any ni on the CPU
-    kernel, go on to load it. No GPU needed: the platform query and the loader
-    are patched."""
-    class Loaded(Exception):
+    """`ffi` on a CUDA backend refuses ni > GJ_MAX_NI while the step is traced, before the kernel library is loaded.
+
+    Ni 96 on CUDA, and any ni on the CPU kernel, go on to load it. No GPU needed: the platform query and the loader
+    are patched.
+    """
+
+    class LoadedError(Exception):
         pass
 
     def load():
-        raise Loaded
+        raise LoadedError
 
     monkeypatch.setattr(fast_mod, "BACKEND", "ffi")
     monkeypatch.setattr(fast_mod, "_on_cuda", lambda: cuda)
     monkeypatch.setattr(fast_mod, "_register", load)
     assert fast_mod.CUDA_MAX_NI == GJ_MAX_NI
     diag, sup, sub, _ = _system(2, ni, 0, boost=10.0, scale=1.0)
-    with pytest.raises(ValueError if refused else Loaded) as e:
+    with pytest.raises(ValueError if refused else LoadedError) as e:
         jax.jit(lambda *a: fast_mod.factor(*a))(diag, sup, sub)  # a fresh trace
     if refused:
-        assert str(e.value) == ("the CUDA ffi solver handles at most 96 species per layer "
-                                f"(this network has ni={ni}); run with VULCAN3_SOLVER=fast")
+        assert str(e.value) == (
+            "the CUDA ffi solver handles at most 96 species per layer "
+            f"(this network has ni={ni}); run with VULCAN3_SOLVER=fast"
+        )
 
 
 _SANITIZER_CHILD = r"""
@@ -321,22 +348,31 @@ for nz, ni in [(1, 5), (3, 16), (4, 33), (6, 64)] + [(3, 89), (2, 96)] * one_buf
 @pytest.mark.parametrize("buffers", ["1", "2"])
 @pytest.mark.parametrize("tool", ["memcheck", "racecheck", "synccheck", "initcheck"])
 def test_cuda_kernel_under_compute_sanitizer(tool, buffers):
-    """Opt-in: set VULCAN3_COMPUTE_SANITIZER to the compute-sanitizer
-    binary. The CUDA factor and a stacked solve on small pivoting shapes run
-    under each tool, with the one- and two-buffer solve variants, and any
-    report fails. XLA's platform allocator gives each buffer its own
-    allocation, so memcheck sees an overrun past it; command buffers are off,
-    so the launches are plain."""
+    """Opt-in: set VULCAN3_COMPUTE_SANITIZER to the compute-sanitizer binary.
+
+    The CUDA factor and a stacked solve on small pivoting shapes run under each tool, with the one- and two-buffer
+    solve variants, and any report fails. XLA's platform allocator gives each buffer its own allocation, so memcheck
+    sees an overrun past it; command buffers are off, so the launches are plain.
+    """
     exe = os.environ.get("VULCAN3_COMPUTE_SANITIZER")
     if not exe:
         pytest.skip("set VULCAN3_COMPUTE_SANITIZER to the compute-sanitizer binary to run")
     if not fast_mod._CUDA_LIB.exists():
         pytest.skip(f"{fast_mod._CUDA_LIB.name} not built (python -m vulcan3.solver_fast --cuda)")
     env = {k: v for k, v in os.environ.items() if k != "JAX_PLATFORMS"}
-    env.update(XLA_PYTHON_CLIENT_ALLOCATOR="platform", XLA_PYTHON_CLIENT_PREALLOCATE="false",
-               XLA_FLAGS="--xla_gpu_enable_command_buffer=", VULCAN3_BT_BUFFERS=buffers)
-    res = subprocess.run([exe, "--tool", tool, "--error-exitcode", "1", sys.executable, "-c",
-                          _SANITIZER_CHILD], capture_output=True, text=True, env=env, timeout=600)
+    env.update(
+        XLA_PYTHON_CLIENT_ALLOCATOR="platform",
+        XLA_PYTHON_CLIENT_PREALLOCATE="false",
+        XLA_FLAGS="--xla_gpu_enable_command_buffer=",
+        VULCAN3_BT_BUFFERS=buffers,
+    )
+    res = subprocess.run(
+        [exe, "--tool", tool, "--error-exitcode", "1", sys.executable, "-c", _SANITIZER_CHILD],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=600,
+    )
     assert res.returncode == 0, res.stdout[-4000:] + res.stderr[-4000:]
 
 
@@ -350,8 +386,10 @@ def test_cuda_kernel_under_compute_sanitizer(tool, buffers):
 BUFFER_DTS = (3.8e4, 1e6, 1e11)
 _BUFFER_NETS = {  # fixture, config, the child's network environment
     "HD189": ("adj_state_hd189.npz", {"VULCAN3_NETWORK": "thermo/NCHO_photo_network.txt"}),
-    "W39b": ("adj_state_w39b.npz", {"VULCAN3_NETWORK": "thermo/SNCHO_photo_network_2025.txt",
-                                    "VULCAN3_ATOM_LIST": "H,O,C,N,S"}),
+    "W39b": (
+        "adj_state_w39b.npz",
+        {"VULCAN3_NETWORK": "thermo/SNCHO_photo_network_2025.txt", "VULCAN3_ATOM_LIST": "H,O,C,N,S"},
+    ),
 }
 _BUFFERS_CHILD = r"""
 import os, sys
@@ -380,8 +418,10 @@ np.savez(out, **res)
 
 @pytest.fixture(scope="module")
 def buffer_variants(tmp_path_factory):
-    """Per network, each child's output, runs[buffers], or the reason the
-    two-buffer kernels cannot run on this device."""
+    """Per network, each child's output, runs[buffers].
+
+    Or the reason the two-buffer kernels cannot run on this device.
+    """
     runs = {}
 
     def run(net):
@@ -393,9 +433,14 @@ def buffer_variants(tmp_path_factory):
             env = {k: v for k, v in os.environ.items() if k != "JAX_PLATFORMS"}
             env.update(net_env, VULCAN3_BT_BUFFERS=buffers)
             path = tmp / f"buffers{buffers}.npz"
-            res = subprocess.run([sys.executable, "-c", _BUFFERS_CHILD, str(ROOT), fixture, net,
-                                  str(path)], capture_output=True, text=True, env=env, cwd=ROOT,
-                                 timeout=900)
+            res = subprocess.run(
+                [sys.executable, "-c", _BUFFERS_CHILD, str(ROOT), fixture, net, str(path)],
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=ROOT,
+                timeout=900,
+            )
             if buffers == "2" and res.returncode and "shared memory per block" in res.stderr:
                 runs[net] = next(ln for ln in res.stderr.splitlines() if "shared memory per block" in ln)
                 return runs[net]
@@ -408,8 +453,7 @@ def buffer_variants(tmp_path_factory):
 
 
 def _buffer_runs(net, buffer_variants):
-    """`buffer_variants(net)`; skips without a CUDA device, the fixture, or
-    room for the two-buffer kernels."""
+    """`buffer_variants(net)`; skips without a CUDA device, the fixture, or room for the two-buffer kernels."""
     _cuda_device()
     fixture = _BUFFER_NETS[net][0]
     if not (ROOT / "tests" / "data" / fixture).exists():
@@ -420,13 +464,16 @@ def _buffer_runs(net, buffer_variants):
     return runs
 
 
-@pytest.mark.parametrize("net,case", [(net, f"dt{dt:g}") for net in _BUFFER_NETS for dt in BUFFER_DTS]
-                         + [("HD189", "tie"), ("HD189", "singular")])
+@pytest.mark.parametrize(
+    ("net", "case"),
+    [(net, f"dt{dt:g}") for net in _BUFFER_NETS for dt in BUFFER_DTS] + [("HD189", "tie"), ("HD189", "singular")],
+)
 def test_one_buffer_kernels_are_bitwise_the_two_buffer_ones(net, case, buffer_variants):
-    """Factor (lu, perm) and a three-rhs solve on shared factors (x) of the
-    one-buffer kernels against the two-buffer ones: the real stage-1 blocks of
-    both networks at the run's dt, 1e6 and dt_max, and `_kernel_case`'s tie
-    and singular blocks."""
+    """Factor (lu, perm) and a three-rhs solve on shared factors.
+
+    (x) of the one-buffer kernels against the two-buffer ones: the real stage-1 blocks of both networks at the run's
+    dt, 1e6 and dt_max, and `_kernel_case`'s tie and singular blocks.
+    """
     runs = _buffer_runs(net, buffer_variants)
     two, one = runs["2"], runs["1"]
     for k in ("diag", "sup", "sub", "rhs", "lu", "perm", "x"):
@@ -434,14 +481,15 @@ def test_one_buffer_kernels_are_bitwise_the_two_buffer_ones(net, case, buffer_va
     assert np.isfinite(one[f"{case}/x"]).all() != (case == "singular")
 
 
-@pytest.mark.parametrize("net,case", [(net, f"dt{dt:g}") for net in _BUFFER_NETS for dt in BUFFER_DTS])
+@pytest.mark.parametrize(("net", "case"), [(net, f"dt{dt:g}") for net in _BUFFER_NETS for dt in BUFFER_DTS])
 def test_gauss_jordan_factor_on_real_blocks(net, case, buffer_variants):
-    """The CUDA kernel against the CPU kernel on the real stage-1 blocks (the
-    two-buffer child; the one-buffer one is bitwise it). Beyond the first
-    layer the Schur complements carry the Gauss-Jordan inverse, so the
-    solution is judged by its residual with check_real_blocks' bar: no worse
-    than max(2x the CPU kernel's, 10x LAPACK gbsv's). The first layer's lu and
-    the permutations are compared in the printout only."""
+    """The CUDA kernel against the CPU kernel on the real stage-1 blocks.
+
+    (the two-buffer child; the one-buffer one is bitwise it). Beyond the first layer the Schur complements carry the
+    Gauss-Jordan inverse, so the solution is judged by its residual with check_real_blocks' bar: no worse than
+    max(2x the CPU kernel's, 10x LAPACK gbsv's). The first layer's lu and the permutations are compared in the
+    printout only.
+    """
     gpu = _buffer_runs(net, buffer_variants)["2"]
     diag, sup, sub, rhs = (gpu[f"{case}/{k}"] for k in ("diag", "sup", "sub", "rhs"))
     lu_cpu, perm_cpu, x_cpu, _ = _kernel_run(jax.devices("cpu")[0], diag, sup, sub, rhs)
@@ -450,17 +498,21 @@ def test_gauss_jordan_factor_on_real_blocks(net, case, buffer_variants):
     diag, sup, sub, rhs = (jnp.asarray(a) for a in (diag, sup, sub, rhs))
     res_gpu, res_cpu = _resid(diag, sup, sub, x_gpu, rhs), _resid(diag, sup, sub, jnp.asarray(x_cpu), rhs)
     res_dense = _resid(diag, sup, sub, banded_solve(diag, sup, sub, rhs), rhs)
-    same = np.mean([np.array_equal(a, b) for a, b in zip(gpu[f"{case}/perm"], perm_cpu)])
-    print(f"\n{net} {case}: residual gpu {res_gpu:.2e}, CPU kernel {res_cpu:.2e}, gbsv {res_dense:.2e}; "
-          f"x rel diff {_rel(jnp.asarray(x_cpu), x_gpu):.1e}; lu[0] rel diff "
-          f"{_rel(jnp.asarray(lu_cpu[0]), jnp.asarray(gpu[f'{case}/lu'][0])):.1e}; "
-          f"perm equal in {same:.1%} of layers")
+    same = np.mean([np.array_equal(a, b) for a, b in zip(gpu[f"{case}/perm"], perm_cpu, strict=False)])
+    print(
+        f"\n{net} {case}: residual gpu {res_gpu:.2e}, CPU kernel {res_cpu:.2e}, gbsv {res_dense:.2e}; "
+        f"x rel diff {_rel(jnp.asarray(x_cpu), x_gpu):.1e}; lu[0] rel diff "
+        f"{_rel(jnp.asarray(lu_cpu[0]), jnp.asarray(gpu[f'{case}/lu'][0])):.1e}; "
+        f"perm equal in {same:.1%} of layers"
+    )
     assert res_gpu <= max(2.0 * res_cpu, 10.0 * res_dense) + 1e-12, (res_gpu, res_cpu, res_dense)
 
 
 def capture_stage1(fixture: str, cfg_name: str, dt: float):
-    """The stage-1 system `_ros2_stages` assembles from a saved converged state,
-    recorded by wrapping the solver entry points the step imports."""
+    """Return the stage-1 system `_ros2_stages` assembles from a saved converged state.
+
+    Recorded by wrapping the solver entry points the step imports.
+    """
     from vulcan3 import jax_step
 
     atm, net, y, k_arr = load_adj_state(fixture, cfg_name)
@@ -484,9 +536,12 @@ def capture_stage1(fixture: str, cfg_name: str, dt: float):
     return diag, sup, sub, cap["rhs"][0]
 
 
+# size-limit-ok: one script per fixture case, run in a subprocess
 def check_real_blocks(fixture: str, cfg_name: str, backend: str):
     """Assert the agreement bars on the real blocks at DTS; returns the rows.
-    Also run by the SNCHO child for W39b."""
+
+    Also run by the SNCHO child for W39b.
+    """
     fast_mod.BACKEND = backend
     rows = []
     for dt in DTS:
@@ -496,7 +551,8 @@ def check_real_blocks(fixture: str, cfg_name: str, backend: str):
         ks = jax.random.split(jax.random.PRNGKey(0), 4)
         # direction: the dt shift on the diagonal plus 1e-3 relative noise on every operand
         tans = (
-            -c0 * jnp.broadcast_to(jnp.eye(ni), diag.shape) + 1e-3 * jnp.abs(diag) * jax.random.normal(ks[0], diag.shape),
+            -c0 * jnp.broadcast_to(jnp.eye(ni), diag.shape)
+            + 1e-3 * jnp.abs(diag) * jax.random.normal(ks[0], diag.shape),
             1e-3 * jnp.abs(sup) * jax.random.normal(ks[1], sup.shape),
             1e-3 * jnp.abs(sub) * jax.random.normal(ks[2], sub.shape),
             1e-3 * jnp.abs(rhs) * jax.random.normal(ks[3], rhs.shape),
@@ -547,9 +603,7 @@ def check_real_blocks(fixture: str, cfg_name: str, backend: str):
         if backend == "fast":
             assert r["primal_equal"], r
         else:  # the same third-arm bar as tres/gres below
-            assert r["resid_cand"] <= max(
-                2.0 * r["resid_cur"], 10.0 * r["resid_dense"]
-            ) + 1e-12, r
+            assert r["resid_cand"] <= max(2.0 * r["resid_cur"], 10.0 * r["resid_dense"]) + 1e-12, r
         # at dt=1e11 the reference tangent residual is itself O(1) (the
         # off-run-path conditioning regime): nothing to match there. The same
         # holds for the gradient: on the W39b 2025-network fixture the two
@@ -557,12 +611,8 @@ def check_real_blocks(fixture: str, cfg_name: str, backend: str):
         # at a cotangent residual of 9e8 / 1e8.
         if r["dt"] <= 1e6:
             assert r["tangent_rel"] < tangent_bar, r
-            assert r["tres_cand"] <= max(
-                2.0 * r["tres_cur"], 10.0 * r["tres_dense"]
-            ), r
-            assert r["gres_cand"] <= max(
-                2.0 * r["gres_cur"], 10.0 * r["gres_dense"]
-            ), r
+            assert r["tres_cand"] <= max(2.0 * r["tres_cur"], 10.0 * r["tres_dense"]), r
+            assert r["gres_cand"] <= max(2.0 * r["gres_cur"], 10.0 * r["gres_dense"]), r
             if backend == "fast":  # the transpose runs on the same factors as today
                 assert r["grad_rel"] < 1e-6, r
         # The vmapped solve is judged by its residual, and by solution
@@ -586,27 +636,28 @@ def test_fast_on_real_hd189_blocks(fast):
     check_real_blocks("adj_state_hd189.npz", "HD189", fast.BACKEND)
 
 
+# size-limit-ok: one script per fixture case, run in a subprocess
 def check_matrix_free(fixture: str, cfg_name: str, backend: str):
-    """`_ros2_stages` gives the solve a matrix-free operator so a tangent never
-    builds the dense dA per direction. On a real fixture, free and with pinned
-    rows: (1) the operator equals the dense block's `_matvec` to roundoff and a
-    pinned row is exactly `c0 x`; (2) the step's primal is unchanged and its
-    tangent in y, k, dt and every float atmosphere field agrees with the
-    dense operator's. The tangent passes through blocks of cond up to ~6e19,
-    so (2) is a wiring check at 1e-3 (worst, both at dt 1e6:
-    HD189 8.5e-5 `fast` / 8.1e-6 `ffi`, W39b 1.4e-7 / 3.2e-13); a lost or
-    wrong dA x reads O(1) and above. The primal is bitwise on the CPU and
-    measured bitwise on the GH200 too (0.0 in all 12 cases, both backends,
-    every dt and pinning); off the CPU the primal bar is 1e-9, roundoff
-    amplified by the block conditioning with room to spare. dt 1e11 is not compared
-    (the tangent is O(1)-conditioned there). Also run by the SNCHO child for
-    W39b."""
+    """`_ros2_stages` gives the solve a matrix-free operator so a tangent never builds the dense dA per direction.
+
+    On a real fixture, free and with pinned rows: (1) the operator equals the dense block's `_matvec` to roundoff
+    and a pinned row is exactly `c0 x`; (2) the step's primal is unchanged and its tangent in y, k, dt and every
+    float atmosphere field agrees with the dense operator's. The tangent passes through blocks of cond up to ~6e19,
+    so (2) is a wiring check at 1e-3 (worst, both at dt 1e6: HD189 8.5e-5 `fast` / 8.1e-6 `ffi`, W39b 1.4e-7 /
+    3.2e-13); a lost or wrong dA x reads O(1) and above. The primal is bitwise on the CPU and measured bitwise on
+    the GH200 too (0.0 in all 12 cases, both backends, every dt and pinning); off the CPU the primal bar is 1e-9,
+    roundoff amplified by the block conditioning with room to spare. dt 1e11 is not compared (the tangent is
+    O(1)-conditioned there). Also run by the SNCHO child for W39b.
+    """
     from vulcan3 import jax_step
 
     fast_mod.BACKEND = backend
     atm, net, y, k_arr = load_adj_state(fixture, cfg_name)
-    floats = {f: v for f in jax_step.AtmStatic._fields
-              if isinstance(v := getattr(atm, f), jax.Array) and jnp.issubdtype(v.dtype, jnp.floating)}
+    floats = {
+        f: v
+        for f in jax_step.AtmStatic._fields
+        if isinstance(v := getattr(atm, f), jax.Array) and jnp.issubdtype(v.dtype, jnp.floating)
+    }
     rng = np.random.default_rng(0)
 
     def nudge(x):
@@ -640,8 +691,8 @@ def check_matrix_free(fixture: str, cfg_name: str, backend: str):
         # (1e42 against 1e23 on the dense operator), a harness artifact.
         def stages(primals, tangents, fix):
             return jax.jvp(
-                lambda a, b, t, af: jax_step._ros2_stages(a, b, t, atm._replace(**af), net, fix)[:2],
-                primals, tangents)
+                lambda a, b, t, af: jax_step._ros2_stages(a, b, t, atm._replace(**af), net, fix)[:2], primals, tangents
+            )
 
         cases = []
         for fix in (jnp.zeros_like(pins), pins):
@@ -650,20 +701,22 @@ def check_matrix_free(fixture: str, cfg_name: str, backend: str):
                 cases.append((primals, jax.tree_util.tree_map(nudge, primals), fix))
         jax_step.solve_block_thomas_diag_offdiag = solve0
         free = jax.jit(stages)
-        got = [free(*c) for c in cases]   # traced now, on the matrix-free operator
+        got = [free(*c) for c in cases]  # traced now, on the matrix-free operator
         jax_step.solve_block_thomas_diag_offdiag = lambda factors, rhs, **_: solve0(factors, rhs)
-        dense = jax.jit(lambda *c: stages(*c))   # traced after the patch: the dense operator
+        dense = jax.jit(lambda *c: stages(*c))  # traced after the patch: the dense operator
         primal_bar = 0.0 if jax.default_backend() == "cpu" else 1e-9
-        for c, (p_free, t_free) in zip(cases, got):
+        for c, (p_free, t_free) in zip(cases, got, strict=False):
             p_dense, t_dense = dense(*c)
-            for a, b in zip(p_free, p_dense):
+            for a, b in zip(p_free, p_dense, strict=False):
                 assert _rel(b, a) <= primal_bar, (float(c[0][2]), _rel(b, a))
-            for a, b in zip(t_free, t_dense):
+            for a, b in zip(t_free, t_dense, strict=False):
                 assert _rel(b, a) < 1e-3, (float(c[0][2]), bool(c[2].any()), _rel(b, a))
             # no "dt=" here: the W39b child counts check_real_blocks' rows by it
-            print(f"matrix-free {cfg_name} {backend} at dt {float(c[0][2]):.0e}, pinned "
-                  f"{bool(c[2].any())}: primal {max(_rel(b, a) for a, b in zip(p_free, p_dense)):.1e}, "
-                  f"tangent {max(_rel(b, a) for a, b in zip(t_free, t_dense)):.2e}")
+            print(
+                f"matrix-free {cfg_name} {backend} at dt {float(c[0][2]):.0e}, pinned "
+                f"{bool(c[2].any())}: primal {max(_rel(b, a) for a, b in zip(p_free, p_dense, strict=False)):.1e}, "
+                f"tangent {max(_rel(b, a) for a, b in zip(t_free, t_dense, strict=False)):.2e}"
+            )
     finally:
         jax_step.solve_block_thomas_diag_offdiag = solve0
 
@@ -698,13 +751,13 @@ else:
 """
 
 
-@pytest.mark.parametrize("change", [("NVCC_ARCH", "sm_80"), ("FAKE_NVCC_RELEASE", "V12.8.93")],
-                         ids=["arch", "nvcc"])
+@pytest.mark.parametrize("change", [("NVCC_ARCH", "sm_80"), ("FAKE_NVCC_RELEASE", "V12.8.93")], ids=["arch", "nvcc"])
 def test_cuda_build_stamp_covers_arch_and_nvcc(change, tmp_path, monkeypatch):
-    """`build(cuda=True)` redoes a GPU library built for another arch or with
-    another nvcc, and the loader's check (the sources only: a GPU job's JAX
-    process need not have nvcc) still accepts it. A stand-in nvcc writes the
-    stamp it is given."""
+    """`build(cuda=True)` redoes a GPU library built for another arch or with another nvcc.
+
+    And the loader's check (the sources only: a GPU job's JAX process need not have nvcc) still accepts it. A
+    stand-in nvcc writes the stamp it is given.
+    """
     nvcc = tmp_path / "nvcc"
     nvcc.write_text(f"#!{sys.executable}" + _FAKE_NVCC)
     nvcc.chmod(0o755)
@@ -741,8 +794,44 @@ def test_fast_on_real_w39b_blocks(fast):
     from _helpers import run_child
 
     # `ffi` runs only on a CUDA host (the fixture), and its child on the same backend
-    res = run_child(_CHILD.replace("@BACKEND@", repr(fast.BACKEND)),
-                    network="thermo/SNCHO_photo_network_2025.txt", label="solver_fast W39b",
-                    platforms=os.environ["JAX_PLATFORMS"] if fast.BACKEND == "ffi" else "cpu")
+    res = run_child(
+        _CHILD.replace("@BACKEND@", repr(fast.BACKEND)),
+        network="thermo/SNCHO_photo_network_2025.txt",
+        label="solver_fast W39b",
+        platforms=os.environ["JAX_PLATFORMS"] if fast.BACKEND == "ffi" else "cpu",
+    )
     print(res.stdout)
     assert res.stdout.count("dt=") == len(DTS)
+
+
+_FFI_REVERSE_CHILD = r"""
+import jax
+import jax.numpy as jnp
+from vulcan3 import solver_fast as fast
+
+ni, nz = 3, 4
+diag = jnp.eye(ni)[None] * 4.0 * jnp.ones((nz, 1, 1))
+sup = sub = jnp.ones((nz - 1, ni)) * 0.1
+rhs = jnp.ones((nz, ni))
+
+def solve(b):
+    return fast.solve(fast.factor(diag, sup, sub), b)
+
+assert fast.BACKEND == "ffi"
+jax.jvp(solve, (rhs,), (rhs,))  # forward mode stays
+try:
+    jax.grad(lambda b: jnp.sum(solve(b)))(rhs)
+except TypeError as e:
+    assert "transpose_solve" in str(e), e
+else:
+    raise SystemExit("reverse mode through ffi was not refused")
+"""
+
+
+@pytest.mark.skipif(shutil.which("c++") is None, reason="the ffi CPU kernel needs a C++ compiler")
+def test_ffi_refuses_reverse_mode():
+    env = dict(os.environ, VULCAN3_SOLVER="ffi", JAX_PLATFORMS="cpu")
+    res = subprocess.run(
+        [sys.executable, "-c", _FFI_REVERSE_CHILD], capture_output=True, text=True, env=env, timeout=600, check=False
+    )
+    assert res.returncode == 0, res.stderr[-2000:]

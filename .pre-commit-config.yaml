@@ -1,0 +1,99 @@
+# Based on scientific-python/cookie.
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: "v6.0.0"
+    hooks:
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-yaml
+      - id: debug-statements
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: "v0.17.1"
+    hooks:
+      - id: ruff-check
+        args: ["--fix", "--show-fixes"]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: "v23.1.3"
+    hooks:
+      - id: clang-format
+        types_or: [c++, c, cuda]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: "v2.4.0"
+    hooks:
+      - id: mypy
+        files: ^src/
+        args: []
+        additional_dependencies:
+          - numpy
+          - jax==0.6.2
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: "v2.4.3"
+    hooks:
+      - id: codespell
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: "v0.11.0.1-1"
+    hooks:
+      - id: shellcheck
+
+  - repo: https://github.com/abravalheri/validate-pyproject
+    rev: "0.26"
+    hooks:
+      - id: validate-pyproject
+        additional_dependencies: ["validate-pyproject-schema-store[all]"]
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: "0.38.2"
+    hooks:
+      - id: check-github-workflows
+
+  - repo: local
+    hooks:
+      # Local only: the kernels parse with nvcc's toolkit on PATH, which CI does not install.
+      - id: clang-tidy
+        name: clang-tidy
+        language: python
+        additional_dependencies: ["clang-tidy==23.1.4", "jax==0.6.2"]
+        entry: tools/tidy_kernels.sh
+        pass_filenames: false
+        files: ^src/vulcan3/csrc/
+      - id: check-size-limits
+        name: size limits
+        language: system
+        entry: python3 tools/check_size_limits.py
+        types_or: [python, c, c++, cuda]
+      - id: no-sys-path-edits
+        name: no sys.path edits
+        language: pygrep
+        entry: 'sys\.path\.(insert|append|extend)|sys\.path\s*='
+        types: [python]
+        # Oracle tests run master's code in a subprocess on a copy; the child must find it (docs/architecture.md).
+        exclude: ^tests/
+      - id: suppression-has-reason
+        name: every noqa or type ignore has a reason on the same line
+        language: pygrep
+        entry: '#\s*noqa(:\s*[A-Z]+[0-9]+(,\s*[A-Z]+[0-9]+)*)?\s*$|#\s*type:\s*ignore(\[[^\]]*\])?\s*$'
+        types: [python]
+      - id: conventional-commit
+        name: conventional commit subject
+        language: pygrep
+        entry: '\A(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: \S'
+        args: [--multiline, --negate]
+        stages: [commit-msg]
+      - id: no-attribution-lines
+        name: no attribution lines in the commit message
+        language: pygrep
+        entry: '(?i)^(co-authored-by|claude-session):'
+        stages: [commit-msg]

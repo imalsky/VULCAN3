@@ -1,32 +1,25 @@
 """Vectorised JAX chemistry RHS and Jacobian.
 
-Convention:
-  y[nz, ni]    number densities (cm^-3)
-  M[nz]        total third-body density (cm^-3)
-  k[nr+1, nz]  rate constants per reaction per layer (1-based)
+`y[nz, ni]` holds number densities (cm^-3), `M[nz]` the third-body density (cm^-3) and `k[nr+1, nz]` the rate constants,
+1-based. The RHS is `make_chem_funs.build_chem_rhs`; this module packs the network and builds the analytical Jacobian.
 
-Rate per reaction per layer:
-    rate[i, z] = k[i, z] * Π_slot (y[reactant_idx[i,slot], z] ** stoich[i,slot])
-    if is_three_body[i]: rate[i, z] *= M[z]
-
-The RHS is `make_chem_funs.build_chem_rhs(net)` (SymPy-faithful per-reaction
-codegen, master-bit-faithful term order). This module packs the network
-(`to_jax`) and builds the analytical Jacobian, which uses the `y_r ** stoich`
-formulation: the leave-one-out derivative is naturally written that way and
-the Jacobian has no cancellation amplifier (machine-precision agreement vs
-master). The test oracles (`jax.jacrev` of a vectorised `segment_sum` RHS, a
-NumPy RHS in master's term order) live in `tests/_oracles.py`.
+Public names: `NetworkArrays`, `to_jax`, `chem_jac_analytical`, `chem_jac_entries`. Equations: docs/method.md.
 """
 
 from __future__ import annotations
 
 import dataclasses
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import numpy as np
 
-from .network import Network
+if TYPE_CHECKING:
+    from .network import Network
+
+
+__all__ = ["NetworkArrays", "chem_jac_analytical", "chem_jac_entries", "to_jax"]
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -68,7 +61,7 @@ jtu.register_dataclass(
 
 
 def _jac_gather_tables(net: Network) -> tuple[tuple, jnp.ndarray]:
-    """Static tables behind `chem_jac_entries`.
+    """Return static tables behind `chem_jac_entries`.
 
     Every nonzero J[i, j] is a sum over the (reaction r, reactant slot s)
     pairs with species j in slot s and species i among r's reactants or
@@ -121,9 +114,11 @@ def _jac_gather_tables(net: Network) -> tuple[tuple, jnp.ndarray]:
 
 
 def _jac_pow_tables(net: Network) -> tuple:
-    """The reactant slots with stoich >= 2, the only ones `chem_jac_entries`
-    raises to a power: `(r, s, place)`, with `place[r, s]` the slot's row in
-    the per-slot power results and one past the end for every other slot."""
+    """Return the reactant slots with stoich >= 2, the only ones `chem_jac_entries` raises to a power.
+
+    `(r, s, place)`, with `place[r, s]` the slot's row in the per-slot power results and one past the end for every
+    other slot.
+    """
     st = np.asarray(net.reactant_stoich)
     r, s = np.nonzero(st >= 2)
     place = np.full(st.shape, r.size, dtype=np.int32)
@@ -150,8 +145,9 @@ def to_jax(net: Network) -> NetworkArrays:
 
 def _left_to_right_sum_axis1(x: jnp.ndarray) -> jnp.ndarray:
     """Sum over axis 1 (the term axis of a column table) in one fixed order.
-    XLA may reorder a `reduce` per program; a fixed chain of adds keeps the
-    batch and queue runners bit-identical."""
+
+    XLA may reorder a `reduce` per program; a fixed chain of adds keeps the batch and queue runners bit-identical.
+    """
     acc = x[:, 0]
     for j in range(1, x.shape[1]):
         acc = acc + x[:, j]
@@ -164,9 +160,10 @@ def chem_jac_entries(
     k: jnp.ndarray,  # [nr+1, nz]
     net: NetworkArrays,
 ) -> jnp.ndarray:
-    """The nonzero entries of the analytical Jacobian for a whole column,
-    [n_entries + 1, nz] in `net.jac_place` row order, the last row zero (the
-    structural-zero slot). `chem_jac_analytical` scatters them densely.
+    """Return the nonzero entries of the analytical Jacobian for a whole column.
+
+    [n_entries + 1, nz] in `net.jac_place` row order, the last row zero (the structural-zero slot).
+    `chem_jac_analytical` scatters them densely.
 
     The layer axis trails every intermediate. Under the batched runner's
     lane vmap that keeps (reaction, slot) major and (lane, layer)
@@ -174,7 +171,7 @@ def chem_jac_entries(
     (the same operations with the layer axis leading, vmapped over layers)
     has a (lane, layer, reaction, slot) layout that puts every gathered
     element in its own memory sector (~4.6 ms a step at 396 lanes on a
-    GH200). Against that per-layer form on CPU (2026-10-19): bitwise equal
+    GH200). Against that per-layer form on CPU: bitwise equal
     on HD189; on W39b 39 of 1.19M entries one ulp apart, all <= 7e-19 of
     their layer's peak.
     """
@@ -221,10 +218,7 @@ def chem_jac_entries(
     drate_dy = st * pow_minus_one * leave_out * k[:, None, :]
     drate_dy = jnp.where(net.is_three_body[:, None, None], drate_dy * M, drate_dy)
 
-    entry_sums = [
-        _left_to_right_sum_axis1(coef[:, :, None] * drate_dy[r, s])
-        for r, s, coef in net.jac_terms
-    ]
+    entry_sums = [_left_to_right_sum_axis1(coef[:, :, None] * drate_dy[r, s]) for r, s, coef in net.jac_terms]
     zero = jnp.zeros((1, nz), dtype=drate_dy.dtype)
     return jnp.concatenate([*entry_sums, zero], axis=0)
 
@@ -235,10 +229,11 @@ def chem_jac_analytical(
     k: jnp.ndarray,  # [nr+1, nz]
     net: NetworkArrays,
 ) -> jnp.ndarray:
-    """Stoichiometry-driven chemistry Jacobian for a whole column. Returns
-    [nz, ni, ni]: J[z, i, j] = Σ_r sign_i * stoich_i * (∂rate[r, z]/∂y[z, j]),
-    built from the network tables without `jacrev`'s ni reverse-mode passes
-    (`chem_jac_entries` placed densely)."""
+    """Stoichiometry-driven chemistry Jacobian for a whole column.
+
+    Returns [nz, ni, ni]: J[z, i, j] = Σ_r sign_i * stoich_i * (∂rate[r, z]/∂y[z, j]), built from the network tables
+    without `jacrev`'s ni reverse-mode passes (`chem_jac_entries` placed densely).
+    """
     nz, ni = y.shape[0], net.ni
     dense = chem_jac_entries(y, M, k, net)[net.jac_place]  # [ni*ni, nz]
     return jnp.moveaxis(dense.reshape(ni, ni, nz), -1, 0)

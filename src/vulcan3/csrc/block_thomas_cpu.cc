@@ -33,7 +33,10 @@ void lu_inplace(double* a, int32_t* perm, int n) {
     double best = std::fabs(a[k * n + k]);
     for (int i = k + 1; i < n; ++i) {
       const double v = std::fabs(a[i * n + k]);
-      if (v > best) { best = v; p = i; }
+      if (v > best) {
+        best = v;
+        p = i;
+      }
     }
     if (p != k) {
       for (int j = 0; j < n; ++j) std::swap(a[k * n + j], a[p * n + j]);
@@ -49,8 +52,7 @@ void lu_inplace(double* a, int32_t* perm, int n) {
 
 // x <- A^{-1} b from the block's LU and perm. b may alias x: b is consumed
 // into tmp before x is written.
-void lu_solve(const double* lu, const int32_t* perm, int n, const double* b, double* x,
-              double* tmp) {
+void lu_solve(const double* lu, const int32_t* perm, int n, const double* b, double* x, double* tmp) {
   for (int i = 0; i < n; ++i) tmp[i] = b[perm[i]];
   for (int i = 0; i < n; ++i) {
     double s = tmp[i];
@@ -64,9 +66,8 @@ void lu_solve(const double* lu, const int32_t* perm, int n, const double* b, dou
   }
 }
 
-ffi::Error FactorImpl(ffi::Buffer<ffi::F64> diag, ffi::Buffer<ffi::F64> sup,
-                      ffi::Buffer<ffi::F64> sub, ffi::ResultBuffer<ffi::F64> lu,
-                      ffi::ResultBuffer<ffi::S32> perm) {
+ffi::Error FactorImpl(ffi::Buffer<ffi::F64> diag, ffi::Buffer<ffi::F64> sup, ffi::Buffer<ffi::F64> sub,
+                      ffi::ResultBuffer<ffi::F64> lu, ffi::ResultBuffer<ffi::S32> perm) {
   BtShape shape;
   ffi::Error err = bt_check_factor(diag, sup, sub, *lu, *perm, &shape);
   if (err.failure()) return err;
@@ -96,17 +97,15 @@ ffi::Error FactorImpl(ffi::Buffer<ffi::F64> diag, ffi::Buffer<ffi::F64> sup,
       const double* c = C + (j - 1) * ni;
       const double* bb = S + (j - 1) * ni;
       for (int r = 0; r < ni; ++r)
-        for (int s = 0; s < ni; ++s)
-          Lj[r * ni + s] = Dj[r * ni + s] - (c[r] * bb[s]) * inv[r * ni + s];
+        for (int s = 0; s < ni; ++s) Lj[r * ni + s] = Dj[r * ni + s] - (c[r] * bb[s]) * inv[r * ni + s];
       lu_inplace(Lj, P + j * ni, ni);
     }
   }
   return ffi::Error::Success();
 }
 
-ffi::Error SolveImpl(ffi::Buffer<ffi::F64> lu, ffi::Buffer<ffi::S32> perm,
-                     ffi::Buffer<ffi::F64> sup, ffi::Buffer<ffi::F64> sub,
-                     ffi::Buffer<ffi::F64> rhs, ffi::ResultBuffer<ffi::F64> x) {
+ffi::Error SolveImpl(ffi::Buffer<ffi::F64> lu, ffi::Buffer<ffi::S32> perm, ffi::Buffer<ffi::F64> sup,
+                     ffi::Buffer<ffi::F64> sub, ffi::Buffer<ffi::F64> rhs, ffi::ResultBuffer<ffi::F64> x) {
   BtShape shape;
   BtBcast s;
   ffi::Error err = bt_check_solve(lu, perm, sup, sub, rhs, *x, &shape, &s);
@@ -140,21 +139,19 @@ ffi::Error SolveImpl(ffi::Buffer<ffi::F64> lu, ffi::Buffer<ffi::S32> perm,
 
 }  // namespace
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    VulcanBtFactor, FactorImpl,
-    ffi::Ffi::Bind()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Ret<ffi::Buffer<ffi::F64>>()
-        .Ret<ffi::Buffer<ffi::S32>>());
+XLA_FFI_DEFINE_HANDLER_SYMBOL(VulcanBtFactor, FactorImpl,
+                              ffi::Ffi::Bind()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Ret<ffi::Buffer<ffi::F64>>()
+                                  .Ret<ffi::Buffer<ffi::S32>>());
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    VulcanBtSolve, SolveImpl,
-    ffi::Ffi::Bind()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Arg<ffi::Buffer<ffi::S32>>()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Ret<ffi::Buffer<ffi::F64>>());
+XLA_FFI_DEFINE_HANDLER_SYMBOL(VulcanBtSolve, SolveImpl,
+                              ffi::Ffi::Bind()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Arg<ffi::Buffer<ffi::S32>>()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Ret<ffi::Buffer<ffi::F64>>());

@@ -12,14 +12,43 @@ import copy
 import types
 import warnings
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 import jax.numpy as jnp
 import numpy as np
 
 from . import chem_funs
-from .config import _FROZEN_ENV, default_config
+from ._legacy_containers import (
+    _AtmData,
+    _Variables,
+    legacy_view,
+)
 from ._paths import resolve_data_path
+from .config import _FROZEN_ENV, default_config
+
+__all__ = [
+    "TERM_CONVERGED",
+    "TERM_NONFINITE",
+    "TERM_RUNNING",
+    "TERM_RUNTIME",
+    "TERM_STEP_COUNT",
+    "AtmInputs",
+    "AtomInputs",
+    "FixSpeciesInputs",
+    "IniAbunOutputs",
+    "ParamInputs",
+    "PhotoInputs",
+    "PhotoRuntimeInputs",
+    "PhotoStaticInputs",
+    "RateInputs",
+    "RunMetadata",
+    "RunState",
+    "StepInputs",
+    "legacy_view",
+    "load_stellar_flux",
+    "pytree_from_store",
+    "runstate_from_store",
+]
 
 
 class AtmInputs(NamedTuple):
@@ -104,7 +133,7 @@ class PhotoStaticInputs(NamedTuple):
     cross_J_T: jnp.ndarray  # (n_br_T, nz, nbin)
     cross_Jion: jnp.ndarray  # (n_ion_br, nbin)  -- (0, nbin) when use_ion=False
 
-    def with_din12_indx(self, idx: int) -> "PhotoStaticInputs":
+    def with_din12_indx(self, idx: int) -> PhotoStaticInputs:
         """Return a new pytree with `din12_indx` set; rejects negative values."""
         if int(idx) < 0:
             raise ValueError(f"PhotoStaticInputs.din12_indx must be >= 0; got {idx}")
@@ -177,8 +206,10 @@ class PhotoRuntimeInputs(NamedTuple):
 
 
 class FixSpeciesInputs(NamedTuple):
-    """Fixed-species snapshot. `conden_min_lev` is read only when
-    fix_species_from_coldtrap_lev=True."""
+    """Fixed-species snapshot.
+
+    `conden_min_lev` is read only when fix_species_from_coldtrap_lev=True.
+    """
 
     fix_species: tuple  # static ordering of species names
     fix_y: jnp.ndarray  # (n_fix_sp, nz)
@@ -219,20 +250,20 @@ class RunState(NamedTuple):
     photo: PhotoInputs
     # Runner-state slots. Default `None`: `pytree_from_store` fills only
     # atm/rate/photo.
-    step: Optional[StepInputs] = None
-    params: Optional[ParamInputs] = None
-    atoms: Optional[AtomInputs] = None
-    photo_runtime: Optional[PhotoRuntimeInputs] = None
-    fix_species: Optional[FixSpeciesInputs] = None
+    step: StepInputs | None = None
+    params: ParamInputs | None = None
+    atoms: AtomInputs | None = None
+    photo_runtime: PhotoRuntimeInputs | None = None
+    fix_species: FixSpeciesInputs | None = None
     # Host-side static metadata + photo cross-section pytree. Both default
     # to None for partial RunStates; `with_pre_loop_setup(cfg)` fills `metadata`, and
     # `photo_static` when use_photo
     # (`runstate_from_store` fills `metadata` only).
-    metadata: Optional[RunMetadata] = None
-    photo_static: Optional[PhotoStaticInputs] = None
+    metadata: RunMetadata | None = None
+    photo_static: PhotoStaticInputs | None = None
 
     @staticmethod
-    def with_pre_loop_setup(cfg) -> "RunState":
+    def with_pre_loop_setup(cfg) -> RunState:
         """Build a fully-initialised `RunState` from a config.
 
         Runs the full pre-loop pipeline (atmosphere structure, rate constants
@@ -317,9 +348,7 @@ def pytree_from_store(var, atm) -> RunState:
 
     k_dense = np.asarray(var.k_arr, dtype=np.float64)
     if k_dense.shape != (nr + 1, nz):
-        raise ValueError(
-            f"var.k_arr shape {k_dense.shape} != expected ({nr + 1}, {nz})"
-        )
+        raise ValueError(f"var.k_arr shape {k_dense.shape} != expected ({nr + 1}, {nz})")
     rate_inputs = RateInputs(k=jnp.asarray(k_dense))
 
     sflux_top = getattr(var, "sflux_top", None)
@@ -347,8 +376,7 @@ def _atom_arr_to_dict(arr, atom_order) -> dict:
     return {a: float(arr[i]) for i, a in enumerate(atom_order)}
 
 
-
-
+# size-limit-ok: one RunState field per line
 def runstate_from_store(var, atm, para) -> RunState:
     """Snapshot the full runner-input state of `(var, atm, para)`.
 
@@ -398,18 +426,10 @@ def runstate_from_store(var, atm, para) -> RunState:
     atom_order = tuple(a for a in _cfg.atom_list if a not in _cfg.loss_ex)
     atoms = AtomInputs(
         atom_order=atom_order,
-        atom_ini=jnp.asarray(
-            _atom_dict_to_arr(getattr(var, "atom_ini", {}), atom_order)
-        ),
-        atom_loss=jnp.asarray(
-            _atom_dict_to_arr(getattr(var, "atom_loss", {}), atom_order)
-        ),
-        atom_loss_prev=jnp.asarray(
-            _atom_dict_to_arr(getattr(var, "atom_loss_prev", {}), atom_order)
-        ),
-        atom_sum=jnp.asarray(
-            _atom_dict_to_arr(getattr(var, "atom_sum", {}), atom_order)
-        ),
+        atom_ini=jnp.asarray(_atom_dict_to_arr(getattr(var, "atom_ini", {}), atom_order)),
+        atom_loss=jnp.asarray(_atom_dict_to_arr(getattr(var, "atom_loss", {}), atom_order)),
+        atom_loss_prev=jnp.asarray(_atom_dict_to_arr(getattr(var, "atom_loss_prev", {}), atom_order)),
+        atom_sum=jnp.asarray(_atom_dict_to_arr(getattr(var, "atom_sum", {}), atom_order)),
     )
 
     if bool(_cfg.use_photo) and hasattr(var, "tau"):
@@ -457,17 +477,17 @@ def runstate_from_store(var, atm, para) -> RunState:
 
 
 def _atm_metadata_from_atm(atm) -> dict:
-    return dict(
-        Ti=jnp.asarray(getattr(atm, "Ti", atm.Tco), dtype=jnp.float64),
-        gas_indx=tuple(getattr(atm, "gas_indx", []) or []),
-        pref_indx=int(getattr(atm, "pref_indx", 0)),
-        gs=float(getattr(atm, "gs", 0.0)),
-        sat_p=dict(getattr(atm, "sat_p", {}) or {}),
-        sat_mix=dict(getattr(atm, "sat_mix", {}) or {}),
-        r_p=dict(getattr(atm, "r_p", {}) or {}),
-        rho_p=dict(getattr(atm, "rho_p", {}) or {}),
-        fix_sp_indx=dict(getattr(atm, "fix_sp_indx", {}) or {}),
-    )
+    return {
+        "Ti": jnp.asarray(getattr(atm, "Ti", atm.Tco), dtype=jnp.float64),
+        "gas_indx": tuple(getattr(atm, "gas_indx", []) or []),
+        "pref_indx": int(getattr(atm, "pref_indx", 0)),
+        "gs": float(getattr(atm, "gs", 0.0)),
+        "sat_p": dict(getattr(atm, "sat_p", {}) or {}),
+        "sat_mix": dict(getattr(atm, "sat_mix", {}) or {}),
+        "r_p": dict(getattr(atm, "r_p", {}) or {}),
+        "rho_p": dict(getattr(atm, "rho_p", {}) or {}),
+        "fix_sp_indx": dict(getattr(atm, "fix_sp_indx", {}) or {}),
+    }
 
 
 def _runmetadata_from_legacy(var, atm, para) -> RunMetadata:
@@ -499,12 +519,14 @@ def _runmetadata_from_legacy(var, atm, para) -> RunMetadata:
 
 
 def _same_file(want: str, have: str, what: str) -> bool:
-    """True when `want` is `have` or a byte-identical copy of it. An
-    unreadable pair warns and counts as a match: the skip announces itself."""
+    """Return True when `want` is `have` or a byte-identical copy of it.
+
+    An unreadable pair warns and counts as a match: the skip announces itself.
+    """
     if want == have:
         return True
     try:
-        with open(want, "rb") as _w, open(have, "rb") as _h:
+        with Path(want).open("rb") as _w, Path(have).open("rb") as _h:
             return _w.read() == _h.read()
     except FileNotFoundError:
         return False  # the requested file is missing -> a mismatch
@@ -520,16 +542,15 @@ def _same_file(want: str, have: str, what: str) -> bool:
 
 
 def _frozen_mismatch(cfg) -> dict[str, tuple]:
-    """The import-frozen knobs (`config._FROZEN_ENV`) on which `cfg` disagrees
-    with what the first `import vulcan3` loaded, as ``{knob: (requested,
-    import-time)}``. A file knob matches a byte-identical copy at another path.
+    """Return the import-frozen knobs (`config._FROZEN_ENV`) on which `cfg` disagrees with the first `import vulcan3`.
+
+    Returned as ``{knob: (requested, import-time)}``. A file knob matches a byte-identical copy at another path.
 
     The network (``ni``/``nr``/``spec_list`` and the codegen RHS), the
     composition table (``composition.py``) and the reservoir-projection
     tables (``jax_step``) are built from these once, at import.
     """
-    from . import composition as _composition
-    from . import jax_step as _jax_step
+    from . import composition as _composition, jax_step as _jax_step
 
     loaded = {
         "network": chem_funs._NETWORK.network_path,
@@ -551,17 +572,15 @@ def _frozen_mismatch(cfg) -> dict[str, tuple]:
 
 
 def _assert_frozen_knobs_match_import(cfg) -> None:
-    """Fail fast if `cfg` requests a different network, com_file or atom_list
-    than the import-frozen one (`_frozen_mismatch`): ``make_config(...)``
-    cannot change them in-process, and running on would mix the import-time
-    tables with cfg-time accounting."""
+    """Fail fast if `cfg` requests another network, com_file or atom_list.
+
+    It must match the import-frozen one (`_frozen_mismatch`). ``make_config(...)`` cannot change them
+    in-process, and running on would mix the import-time tables with cfg-time accounting.
+    """
     bad = _frozen_mismatch(cfg)
     if not bad:
         return
-    lines = "".join(
-        f"  {knob}: import-time {have}, cfg requests {want}\n"
-        for knob, (want, have) in bad.items()
-    )
+    lines = "".join(f"  {knob}: import-time {have}, cfg requests {want}\n" for knob, (want, have) in bad.items())
     envs = ", ".join(f"${_FROZEN_ENV[k]}" for k in bad)
     raise ValueError(
         f"cfg changes the import-locked {', '.join(bad)}: VULCAN3 reads them "
@@ -616,12 +635,9 @@ def _build_pre_loop_runstate_impl(cfg) -> RunState:
     """Run the full pre-loop pipeline and return a populated RunState."""
     import time
 
-    from . import legacy_io as _io
+    from . import legacy_io as _io, op_jax as _op_jax, photo_setup as _photo_setup, rates_jax as _rates_mod
     from .atm_setup import Atm
     from .ini_abun import InitialAbun
-    from . import op_jax as _op_jax
-    from . import rates_jax as _rates_mod
-    from . import photo_setup as _photo_setup
 
     var = _Variables()
     atm = _AtmData()
@@ -651,9 +667,7 @@ def _build_pre_loop_runstate_impl(cfg) -> RunState:
     if bool(cfg.use_photo):
         photo_static_pytree = _photo_setup.populate_photo(var, atm)
         make_atm.read_sflux(var, atm)
-        photo_static_pytree = photo_static_pytree.with_din12_indx(
-            int(var.sflux_din12_indx)
-        )
+        photo_static_pytree = photo_static_pytree.with_din12_indx(int(var.sflux_din12_indx))
         solver = _op_jax.Ros2JAX()
         solver._photo_static = photo_static_pytree
         solver.compute_tau(var, atm)
@@ -670,233 +684,3 @@ def _build_pre_loop_runstate_impl(cfg) -> RunState:
 
     rs = runstate_from_store(var, atm, para)
     return rs._replace(photo_static=photo_static_pytree)
-
-
-def legacy_view(rs: RunState):
-    """Return a `(var, atm, para)` SimpleNamespace shim built from `rs`.
-
-    Mutations to the shim do not round-trip back to `rs`.
-    """
-    md = rs.metadata
-    var = types.SimpleNamespace()
-    atm = types.SimpleNamespace()
-    para = types.SimpleNamespace()
-
-    a = rs.atm
-    for f in a._fields:
-        setattr(atm, f, np.asarray(getattr(a, f)))
-    if md is not None:
-        atm.Ti = np.asarray(md.Ti)
-        atm.gas_indx = list(md.gas_indx)
-        atm.pref_indx = int(md.pref_indx)
-        atm.gs = float(md.gs)
-        atm.sat_p = dict(md.sat_p)
-        atm.sat_mix = dict(md.sat_mix)
-        atm.r_p = dict(md.r_p)
-        atm.rho_p = dict(md.rho_p)
-        atm.fix_sp_indx = dict(md.fix_sp_indx)
-    atm.conden_min_lev = {}
-
-    var.k_arr = np.asarray(rs.rate.k, dtype=np.float64)
-    var.k = {}
-    var.def_bin_min = float(rs.photo.def_bin_min)
-    var.def_bin_max = float(rs.photo.def_bin_max)
-    var.aflux_change = (
-        float(rs.photo_runtime.aflux_change) if rs.photo_runtime is not None else 0.0
-    )
-    if int(rs.photo.sflux_top.shape[0]) > 0:
-        var.sflux_top = np.asarray(rs.photo.sflux_top)
-    if rs.step is not None:
-        var.y = np.asarray(rs.step.y)
-        var.y_prev = np.asarray(rs.step.y_prev)
-        var.ymix = np.asarray(rs.step.ymix)
-        var.t = float(rs.step.t)
-        var.dt = float(rs.step.dt)
-        var.longdy = float(rs.step.longdy)
-        var.longdydt = float(rs.step.longdydt)
-    if md is not None:
-        var.y_ini = np.asarray(md.y_ini)
-    if rs.atoms is not None:
-        var.atom_ini = _atom_arr_to_dict(
-            np.asarray(rs.atoms.atom_ini), rs.atoms.atom_order
-        )
-        var.atom_loss = _atom_arr_to_dict(
-            np.asarray(rs.atoms.atom_loss), rs.atoms.atom_order
-        )
-        var.atom_loss_prev = _atom_arr_to_dict(
-            np.asarray(rs.atoms.atom_loss_prev), rs.atoms.atom_order
-        )
-        var.atom_sum = _atom_arr_to_dict(
-            np.asarray(rs.atoms.atom_sum), rs.atoms.atom_order
-        )
-        var.atom_conden = {a: 0.0 for a in rs.atoms.atom_order}
-    if rs.photo_runtime is not None:
-        var.tau = np.asarray(rs.photo_runtime.tau)
-        var.aflux = np.asarray(rs.photo_runtime.aflux)
-        var.sflux = np.asarray(rs.photo_runtime.sflux)
-        var.dflux_u = np.asarray(rs.photo_runtime.dflux_u)
-        var.aflux_change = float(rs.photo_runtime.aflux_change)
-    if rs.photo_static is not None:
-        var.nbin = int(rs.photo_static.nbin)
-        var.bins = np.asarray(rs.photo_static.bins)
-        var.dbin1 = float(rs.photo_static.dbin1)
-        var.dbin2 = float(rs.photo_static.dbin2)
-        var.J_sp = {}
-        if int(rs.photo_static.cross_Jion.shape[0]) > 0:
-            var.Jion_sp = {}
-            var.ion_wavelen = {}
-    if md is not None:
-        var.Rf = dict(md.Rf)
-        var.n_branch = dict(md.n_branch)
-        var.ion_branch = dict(md.ion_branch)
-        var.photo_sp = set(md.photo_sp)
-        var.ion_sp = set(md.ion_sp)
-        var.pho_rate_index = dict(md.pho_rate_index)
-        var.ion_rate_index = dict(md.ion_rate_index)
-        var.ion_br_ratio = dict(md.ion_br_ratio)
-        var.charge_list = list(md.charge_list)
-        var.conden_re_list = list(md.conden_re_list)
-
-    if rs.params is not None:
-        para.count = int(rs.params.count)
-        para.nega_count = int(rs.params.nega_count)
-        para.loss_count = int(rs.params.loss_count)
-        para.delta_count = int(rs.params.delta_count)
-        para.delta = float(rs.params.delta)
-        para.small_y = float(rs.params.small_y)
-        para.nega_y = float(rs.params.nega_y)
-        para.end_case = int(rs.params.end_case)
-        para.termination_reason = int(rs.params.termination_reason)
-        para.switch_final_photo_frq = bool(rs.params.switch_final_photo_frq)
-        para.pic_count = int(rs.params.pic_count)
-        para.where_varies_most = np.asarray(
-            rs.params.where_varies_most,
-            dtype=np.float64,
-        )
-        para.fix_species_start = bool(rs.params.fix_species_start)
-    if md is not None:
-        para.start_time = float(md.start_time)
-
-    return var, atm, para
-
-
-class _Variables(object):
-    """Private mutable scratch container used by the pre-loop pipeline."""
-
-    def __init__(self):
-        from .chem_funs import ni as _ni
-
-        _nz = default_config().nz
-        _vcfg = default_config()
-
-        self.k = {}
-        self.k_arr = None
-        self.y = np.zeros((_nz, _ni))
-        self.y_prev = np.zeros((_nz, _ni))
-        self.ymix = np.zeros((_nz, _ni))
-        self.y_ini = np.zeros((_nz, _ni))
-        self.t = 0
-        self.dt = _vcfg.dttry
-        self.longdy = 1.0
-        self.longdydt = 1.0
-
-        self.atom_ini = {}
-        self.atom_sum = {}
-        self.atom_loss = {}
-        self.atom_loss_prev = {}
-        self.atom_conden = {}
-
-        self.Rf = {}
-        self.Rindx = {}
-        (
-            self.a,
-            self.n,
-            self.E,
-            self.a_inf,
-            self.n_inf,
-            self.E_inf,
-        ) = [{} for _ in range(6)]
-        self.k_fun, self.k_inf = [{} for _ in range(2)]
-        self.kinf_fun = {}
-        self.k_fun_new = {}
-        self.photo_sp = set()
-        self.pho_rate_index, self.n_branch = {}, {}
-        self.ion_rate_index, self.ion_branch, self.ion_wavelen, self.ion_br_ratio = (
-            {},
-            {},
-            {},
-            {},
-        )
-        self.charge_list, self.ion_sp = [], set()
-
-        self.aflux_change = 0.0
-
-        self.def_bin_min, self.def_bin_max = load_stellar_flux(_vcfg)
-        self.conden_re_list = []
-
-
-class _AtmData(object):
-    """Private mutable scratch container for atmosphere-structure arrays."""
-
-    def __init__(self):
-        from .chem_funs import ni as _ni, spec_list as _spec_list
-
-        _nz = default_config().nz
-        _vcfg = default_config()
-        from .atm_setup import surface_gravity as _surface_gravity
-
-        self.pco = np.logspace(np.log10(_vcfg.P_b), np.log10(_vcfg.P_t), _nz)
-        self.pico = np.empty(_nz + 1)
-        self.dz = np.zeros(_nz)
-        self.dzi = np.zeros(_nz - 1)
-        self.zco = np.zeros(_nz + 1)
-        self.zmco = np.empty(_nz)
-        self.Tco = np.empty(_nz)
-        self.Kzz = np.zeros(_nz - 1)
-        self.vz = np.zeros(_nz - 1)
-        self.M = np.empty(_nz)
-        self.n_0 = np.empty(_nz)
-        self.Hp = np.empty(_nz)
-        self.mu = np.empty(_nz)
-        self.ms = np.empty(_ni)
-        self.Dzz = np.zeros((_nz - 1, _ni))
-        self.Dzz_cen = np.zeros((_nz, _ni))
-        self.vm = np.zeros((_nz - 1, _ni))
-        self.vs = np.zeros((_nz - 1, _ni))
-        self.alpha = np.zeros(_ni)
-        self.gs = _surface_gravity(_vcfg)
-        self.g = np.zeros(_nz)
-
-        self.top_flux = np.zeros(_ni)
-        self.bot_flux = np.zeros(_ni)
-        self.bot_vdep = np.zeros(_ni)
-        self.bot_fix_sp = np.zeros(_ni)
-
-        self.sat_p = {}
-        self.sat_mix = {}
-        self.conden_min_lev = {}
-
-        self.gas_indx = [_ for _ in range(_ni) if _spec_list[_] not in _vcfg.non_gas_sp]
-
-        self.fix_sp_indx = {}
-        if hasattr(_vcfg, "fix_species"):
-            for sp in _vcfg.fix_species:
-                self.fix_sp_indx[sp] = np.arange(
-                    _spec_list.index(sp),
-                    _spec_list.index(sp) + _ni * _nz,
-                    _ni,
-                )
-
-        if _vcfg.use_ion:
-            self.fix_e_indx = np.arange(
-                _spec_list.index("e"),
-                _spec_list.index("e") + _ni * _nz,
-                _ni,
-            )
-
-        self.r_p, self.rho_p = {}, {}
-        if _vcfg.use_condense:
-            for sp in _vcfg.r_p.keys():
-                self.r_p[sp] = _vcfg.r_p[sp]
-            for sp in _vcfg.rho_p.keys():
-                self.rho_p[sp] = _vcfg.rho_p[sp]

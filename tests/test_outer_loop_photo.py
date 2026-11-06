@@ -1,5 +1,4 @@
-"""The in-runner photo branch must match the Python-side
-compute_tau / compute_flux / compute_J round-trip on HD189.
+"""The in-runner photo branch must match the Python-side compute_tau / compute_flux / compute_J round-trip on HD189.
 
 Both paths share the same JAX kernels, so tau / fluxes / aflux_change /
 photo k_arr rows and the .vul writer's J_sp must agree to <= 1e-13; anything
@@ -12,8 +11,8 @@ import copy
 
 import jax.numpy as jnp
 from _helpers import relerr
-from vulcan3.phy_const import UNDERFLOW_DENOM
 
+from vulcan3.phy_const import UNDERFLOW_DENOM
 
 PHOTO_RTOL = 1e-13
 
@@ -24,8 +23,7 @@ def test_photo_branch_matches_python_photo_path():
     vulcan_cfg = default_config()
 
     import vulcan3.legacy_io as op
-    import vulcan3.op_jax as op_jax
-    import vulcan3.outer_loop as outer_loop
+    from vulcan3 import op_jax, outer_loop
     from vulcan3.state import RunState, legacy_view, runstate_from_store
 
     # --- Build HD189 reference state with the photo pre-loop (as
@@ -57,9 +55,7 @@ def test_photo_branch_matches_python_photo_path():
     # --- Path B: photo branch inside the JAX runner ---
     integ = outer_loop.OuterLoop(solver, output)
     integ._ensure_runner(var_B, data_atm)
-    rs_entry = runstate_from_store(var_B, data_atm, data_para)._replace(
-        photo_static=rs.photo_static
-    )
+    rs_entry = runstate_from_store(var_B, data_atm, data_para)._replace(photo_static=rs.photo_static)
     init_state = integ._pack_state_from_runstate(rs_entry)
     photo_branch = outer_loop._make_photo_branch(integ._photo_static)
     final_state = photo_branch(init_state)
@@ -80,12 +76,10 @@ def test_photo_branch_matches_python_photo_path():
     assert dyn_dz_err <= PHOTO_RTOL, "photo branch did not use dynamic state.dz"
 
     for name in ("tau", "aflux", "sflux", "dflux_u"):
-        err = relerr(getattr(final_state, name), getattr(data_var, name),
-                     floor=UNDERFLOW_DENOM)
+        err = relerr(getattr(final_state, name), getattr(data_var, name), floor=UNDERFLOW_DENOM)
         assert err <= PHOTO_RTOL, f"{name} relerr {err:.3e}"
 
-    err_change = relerr(float(final_state.aflux_change), data_var.aflux_change,
-                        floor=1e-300)
+    err_change = relerr(float(final_state.aflux_change), data_var.aflux_change, floor=1e-300)
     assert err_change <= PHOTO_RTOL, f"aflux_change relerr {err_change:.3e}"
 
     # Every k_arr row, photo-driven or not: both paths write the same J*.

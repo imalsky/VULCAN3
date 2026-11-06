@@ -1,45 +1,44 @@
-"""`OuterLoop.run_queue` tail compaction (`compact=` / config `queue_compact`).
+"""`OuterLoop.run_queue` tail compaction (`compact=` / config `queue_compact`)."""
 
-Once no job is pending and the live lanes fit a rung of the ladder, the queue
-continues at that narrower width from the same tick with no refill. A done
-lane is frozen and outside every lane-uniform predicate, so dropping it
-changes no job's step, cadence or certificate. Whether the narrower program
-computes each lane's arithmetic to the same bits is up to XLA: at the
-production widths (792 -> 264 -> 132 lanes and a 256-lane retry pass -> 132,
-WASP-39 b on a GH200) every job came back bitwise, but at the tiny widths of
-these tests the CPU backend can round differently from the first step on, and
-the GPU the column-sum accumulators (atom_loss, the element budget). So the
-pins below are exact on everything the queue decides (ticks, step counts,
-termination, done flags, every integer leaf) and roundoff-close on the
-floats: mixing ratios above 1e-12 within 1e-6 in log10, the dimensionless
-accumulators within 1e-10, every other float leaf within 1e-4 of its own
-scale (the step-control leaves, dt and the error proxy delta, amplify a
-last-bit difference: 2e-5 on the CPU with the grouped RHS, job 93174).
-Pins (CPU and GPU):
-
-  1. Ladder parsing: descending, deduplicated, rungs at or above the lane
-     count dropped; bad entries raise. The config key exists and is off.
-  2. Off is the stock program: `compact=None` (config default), `()` and a
-     ladder whose every rung is dropped trace the same jaxpr; a ladder adds
-     one while loop per rung.
-  3. Photo off, refill + compaction 3 -> 2 -> 1 lanes: every job's final
-     state matches the uncompacted queue's (as above) and the tick count is
-     the same.
-  4. Photo on, refill + compaction 3 -> 2 -> 1 lanes, photolysis every 4
-     ticks and geometry refresh every 3: as 3.
-  5. More lanes than jobs (the queue compacts at tick 0): matches the
-     uncompacted queue and `run_batch`.
-  6. The config key drives the default: `queue_compact` set on the runner's
-     config gives the explicit-ladder program and result (bitwise: the same
-     program).
-  7. (slow) jvp through a compacted queue matches the lockstep batch's jvp,
-     primal and tangent (both within 1e-6 of their scale).
-  8. Every queue loop (traced, not compiled) ends in the refill cond, whose idle
-     branch passes the carry through, and no other cond returns the y ring: a
-     tail loop without the refill cond copied every lane leaf each tick, and a
-     photolysis cond returning the written ring made XLA:GPU rebuild and copy
-     it every tick (VULCAN3 notes "Efficiency program").
-"""
+# Once no job is pending and the live lanes fit a rung of the ladder, the queue
+# continues at that narrower width from the same tick with no refill. A done
+# lane is frozen and outside every lane-uniform predicate, so dropping it
+# changes no job's step, cadence or certificate. Whether the narrower program
+# computes each lane's arithmetic to the same bits is up to XLA: at the
+# production widths (792 -> 264 -> 132 lanes and a 256-lane retry pass -> 132,
+# WASP-39 b on a GH200) every job came back bitwise, but at the tiny widths of
+# these tests the CPU backend can round differently from the first step on, and
+# the GPU the column-sum accumulators (atom_loss, the element budget). So the
+# pins below are exact on everything the queue decides (ticks, step counts,
+# termination, done flags, every integer leaf) and roundoff-close on the
+# floats: mixing ratios above 1e-12 within 1e-6 in log10, the dimensionless
+# accumulators within 1e-10, every other float leaf within 1e-4 of its own
+# scale (the step-control leaves, dt and the error proxy delta, amplify a
+# last-bit difference: 2e-5 on the CPU with the grouped RHS).
+# Pins (CPU and GPU):
+#
+#   1. Ladder parsing: descending, deduplicated, rungs at or above the lane
+#      count dropped; bad entries raise. The config key exists and is off.
+#   2. Off is the stock program: `compact=None` (config default), `()` and a
+#      ladder whose every rung is dropped trace the same jaxpr; a ladder adds
+#      one while loop per rung.
+#   3. Photo off, refill + compaction 3 -> 2 -> 1 lanes: every job's final
+#      state matches the uncompacted queue's (as above) and the tick count is
+#      the same.
+#   4. Photo on, refill + compaction 3 -> 2 -> 1 lanes, photolysis every 4
+#      ticks and geometry refresh every 3: as 3.
+#   5. More lanes than jobs (the queue compacts at tick 0): matches the
+#      uncompacted queue and `run_batch`.
+#   6. The config key drives the default: `queue_compact` set on the runner's
+#      config gives the explicit-ladder program and result (bitwise: the same
+#      program).
+#   7. (slow) jvp through a compacted queue matches the lockstep batch's jvp,
+#      primal and tangent (both within 1e-6 of their scale).
+#   8. Every queue loop (traced, not compiled) ends in the refill cond, whose idle
+#      branch passes the carry through, and no other cond returns the y ring: a
+#      tail loop without the refill cond copied every lane leaf each tick, and a
+#      photolysis cond returning the written ring made XLA:GPU rebuild and copy
+#      it every tick (VULCAN3 notes "Efficiency program").
 
 from __future__ import annotations
 
@@ -76,7 +75,7 @@ def _assert_trees_bitwise(a, b, what):
     assert len(la) == len(lb), what
     names = [jax.tree_util.keystr(p) for p, _ in jax.tree_util.tree_flatten_with_path(a)[0]]
     bad = []
-    for name, x, y in zip(names, la, lb):
+    for name, x, y in zip(names, la, lb, strict=False):
         x, y = np.asarray(x), np.asarray(y)
         en = bool(np.issubdtype(x.dtype, np.floating))
         if x.shape != y.shape or x.dtype != y.dtype or not np.array_equal(x, y, equal_nan=en):
@@ -85,8 +84,8 @@ def _assert_trees_bitwise(a, b, what):
 
 
 # Roundoff-closeness of two final states (see the module docstring).
-REL = 1e-6          # log10 mixing ratios; the jvp primal and tangent, by scale
-LEAF_REL = 1e-4     # any other float leaf, by its own scale
+REL = 1e-6  # log10 mixing ratios; the jvp primal and tangent, by scale
+LEAF_REL = 1e-4  # any other float leaf, by its own scale
 ACC_ABS = 1e-10
 ACCUMULATORS = (".atom_loss", ".atom_loss_prev", ".budget_err", ".budget_drift")
 YMIX_FLOOR = 1e-12
@@ -97,7 +96,7 @@ def _assert_trees_close(a, b, what):
     assert len(la) == len(lb), what
     names = [jax.tree_util.keystr(p) for p, _ in jax.tree_util.tree_flatten_with_path(a)[0]]
     bad, n_bitwise, worst = [], 0, {}
-    for name, x, y in zip(names, la, lb):
+    for name, x, y in zip(names, la, lb, strict=False):
         x, y = np.asarray(x), np.asarray(y)
         if x.shape != y.shape or x.dtype != y.dtype:
             bad.append(f"{name} shape/dtype")
@@ -132,8 +131,7 @@ def _assert_trees_close(a, b, what):
     m = (ma > YMIX_FLOOR) & (mb > YMIX_FLOOR)
     dl = float(np.max(np.abs(np.log10(ma[m]) - np.log10(mb[m])))) if m.any() else 0.0
     assert dl <= REL, f"{what}: max |dlog10 ymix| {dl:.3g}"
-    print(f"{what}: {n_bitwise}/{len(la)} leaves bitwise; max |dlog10 ymix| {dl:.3g}; "
-          f"worst float leaves {worst}")
+    print(f"{what}: {n_bitwise}/{len(la)} leaves bitwise; max |dlog10 ymix| {dl:.3g}; worst float leaves {worst}")
 
 
 @pytest.fixture(scope="module")
@@ -164,9 +162,7 @@ def test_ladder_parsing_and_config_key():
 
 
 def _jaxpr(integ, jobs, **kw):
-    return jax.make_jaxpr(
-        lambda j: integ.run_queue(_ident, j, n_lanes=3, out_fn=_whole, chunk=1, **kw)
-    )(jobs)
+    return jax.make_jaxpr(lambda j: integ.run_queue(_ident, j, n_lanes=3, out_fn=_whole, chunk=1, **kw))(jobs)
 
 
 def _top_level_whiles(closed):
@@ -177,9 +173,9 @@ def _top_level_whiles(closed):
 
 def test_off_traces_the_stock_program(photo_off):
     integ, jobs = photo_off
-    ref = _jaxpr(integ, jobs)                       # the config default: []
+    ref = _jaxpr(integ, jobs)  # the config default: []
     assert str(ref) == str(_jaxpr(integ, jobs, compact=()))
-    assert str(ref) == str(_jaxpr(integ, jobs, compact=[3, 7]))   # every rung dropped
+    assert str(ref) == str(_jaxpr(integ, jobs, compact=[3, 7]))  # every rung dropped
     assert _top_level_whiles(ref) == 1
     assert _top_level_whiles(_jaxpr(integ, jobs, compact=(2, 1))) == 3
 
@@ -187,8 +183,7 @@ def test_off_traces_the_stock_program(photo_off):
 def test_compaction_matches_photo_off(photo_off):
     integ, jobs = photo_off
     off, n_off = integ.run_queue(_ident, jobs, n_lanes=3, out_fn=_whole, chunk=1)
-    on, n_on = integ.run_queue(_ident, jobs, n_lanes=3, out_fn=_whole, chunk=1,
-                               compact=(1, 2))
+    on, n_on = integ.run_queue(_ident, jobs, n_lanes=3, out_fn=_whole, chunk=1, compact=(1, 2))
     assert int(n_on) == int(n_off)
     assert bool(np.all(np.asarray(off.is_done)))
     # a lane stops once accept_count exceeds its cap
@@ -207,8 +202,7 @@ def test_compaction_matches_photo_on():
     atm = stack_atm_statics([aA, aB, aA, aB])
     jobs = (_with_caps(st, (7, 15, 24, 30)), atm)
     off, n_off = integ.run_queue(_ident, jobs, n_lanes=3, out_fn=_whole, chunk=1)
-    on, n_on = integ.run_queue(_ident, jobs, n_lanes=3, out_fn=_whole, chunk=1,
-                               compact=(2, 1))
+    on, n_on = integ.run_queue(_ident, jobs, n_lanes=3, out_fn=_whole, chunk=1, compact=(2, 1))
     assert int(n_on) == int(n_off)
     # vacuity of the photolysis inside the run: the two profiles' fields differ
     assert not np.array_equal(np.asarray(off.aflux[0]), np.asarray(off.aflux[1]))
@@ -219,17 +213,15 @@ def test_idle_lanes_compact_at_tick_zero_and_match_the_batch(photo_off):
     integ, jobs = photo_off
     L = len(TISO) + 2
     off, _ = integ.run_queue(_ident, jobs, n_lanes=L, out_fn=_whole)
-    out, _ = integ.run_queue(_ident, jobs, n_lanes=L, out_fn=_whole,
-                             compact=(len(TISO), 2))
+    out, _ = integ.run_queue(_ident, jobs, n_lanes=L, out_fn=_whole, compact=(len(TISO), 2))
     _assert_trees_close(off, out, "idle lanes, compacted at tick 0, vs uncompacted")
     _assert_trees_close(integ.run_batch(*jobs), out, "idle lanes, compacted at tick 0, vs run_batch")
 
 
 def test_config_key_drives_the_default(photo_off):
     integ, jobs = photo_off
-    explicit, _ = integ.run_queue(_ident, jobs, n_lanes=3, out_fn=_whole, chunk=1,
-                                  compact=(2, 1))
-    integ._cfg.queue_compact = [1, 2]      # restored by conftest's _cfg_guard
+    explicit, _ = integ.run_queue(_ident, jobs, n_lanes=3, out_fn=_whole, chunk=1, compact=(2, 1))
+    integ._cfg.queue_compact = [1, 2]  # restored by conftest's _cfg_guard
     n_cached = len(integ._vrunner_queue)
     via_cfg, _ = integ.run_queue(_ident, jobs, n_lanes=3, out_fn=_whole, chunk=1)
     assert len(integ._vrunner_queue) == n_cached, "config ladder must hit the explicit key"
@@ -254,8 +246,7 @@ def test_compacted_queue_jvp_matches_the_batch_jvp():
         return integ.run_batch(*jobs(x)).y
 
     def queue_y(x):
-        out, _n = integ.run_queue(_ident, jobs(x), n_lanes=2, out_fn=lambda f: f.y,
-                                  compact=(1,))
+        out, _n = integ.run_queue(_ident, jobs(x), n_lanes=2, out_fn=lambda f: f.y, compact=(1,))
         return out
 
     x0, dx = jnp.float64(0.0), jnp.float64(1.0)
@@ -269,8 +260,7 @@ def test_compacted_queue_jvp_matches_the_batch_jvp():
 
 
 def _eqns(jaxpr):
-    """Every equation of `jaxpr` and of the jaxprs it calls (loop bodies, cond
-    branches, jit bodies), depth first."""
+    """Every equation of `jaxpr` and of the jaxprs it calls (loop bodies, cond branches, jit bodies), depth first."""
     for e in jaxpr.eqns:
         yield e
         for v in e.params.values():
@@ -306,9 +296,13 @@ def test_queue_loops_keep_the_ring_out_of_the_photolysis_cond():
         (ring_out,) = [v for v in body.outvars if is_ring(v, w)]
         refill = [e for e in body.eqns if e.primitive.name == "cond" and ring_out in e.outvars]
         assert len(refill) == 1, f"width {w}: the carry's y ring does not come out of the refill cond"
-        assert any(not b.jaxpr.eqns and all(v in b.jaxpr.invars for v in b.jaxpr.outvars)
-                   for b in refill[0].params["branches"]), f"width {w}: no pass-through branch"
-        bad = [e for e in _eqns(body) if e.primitive.name == "cond" and e is not refill[0]
-               and any(is_ring(v, w) for v in e.outvars)]
+        assert any(
+            not b.jaxpr.eqns and all(v in b.jaxpr.invars for v in b.jaxpr.outvars) for b in refill[0].params["branches"]
+        ), f"width {w}: no pass-through branch"
+        bad = [
+            e
+            for e in _eqns(body)
+            if e.primitive.name == "cond" and e is not refill[0] and any(is_ring(v, w) for v in e.outvars)
+        ]
         assert not bad, f"width {w}: {len(bad)} cond(s) besides the refill return the y ring"
     assert sorted(widths) == [1, 2, 3], widths

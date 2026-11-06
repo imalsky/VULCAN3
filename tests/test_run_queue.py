@@ -1,25 +1,24 @@
-"""`OuterLoop.run_queue`: the batched solve with lane refill from a job queue.
+"""`OuterLoop.run_queue`: the batched solve with lane refill from a job queue."""
 
-Five heterogeneous isothermal profiles (photo off) are the queue; `run_batch`
-on the same five is the reference. Pins:
-
-  1. No refill: with `n_lanes >= n_jobs` nothing is refilled, so every job
-     starts at tick 0 as a plain-batch lane does and the result is
-     bitwise `run_batch`'s.
-  2. Refill: a refilled lane enters the loop at a tick the plain batch never
-     gave it, which moves the photo / geometry cadence but not the fixed
-     point: same termination reason, mixing ratios equal at the convergence
-     scale, and the call is deterministic.
-  3. Idle lanes: more lanes than jobs: the spare lane is frozen from the
-     start and never writes a result.
-  4. Poisoned job: an all-NaN job exits with reason 5 and does not move its
-     queue neighbours: with the same lane count and chunk their histories are
-     the same with and without it appended, so their results are bitwise
-     equal.
-  5. Lane reuse: the jobs refilled into the lane a poisoned job died in come
-     back finite and on the batch's fixed point.
-  6. Argument guards: an empty queue and a lane count below 1 raise.
-"""
+# Five heterogeneous isothermal profiles (photo off) are the queue; `run_batch`
+# on the same five is the reference. Pins:
+#
+#   1. No refill: with `n_lanes >= n_jobs` nothing is refilled, so every job
+#      starts at tick 0 as a plain-batch lane does and the result is
+#      bitwise `run_batch`'s.
+#   2. Refill: a refilled lane enters the loop at a tick the plain batch never
+#      gave it, which moves the photo / geometry cadence but not the fixed
+#      point: same termination reason, mixing ratios equal at the convergence
+#      scale, and the call is deterministic.
+#   3. Idle lanes: more lanes than jobs: the spare lane is frozen from the
+#      start and never writes a result.
+#   4. Poisoned job: an all-NaN job exits with reason 5 and does not move its
+#      queue neighbours: with the same lane count and chunk their histories are
+#      the same with and without it appended, so their results are bitwise
+#      equal.
+#   5. Lane reuse: the jobs refilled into the lane a poisoned job died in come
+#      back finite and on the batch's fixed point.
+#   6. Argument guards: an empty queue and a lane count below 1 raise.
 
 from __future__ import annotations
 
@@ -35,6 +34,7 @@ from test_vmap_while_loop import (
     _max_rel_diff,
     _pin_cfg,
 )
+
 from vulcan3.outer_loop import _ATM_ARRAY_FIELDS
 
 # The bound test_vmap_while_loop holds batched-vs-solo to; a refilled lane
@@ -46,8 +46,10 @@ TISO = (900.0, 1000.0, 1100.0, 1200.0, 1300.0)
 
 
 def _take_jobs(jobs, sl):
-    """Slice a (state, atm) job pair on the job axis (the AtmStatic toggle
-    flags are Python scalars and must never be indexed)."""
+    """Slice a (state, atm) job pair on the job axis (the AtmStatic toggle flags are Python scalars.
+
+    And must never be indexed).
+    """
     st, atm = jobs
     return (
         jax.tree_util.tree_map(lambda x: x[sl], st),
@@ -58,22 +60,16 @@ def _take_jobs(jobs, sl):
 def _cat_jobs(a, b):
     """Concatenate two (state, atm) job pairs on the job axis."""
     return (
-        jax.tree_util.tree_map(
-            lambda x, y: jnp.concatenate([x, y], axis=0), a[0], b[0]
-        ),
-        a[1]._replace(
-            **{
-                f: jnp.concatenate([getattr(a[1], f), getattr(b[1], f)], axis=0)
-                for f in _ATM_ARRAY_FIELDS
-            }
-        ),
+        jax.tree_util.tree_map(lambda x, y: jnp.concatenate([x, y], axis=0), a[0], b[0]),
+        a[1]._replace(**{f: jnp.concatenate([getattr(a[1], f), getattr(b[1], f)], axis=0) for f in _ATM_ARRAY_FIELDS}),
     )
 
 
 def _poisoned(jobs, sl):
-    """Job `sl` with y AND y_prev all-NaN: a rejected Ros2 step reverts y to
-    y_prev, so poisoning y alone self-heals and the lane never goes
-    non-finite (test_vmap_while_loop makes the same point)."""
+    """Job `sl` with y AND y_prev all-NaN: a rejected Ros2 step reverts y to y_prev.
+
+    So poisoning y alone self-heals and the lane never goes non-finite (test_vmap_while_loop makes the same point).
+    """
     st, atm = _take_jobs(jobs, sl)
     return (
         st._replace(
@@ -102,7 +98,6 @@ def _out_fn(final):
 @pytest.fixture(scope="module")
 def prepared():
     """(integ, stacked states, stacked atmospheres) for the five profiles."""
-
     cfg = _pin_cfg()
     integ = _build_integ()
     pairs = [integ.prepare_runstate(_build_rs(cfg, Tiso=T)) for T in TISO]
@@ -129,7 +124,7 @@ def lockstep(prepared):
 
 def test_queue_without_refill_is_the_batch(ref_batch, lockstep):
     ref = ref_batch
-    (y, t, acc, reason, done), n_iter = lockstep
+    (y, t, acc, reason, done), _n_iter = lockstep
     for name, a, b in (
         ("y", y, ref.y),
         ("t", t, ref.t),
@@ -142,14 +137,13 @@ def test_queue_without_refill_is_the_batch(ref_batch, lockstep):
 
 @pytest.mark.slow
 def test_queue_jvp_without_refill_is_the_batch_jvp():
-    """The queue stops the gradient of its certificate-only lane fields
-    (`outer_loop._QUEUE_STOP_FIELDS`: they steer predicates, never y). With
-    no refill a jvp through the queue must equal the jvp through the lockstep
-    batch bitwise on the CPU, primal and tangent: a stopped field that fed y
-    would zero part of the tangent. A small column keeps the two forward-mode
-    programs cheap."""
-    from _helpers import fast_cfg
+    """The queue stops the gradient of its certificate-only lane fields.
 
+    (`outer_loop._QUEUE_STOP_FIELDS`: they steer predicates, never y). With no refill a jvp through the queue must
+    equal the jvp through the lockstep batch bitwise on the CPU, primal and tangent: a stopped field that fed y
+    would zero part of the tangent. A small column keeps the two forward-mode programs cheap.
+    """
+    from _helpers import fast_cfg
 
     cfg = fast_cfg(count_max=8, nz=12, use_vm_mol=False, use_hybrid_vm_mol=False)
     integ = _build_integ()
@@ -160,8 +154,7 @@ def test_queue_jvp_without_refill_is_the_batch_jvp():
     def jobs(x):
         """Every lane's Kzz scaled by exp(x): d/d ln Kzz at x = 0."""
         f = jnp.exp(x)
-        return (s0._replace(pv=s0.pv._replace(Kzz=s0.pv.Kzz * f)),
-                a0._replace(Kzz=a0.Kzz * f))
+        return (s0._replace(pv=s0.pv._replace(Kzz=s0.pv.Kzz * f)), a0._replace(Kzz=a0.Kzz * f))
 
     def batch_y(x):
         return integ.run_batch(*jobs(x)).y
@@ -180,14 +173,15 @@ def test_queue_jvp_without_refill_is_the_batch_jvp():
 
 # (2, 1) refills a lane as soon as it frees; (2, 2) and (3, 8) wait for every
 # lane or the refill cadence (full tier: ~1 min each).
-@pytest.mark.parametrize("n_lanes,chunk", [
-    (2, 1),
-    pytest.param(2, 2, marks=pytest.mark.slow),
-    pytest.param(3, 8, marks=pytest.mark.slow),
-])
-def test_queue_refills_and_matches_the_batch_at_the_convergence_scale(
-    prepared, ref_batch, lockstep, n_lanes, chunk
-):
+@pytest.mark.parametrize(
+    ("n_lanes", "chunk"),
+    [
+        (2, 1),
+        pytest.param(2, 2, marks=pytest.mark.slow),
+        pytest.param(3, 8, marks=pytest.mark.slow),
+    ],
+)
+def test_queue_refills_and_matches_the_batch_at_the_convergence_scale(prepared, ref_batch, lockstep, n_lanes, chunk):
     integ, init_b, atm_b = prepared
     ref = ref_batch
     # The no-refill call is the lockstep baseline: with fewer lanes than jobs
@@ -202,22 +196,16 @@ def test_queue_refills_and_matches_the_batch_at_the_convergence_scale(
     for k in range(len(TISO)):
         yk = np.asarray(y[k])
         yr = np.asarray(ref.y[k])
-        rel = _max_rel_diff(
-            yk / yk.sum(axis=1, keepdims=True), yr / yr.sum(axis=1, keepdims=True)
-        )
+        rel = _max_rel_diff(yk / yk.sum(axis=1, keepdims=True), yr / yr.sum(axis=1, keepdims=True))
         assert rel < REL_MAX, (k, rel)
     # A second call must land on the same numbers.
-    (y2, *_), _ = integ.run_queue(
-        _ident, (init_b, atm_b), n_lanes=n_lanes, out_fn=_out_fn, chunk=chunk
-    )
+    (y2, *_), _ = integ.run_queue(_ident, (init_b, atm_b), n_lanes=n_lanes, out_fn=_out_fn, chunk=chunk)
     assert np.array_equal(np.asarray(y), np.asarray(y2))
 
 
 def test_more_lanes_than_jobs(prepared, ref_batch):
     integ, init_b, atm_b = prepared
-    (y, *_), _ = integ.run_queue(
-        _ident, (init_b, atm_b), n_lanes=len(TISO) + 1, out_fn=_out_fn
-    )
+    (y, *_), _ = integ.run_queue(_ident, (init_b, atm_b), n_lanes=len(TISO) + 1, out_fn=_out_fn)
     assert np.array_equal(np.asarray(y), np.asarray(ref_batch.y))
 
 
@@ -225,36 +213,32 @@ def test_poisoned_job_does_not_touch_its_neighbours(prepared):
     integ, init_b, atm_b = prepared
     abc = _take_jobs((init_b, atm_b), slice(0, 3))
     abcp = _cat_jobs(abc, _poisoned((init_b, atm_b), slice(3, 4)))
-    (y3, _, _, r3, _), _ = integ.run_queue(
-        _ident, abc, n_lanes=2, out_fn=_out_fn, chunk=1
-    )
-    (y4, _, acc4, r4, _), _ = integ.run_queue(
-        _ident, abcp, n_lanes=2, out_fn=_out_fn, chunk=1
-    )
+    (y3, _, _, _r3, _), _ = integ.run_queue(_ident, abc, n_lanes=2, out_fn=_out_fn, chunk=1)
+    (y4, _, acc4, r4, _), _ = integ.run_queue(_ident, abcp, n_lanes=2, out_fn=_out_fn, chunk=1)
     assert np.array_equal(np.asarray(y3), np.asarray(y4[:3]))
-    assert int(r4[3]) == 5 and int(acc4[3]) == 0
+    assert int(r4[3]) == 5
+    assert int(acc4[3]) == 0
 
 
 def test_lane_reuse_after_a_poisoned_job(prepared, ref_batch):
-    """One lane, the poisoned job FIRST: A and B are refilled into the lane P
-    died in. A lane left holding P's non-finite state would carry the NaNs
-    into the jobs that follow it. A and B enter at a later tick than the
-    plain batch gives them, so they agree at the convergence scale."""
+    """One lane, the poisoned job FIRST.
+
+    A and B are refilled into the lane P died in. A lane left holding P's non-finite state would carry the NaNs into
+    the jobs that follow it. A and B enter at a later tick than the plain batch gives them, so they agree at the
+    convergence scale.
+    """
     integ, init_b, atm_b = prepared
     ab = _take_jobs((init_b, atm_b), slice(0, 2))
     pab = _cat_jobs(_poisoned((init_b, atm_b), slice(3, 4)), ab)
     ref = ref_batch  # lanes 0 and 1 are A and B
-    (y, _t, acc, reason, _done), n_iter = integ.run_queue(
-        _ident, pab, n_lanes=1, out_fn=_out_fn, chunk=1
-    )
-    assert int(reason[0]) == 5 and int(acc[0]) == 0
+    (y, _t, acc, reason, _done), _n_iter = integ.run_queue(_ident, pab, n_lanes=1, out_fn=_out_fn, chunk=1)
+    assert int(reason[0]) == 5
+    assert int(acc[0]) == 0
     assert np.array_equal(np.asarray(reason[1:]), np.asarray(ref.termination_reason[:2]))
     for k in range(2):
         yk, yr = np.asarray(y[k + 1]), np.asarray(ref.y[k])
         assert np.all(np.isfinite(yk)), k
-        rel = _max_rel_diff(
-            yk / yk.sum(axis=1, keepdims=True), yr / yr.sum(axis=1, keepdims=True)
-        )
+        rel = _max_rel_diff(yk / yk.sum(axis=1, keepdims=True), yr / yr.sum(axis=1, keepdims=True))
         assert rel < REL_MAX, (k, rel)
 
 
@@ -262,11 +246,15 @@ def test_empty_queue_and_lane_count_below_one_raise(prepared):
     integ, init_b, atm_b = prepared
     with pytest.raises(ValueError):
         integ.run_queue(
-            _ident, _take_jobs((init_b, atm_b), slice(0, 0)), n_lanes=2,
+            _ident,
+            _take_jobs((init_b, atm_b), slice(0, 0)),
+            n_lanes=2,
             out_fn=_out_fn,
         )
     with pytest.raises(ValueError):
         integ.run_queue(
-            _ident, _take_jobs((init_b, atm_b), slice(0, 2)), n_lanes=0,
+            _ident,
+            _take_jobs((init_b, atm_b), slice(0, 2)),
+            n_lanes=0,
             out_fn=_out_fn,
         )

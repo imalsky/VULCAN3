@@ -18,21 +18,31 @@ from __future__ import annotations
 
 import hashlib
 import inspect
-import os
-from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from .network import Network
+from . import _settings
 
-CHEM_RHS_IMPL = os.environ.get("VULCAN3_CHEM_RHS", "codegen")  # import-frozen
-if CHEM_RHS_IMPL not in ("codegen", "grouped"):
-    raise ValueError(
-        f"VULCAN3_CHEM_RHS={CHEM_RHS_IMPL!r}: expected 'codegen' (default) or 'grouped'"
-    )
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from .network import Network
+
+__all__ = [
+    "CHEM_RHS_IMPL",
+    "build_chem_rhs",
+    "build_chem_rhs_grouped",
+    "chem_rhs_cache_key",
+    "chem_rhs_grouped_column",
+    "emit_chem_rhs_source",
+    "grouped_rhs_tables",
+    "network_signature",
+]
+
+CHEM_RHS_IMPL = _settings.chem_rhs()  # import-frozen
 
 
 def _emit_rate_term(net: Network, slot_i: int, max_terms: int, PAD: int) -> str:
@@ -114,16 +124,15 @@ def emit_chem_rhs_source(net: Network) -> str:
     lines.append(f"    return jnp.stack([{stack_args}], axis=-1)")
     lines.append("")
     lines.append("")
-    lines.append(
-        "chem_rhs_codegen = jax.vmap(chem_rhs_per_layer_codegen, in_axes=(0, 0, 1))"
-    )
+    lines.append("chem_rhs_codegen = jax.vmap(chem_rhs_per_layer_codegen, in_axes=(0, 0, 1))")
     lines.append("")
     return "\n".join(lines)
 
 
 def network_signature(net: Network) -> bytes:
-    """SHA-256 of the reaction-topology arrays that fix the codegen RHS and
-    rate indexing: the stoichiometry tables, reaction-type masks, ni, nr.
+    """SHA-256 of the reaction-topology arrays that fix the codegen RHS and rate indexing.
+
+    The stoichiometry tables, reaction-type masks, ni and nr.
 
     The network path is not hashed, so a byte-identical copy elsewhere gives
     the same signature; any reordered or edited reaction changes it.
@@ -144,8 +153,7 @@ def network_signature(net: Network) -> bytes:
 
 
 def chem_rhs_cache_key(net: Network) -> str:
-    """SHA-256 of the network signature and the generator, truncated to 16
-    hex chars.
+    """SHA-256 of the network signature and the generator, truncated to 16 hex chars.
 
     The emitter's own source is hashed so a codegen fix re-keys instead of
     being masked by a stale cache file.
@@ -169,9 +177,8 @@ def build_chem_rhs(net: Network) -> Callable:
     Returns a `jax.jit`'d callable with signature
     `(y[nz, ni], M[nz], k[nr+1, nz]) -> dydt[nz, ni]`. The XLA-compiled
     artifact is reused across processes via JAX's persistent disk cache
-    (configured in `cli.py`). The Python source cache file under
-    `__pycache__/` is for human inspection: `cat` it to compare against
-    VULCAN-master's `chem_funs.py` reaction lambdas.
+    (configured in `cli.py`). To compare with VULCAN-master's `chem_funs.py`
+    reaction lambdas, print `emit_chem_rhs_source(net)`.
     """
     if CHEM_RHS_IMPL == "grouped":
         return build_chem_rhs_grouped(net)
@@ -179,22 +186,10 @@ def build_chem_rhs(net: Network) -> Callable:
     cached = _BUILD_CACHE.get(key)
     if cached is not None:
         return cached
-    path = Path(__file__).resolve().parent / "__pycache__" / f"chem_rhs_codegen_{key}.py"
-    if path.exists():
-        src = path.read_text()
-    else:
-        src = emit_chem_rhs_source(net)
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            # Publish atomically: a concurrent pytest-xdist worker must never
-            # exec a half-written file.
-            tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-            tmp.write_text(src)
-            os.replace(tmp, path)
-        except OSError:
-            pass  # read-only install: the file is for inspection only
+    # Emitted in every process: 2.7 to 3.6 ms on 86 to 93 species [M].
+    src = emit_chem_rhs_source(net)
     ns: dict = {}
-    exec(compile(src, str(path), "exec"), ns)
+    exec(compile(src, "<chem_rhs_codegen>", "exec"), ns)
     raw_fn = ns["chem_rhs_codegen"]
 
     def chem_rhs_codegen_barriered(y: Any, M: Any, k: Any) -> Any:
@@ -214,8 +209,10 @@ def build_chem_rhs(net: Network) -> Callable:
 
 
 def _rate_factors(net: Network, slot_i: int, max_terms: int, PAD: int) -> tuple[list, bool]:
-    """Species factors of rate slot `slot_i` in `_emit_rate_term` order (stoich
-    expanded: `H + H` gives `[H, H]`) and its three-body flag."""
+    """Species factors of rate slot `slot_i` in `_emit_rate_term` order (stoich expanded.
+
+    `H + H` gives `[H, H]`) and its three-body flag.
+    """
     out: list[int] = []
     for kslot in range(max_terms):
         sp = int(net.reactant_idx[slot_i, kslot])
@@ -227,7 +224,7 @@ def _rate_factors(net: Network, slot_i: int, max_terms: int, PAD: int) -> tuple[
 
 
 def grouped_rhs_tables(net: Network) -> tuple[list, list, np.ndarray]:
-    """Static tables of `chem_rhs_grouped_column`.
+    """Return static tables of `chem_rhs_grouped_column`.
 
     Rates: the reaction pairs `v_i` (i = 1, 3, ...) bucketed by signature
     (forward factor count, forward three-body, reverse factor count, reverse
@@ -303,9 +300,10 @@ def grouped_rhs_tables(net: Network) -> tuple[list, list, np.ndarray]:
 
 
 def chem_rhs_grouped_column(y: Any, M: Any, k: Any, tables: tuple) -> Any:
-    """The codegen RHS for one column, layer axis trailing: `(y[nz, ni],
-    M[nz], k[nr+1, nz]) -> dydt[nz, ni]`, bit-identical to
-    `chem_rhs_per_layer_codegen` vmapped over layers.
+    """Return the codegen RHS for one column, layer axis trailing.
+
+    `(y[nz, ni], M[nz], k[nr+1, nz]) -> dydt[nz, ni]`, bit-identical to `chem_rhs_per_layer_codegen` vmapped over
+    layers.
 
     Every read is a whole-row gather (`k[rows]`, `y.T[rows]`, `V[rows]`), so
     under the batched runner's lane vmap XLA emits one kernel per signature
@@ -340,8 +338,10 @@ def chem_rhs_grouped_column(y: Any, M: Any, k: Any, tables: tuple) -> Any:
 
 
 def build_chem_rhs_grouped(net: Network) -> Callable:
-    """`build_chem_rhs` with `chem_rhs_grouped_column` as the evaluator: same
-    signature, same fence, same values (bit for bit)."""
+    """`build_chem_rhs` with `chem_rhs_grouped_column` as the evaluator.
+
+    Same signature, same fence, same values bit for bit.
+    """
     key = "grouped:" + chem_rhs_cache_key(net)
     cached = _BUILD_CACHE.get(key)
     if cached is not None:

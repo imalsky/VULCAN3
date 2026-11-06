@@ -1,11 +1,15 @@
 """Per-species composition / mass tables, loaded once from the config `com_file`."""
 
-import numpy as np
-import jax.numpy as jnp
+from pathlib import Path
 
-from .config import default_config
+import jax.numpy as jnp
+import numpy as np
+
 from . import chem_funs
 from ._paths import resolve_data_path
+from .config import default_config
+
+__all__ = ["COM_FILE_PATH", "atom_list", "compo", "compo_array", "compo_row", "species", "species_mass"]
 
 _CFG = default_config()
 species = chem_funs.spec_list
@@ -17,7 +21,7 @@ species = chem_funs.spec_list
 # silently using this default.
 COM_FILE_PATH = resolve_data_path(_CFG.com_file)
 
-with open(COM_FILE_PATH, "r") as _f:
+with Path(COM_FILE_PATH).open() as _f:
     _columns = _f.readline()
     _num_ele = len(_columns.split()) - 2
 _type_list = ["int"] * _num_ele
@@ -26,9 +30,7 @@ _type_list.append("float")
 compo = np.genfromtxt(resolve_data_path(_CFG.com_file), names=True, dtype=_type_list)
 compo_row = list(compo["species"])
 
-atom_list: tuple[str, ...] = tuple(
-    name for name in compo.dtype.names if name not in ("species", "mass")
-)
+atom_list: tuple[str, ...] = tuple(name for name in compo.dtype.names if name not in ("species", "mass"))
 
 # Upstream lists six species twice; these three pairs disagree. Both codes
 # take the first row (`list.index`), kept for parity. Any other disagreeing
@@ -40,9 +42,7 @@ _seen: dict[str, int] = {}
 _bad = [
     f"{sp} (rows {_seen[sp] + 1} and {i + 1})"
     for i, sp in enumerate(compo_row)
-    if _seen.setdefault(sp, i) != i
-    and sp not in _PARITY_DUPLICATES
-    and tuple(compo[_seen[sp]]) != tuple(compo[i])
+    if _seen.setdefault(sp, i) != i and sp not in _PARITY_DUPLICATES and tuple(compo[_seen[sp]]) != tuple(compo[i])
 ]
 if _bad:
     raise ValueError(
@@ -67,6 +67,4 @@ for _i, _sp in enumerate(species):
         _compo_array_np[_i, _j] = float(_row[_atom])
 compo_array = jnp.asarray(_compo_array_np)
 # Molar mass (g/mol) per network species, first table row (`list.index`).
-species_mass = np.array(
-    [float(compo["mass"][compo_row.index(sp)]) for sp in species], dtype=np.float64
-)
+species_mass = np.array([float(compo["mass"][compo_row.index(sp)]) for sp in species], dtype=np.float64)

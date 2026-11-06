@@ -27,12 +27,10 @@ def test_vmapped_step_matches_single_step(hd189_state):
     # vmap over 4 replicas of y, k_arr; broadcast dt, atm_static, net_jax
     batch = 4
     vstep = jax.jit(jax.vmap(js_mod.jax_ros2_step, in_axes=(0, 0, None, None, None)))
-    batched = vstep(
-        jnp.stack([y0] * batch), jnp.stack([k_arr] * batch), dt, atm_static, net_jax
-    )
+    batched = vstep(jnp.stack([y0] * batch), jnp.stack([k_arr] * batch), dt, atm_static, net_jax)
 
     # The solution and the truncation-error array the step controller reads.
-    for name, got, ref in zip(("sol", "delta"), batched, single):
+    for name, got, ref in zip(("sol", "delta"), batched, single, strict=False):
         for b in range(batch):
             err = relerr(np.asarray(got)[b], ref)
             assert err < 1e-12, (name, b, err)

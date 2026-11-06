@@ -15,18 +15,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 jax.config.update("jax_enable_x64", True)
 
 from vulcan3.steady_state_grad import (
-    steady_state_reaction_sensitivity,
-    _safe_inv_y,
-    _conserved_null_basis,
     _BODY_MAP_DT_MAX,
+    _conserved_null_basis,
+    _safe_inv_y,
+    steady_state_reaction_sensitivity,
 )
 
 DATA = Path(__file__).resolve().parent / "data"
@@ -55,8 +55,10 @@ def test_safe_inv_y_masks_exact_zeros():
 
 
 def test_conserved_null_basis_annihilates_atom_vectors():
-    """The deflation projector kills the analytic atom-count vectors; a wrong
-    `dz`, a mis-sliced `compo` or a wrong log-space scaling breaks it."""
+    """The deflation projector kills the analytic atom-count vectors; a wrong `dz`.
+
+    A mis-sliced `compo` or a wrong log-space scaling breaks it.
+    """
     rng = np.random.default_rng(0)
     nz, ni, n_atoms = 6, 4, 3
     y_star = jnp.asarray(rng.uniform(1.0, 10.0, size=(nz, ni)))
@@ -74,15 +76,13 @@ def test_conserved_null_basis_annihilates_atom_vectors():
     Q_np = np.asarray(Q)
     compo_np = np.asarray(compo)
     for e in np.where(compo_np.sum(axis=0) > 0)[0]:
-        c_e = (
-            np.asarray(y_star) * (compo_np[:, e][None, :] * np.asarray(dz)[:, None])
-        ).ravel()
+        c_e = (np.asarray(y_star) * (compo_np[:, e][None, :] * np.asarray(dz)[:, None])).ravel()
         proj_c = c_e - Q_np @ (Q_np.T @ c_e)
         assert np.linalg.norm(proj_c) / np.linalg.norm(c_e) < PROJ_TOL
 
 
 def _no_atoms():
-    """An all-zero compo."""
+    """Return an all-zero compo."""
     return jnp.ones((3, 2)), jnp.zeros((2, 4)), jnp.ones((3,))
 
 
@@ -104,7 +104,7 @@ def _zero_column():
 
 
 @pytest.mark.parametrize(
-    "inputs, match",
+    ("inputs", "match"),
     [
         (_no_atoms, "no populated atom columns"),
         (_rank_deficient, "rank-deficient"),
@@ -113,15 +113,16 @@ def _zero_column():
     ids=["no_atoms", "rank_deficient", "zero_column"],
 )
 def test_conserved_null_basis_refuses_degenerate_columns(inputs, match):
-    """Degenerate atom columns raise instead of deflating an arbitrary
-    (non-null) direction from the unpivoted QR."""
+    """Degenerate atom columns raise instead of deflating an arbitrary (non-null) direction from the unpivoted QR."""
     with pytest.raises(ValueError, match=match):
         _conserved_null_basis(*inputs())
 
 
 def test_poor_convergence_warns():
-    """Default-on diagnostics: a poor residual or a loose fixed point warns even
-    when the caller never inspects `info`; a good solve is silent."""
+    """Default-on diagnostics: a poor residual or a loose fixed point warns even.
+
+    When the caller never inspects `info`; a good solve is silent.
+    """
     import warnings as _w
 
     from vulcan3.steady_state_grad import _warn_poor_convergence
@@ -167,7 +168,7 @@ def test_hd189_reaction_sensitivity_regression():
     converged photo-off state. Sign and top-6 ranking are the strongest
     assertions.
     """
-    import vulcan3.chem_funs as chem_funs
+    from vulcan3 import chem_funs
     from vulcan3.jax_step import AtmStatic
 
     d = np.load(HD189_FIXTURE, allow_pickle=True)
@@ -204,9 +205,7 @@ def test_hd189_reaction_sensitivity_regression():
     dLdlnk = np.asarray(dLdlnk)
 
     assert info["solver_map"] == "renorm"  # vulcan-jwst-tool writes this key
-    assert info["fp_err"] < 1e-6, (
-        f"renorm y* is not a tight fixed point: {info['fp_err']:.2e}"
-    )
+    assert info["fp_err"] < 1e-6, f"renorm y* is not a tight fixed point: {info['fp_err']:.2e}"
     # null_quality: the renormalized map conserves atoms only approximately
     # near the fixed point, so its atom-count vectors are only approximately
     # null. It tracks how tight the saved fixed point is (8e-3 and 7e-2 on two
@@ -215,19 +214,16 @@ def test_hd189_reaction_sensitivity_regression():
     assert info["null_quality"] < 0.2
     # Median twin residual stays out of the stagnation regime (calibrated twins
     # 0.05-0.29); one wandering twin is tolerated.
-    assert float(np.median(info["resids"])) < 0.2, (
-        f"median resid {np.median(info['resids']):.2e}: stagnation regime"
-    )
+    assert float(np.median(info["resids"])) < 0.2, f"median resid {np.median(info['resids']):.2e}: stagnation regime"
     assert info["resid"] < 0.5, f"max twin resid {info['resid']:.2e}"
-    assert info["ensemble_spread"] < 0.15, (
-        f"ensemble spread {info['ensemble_spread']:.2e}: twins disagree"
-    )
+    assert info["ensemble_spread"] < 0.15, f"ensemble spread {info['ensemble_spread']:.2e}: twins disagree"
     # pair_antisym can read O(1) on FD-accurate rows: bound it only; the FD check below is the validation.
     assert 0.0 <= info["pair_antisym"] <= 1.1, info["pair_antisym"]
     assert np.all(np.isfinite(dLdlnk))
 
     # Sign and ranking are the most robust assertions.
-    assert dLdlnk[13] < 0 and dLdlnk[14] > 0
+    assert dLdlnk[13] < 0
+    assert dLdlnk[14] > 0
     top = np.argsort(np.abs(dLdlnk[: net.nr + 1]))[::-1][:6]
     assert 13 in top or 14 in top, f"dominant CH4 reaction missing from top-6: {top}"
 

@@ -1,5 +1,4 @@
-"""Validate `photo_setup._build_photo_static_dense` against locally captured
-npz fixtures.
+"""Validate `photo_setup._build_photo_static_dense` against locally captured npz fixtures.
 
 The fixtures (`tests/data/photo_setup_hd189_{baseline,T_dep}.npz`) are
 gitignored; `python tests/gen_fixtures.py --all` regenerates them.
@@ -21,9 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_DIR = ROOT / "tests" / "data"
 _BASELINE_FIXTURE = FIXTURE_DIR / "photo_setup_hd189_baseline.npz"
 _T_DEP_FIXTURE = FIXTURE_DIR / "photo_setup_hd189_T_dep.npz"
-_REGEN_HINT = (
-    "local fixture missing; regenerate with: python tests/_gen_photo_baseline.py"
-)
+_REGEN_HINT = "local fixture missing; regenerate with: python tests/_gen_photo_baseline.py"
 BIN_ATOL = 2e-14
 CROSS_ATOL = 1e-30
 # (dense array, its key list, fixture prefix); no prefix is a prefix of another.
@@ -56,14 +53,9 @@ def _check_static_against_fixture(
     assert float(static.dbin1) == float(fx["dbin1"])
     assert float(static.dbin2) == float(fx["dbin2"])
     assert tuple(static.absp_T_sp) == expected_T_sp
-    assert tuple(static.absp_T_sp) == tuple(
-        sp for sp in static.absp_sp if sp in expected_T_sp
-    )
+    assert tuple(static.absp_T_sp) == tuple(sp for sp in static.absp_sp if sp in expected_T_sp)
     for arr, keys, prefix in _CROSS_TABLES:
-        names = [
-            prefix + ("__".join(map(str, k)) if isinstance(k, tuple) else k)
-            for k in getattr(static, keys)
-        ]
+        names = [prefix + ("__".join(map(str, k)) if isinstance(k, tuple) else k) for k in getattr(static, keys)]
         assert set(names) == {f for f in fx.files if f.startswith(prefix)}
         for i, name in enumerate(names):
             np.testing.assert_allclose(
@@ -78,7 +70,7 @@ def _check_static_against_fixture(
 @pytest.mark.skipif(not _BASELINE_FIXTURE.exists(), reason=_REGEN_HINT)
 def test_photo_setup_matches_baseline_fixture():
     """HD189 default: T_cross_sp=[], use_ion=False."""
-    import vulcan3.photo_setup as photo_setup
+    from vulcan3 import photo_setup
 
     var, atm = build_state_through_read_rate()
     static = photo_setup._build_photo_static_dense(var, atm)
@@ -89,7 +81,7 @@ def test_photo_setup_matches_baseline_fixture():
 @pytest.mark.skipif(not _T_DEP_FIXTURE.exists(), reason=_REGEN_HINT)
 def test_photo_setup_matches_T_dep_fixture(monkeypatch):
     """HD189 with T_cross_sp=['CO2','H2O','NH3'] patched on."""
-    import vulcan3.photo_setup as photo_setup
+    from vulcan3 import photo_setup
     from vulcan3.config import default_config
 
     vulcan_cfg = default_config()
@@ -113,7 +105,7 @@ def test_branch_key_order_is_deterministic():
     persistent compile cache write-only. Sortedness pins the invariant in one
     process; the failure it guards against only shows up across processes.
     """
-    import vulcan3.photo_setup as photo_setup
+    from vulcan3 import photo_setup
 
     var, atm = build_state_through_read_rate()
     static = photo_setup._build_photo_static_dense(var, atm)
@@ -123,9 +115,7 @@ def test_branch_key_order_is_deterministic():
         if not keys:
             continue
         species = [sp for sp, _ in keys]
-        assert species == sorted(species), (
-            f"{name} is not in sorted species order: {species[:8]}..."
-        )
+        assert species == sorted(species), f"{name} is not in sorted species order: {species[:8]}..."
         # Branches within one species stay in ascending branch number.
         for sp in set(species):
             branches = [br for s, br in keys if s == sp]

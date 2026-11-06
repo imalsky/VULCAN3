@@ -20,7 +20,6 @@ import jax.numpy as jnp
 import pytest
 
 
-
 def _cfg():
     """HD189 photo-off, non-hybrid, with the chemistry certificate opened up."""
     import vulcan3.legacy_io as op
@@ -39,8 +38,10 @@ def _cfg():
 
 
 def _candidate(state, c, **extra):
-    """Seed the carry past `count_min`, so the next accepted step is a
-    certificate candidate; `extra` sets the fields a test varies."""
+    """Seed the carry past `count_min`, so the next accepted step is a certificate candidate.
+
+    `extra` sets the fields a test varies.
+    """
     t0 = 10.0 * float(c.trun_min)
     return state._replace(
         t=jnp.float64(t0),
@@ -58,7 +59,7 @@ def _candidate(state, c, **extra):
 
 
 @pytest.mark.parametrize(
-    "drain, scale, reason, why",
+    ("drain", "scale", "reason", "why"),
     [
         (1.0, 1.0, 1, "an intact column certifies on its first candidate step"),
         (4.0, 1.0, 3, "a column that lost 75% of its carbon may not certify"),
@@ -86,9 +87,7 @@ def test_certificate_requires_the_column_element_budget(drain, scale, reason, wh
     integ = outer_loop.OuterLoop(op_jax.Ros2JAX(), op.Output(cfg=c), cfg=c)
     state, atm_static = integ.prepare_runstate(RunState.with_pre_loop_setup(c))
     ch4 = outer_loop._NETWORK.species_idx["CH4"]
-    started_from = column_atoms(
-        (state.y * scale).at[:, ch4].multiply(drain), state.dz, integ._compo_arr
-    )
+    started_from = column_atoms((state.y * scale).at[:, ch4].multiply(drain), state.dz, integ._compo_arr)
     now = column_atoms(state.y, state.dz, integ._compo_arr)
     seeded = _candidate(state, c, budget_err=now / started_from - 1.0)
     final = integ._runner(seeded, atm_static)
@@ -111,17 +110,18 @@ def test_certificate_requires_the_column_element_budget(drain, scale, reason, wh
 
 
 @pytest.mark.parametrize(
-    "err_c, reason, why",
+    ("err_c", "reason", "why"),
     [
         (0.0, 1, "a refresh alone may not manufacture a budget error"),
         (-0.012, 3, "a refresh may not dilute an accumulated deficit into tolerance"),
     ],
 )
 def test_a_geometry_refresh_alone_never_moves_the_budget(err_c, reason, why):
-    """A refresh keeps y and changes dz, so it moves no atom and must not move
-    the budget: no error appears from nothing, and an accumulated -0.012 carbon
-    deficit is not diluted into tolerance by the refresh's ~3x change in the
-    discrete column."""
+    """A refresh keeps y and changes dz, so it moves no atom and must not move the budget.
+
+    No error appears from nothing, and an accumulated -0.012 carbon deficit is not diluted into tolerance by the
+    refresh's ~3x change in the discrete column.
+    """
     import numpy as np
 
     import vulcan3.legacy_io as op
@@ -140,17 +140,15 @@ def test_a_geometry_refresh_alone_never_moves_the_budget(err_c, reason, why):
     budget_err = jnp.zeros((integ._compo_arr.shape[1],)).at[ci].set(err_c)
     col_seed = column_atoms(state.y, dz_seed, integ._compo_arr)
     budget_ref = col_seed.at[ci].divide(1.0 + err_c)
-    seeded = _candidate(
-        state, c, dz=dz_seed, budget_ref=budget_ref, budget_err=budget_err
-    )
+    seeded = _candidate(state, c, dz=dz_seed, budget_ref=budget_ref, budget_err=budget_err)
     final = integ._runner(seeded, atm_static)
-    assert int(final.termination_reason) == reason and bool(final.budget_ok) is (
-        reason == 1
-    ), (why, int(final.termination_reason), np.asarray(final.budget_drift))
-    # The deficit survives the refresh undiluted.
-    assert float(final.budget_drift[ci]) == pytest.approx(err_c, rel=0.05, abs=1e-4), (
-        float(final.budget_drift[ci])
+    assert int(final.termination_reason) == reason and bool(final.budget_ok) is (reason == 1), (
+        why,
+        int(final.termination_reason),
+        np.asarray(final.budget_drift),
     )
+    # The deficit survives the refresh undiluted.
+    assert float(final.budget_drift[ci]) == pytest.approx(err_c, rel=0.05, abs=1e-4), float(final.budget_drift[ci])
     # The reference is fixed, and the stored drift is its accumulator read
     # relative to H.
     assert np.array_equal(np.asarray(final.budget_ref), np.asarray(budget_ref))

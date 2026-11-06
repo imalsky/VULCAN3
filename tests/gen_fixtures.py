@@ -36,8 +36,7 @@ MANIFEST = FIXTURE_DIR / "FIXTURES.json"
 GENERATORS = {
     "photo": {
         "argv": [sys.executable, "tests/_gen_photo_baseline.py"],
-        "writes": ["photo_setup_hd189_baseline.npz",
-                   "photo_setup_hd189_T_dep.npz"],
+        "writes": ["photo_setup_hd189_baseline.npz", "photo_setup_hd189_T_dep.npz"],
         "note": "HD189 photo cross-section setup (default and T-dependent)",
     },
     "adj_hd189": {
@@ -70,15 +69,16 @@ def sha256(path: Path) -> str:
 
 def _git_head() -> str | None:
     try:
-        r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
-                           capture_output=True, text=True, timeout=10)
+        r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10)
         head = r.stdout.strip()
         if r.returncode != 0 or not head:
             return None
         dirty = subprocess.run(
-            ["git", "-C", str(ROOT), "status", "--porcelain",
-             "--untracked-files=no"],
-            capture_output=True, text=True, timeout=10).stdout.strip()
+            ["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
         return head + ("-dirty" if dirty else "")
     except Exception:  # best-effort provenance: record None, never block generation
         return None
@@ -96,8 +96,7 @@ def _versions() -> dict:
         # editable install importlib.metadata reports whatever version was
         # current at `pip install -e`, which silently mislabels every fixture.
         src = (ROOT / "src" / "vulcan3" / "_version.py").read_text()
-        out["vulcan3"] = re.search(
-            r"__version__\s*=\s*[\"']([^\"']+)", src).group(1)
+        out["vulcan3"] = re.search(r"__version__\s*=\s*[\"']([^\"']+)", src).group(1)
     except Exception:  # best-effort provenance: record None
         out["vulcan3"] = None
     return out
@@ -130,14 +129,15 @@ def run_generator(key: str) -> None:
     if r.returncode != 0:
         raise SystemExit(
             f"gen_fixtures: generator {key} failed (exit {r.returncode}). "
-            f"Command: {' '.join(spec['argv'])} (cwd={ROOT})")
+            f"Command: {' '.join(spec['argv'])} (cwd={ROOT})"
+        )
     print(f"=== {key}: done in {time.time() - t0:.1f}s ===", flush=True)
 
 
 def write_manifest() -> dict:
     """Record hashes + provenance for every fixture present."""
     entries = {}
-    for key, spec in GENERATORS.items():
+    for spec in GENERATORS.values():
         for name in spec["writes"]:
             p = FIXTURE_DIR / name
             if not p.is_file():
@@ -166,8 +166,7 @@ def write_manifest() -> dict:
 def verify() -> int:
     """Check every fixture against the manifest. Returns an exit code."""
     if not MANIFEST.is_file():
-        print(f"gen_fixtures: no manifest at {MANIFEST}; run --all first",
-              file=sys.stderr)
+        print(f"gen_fixtures: no manifest at {MANIFEST}; run --all first", file=sys.stderr)
         return 1
     manifest = json.loads(MANIFEST.read_text())
     recorded = manifest.get("fixtures", {})
@@ -182,31 +181,26 @@ def verify() -> int:
             continue
         got = sha256(p)
         if got != recorded[name]["sha256"]:
-            bad.append(f"{name}: sha256 {got[:16]}... != recorded "
-                       f"{recorded[name]['sha256'][:16]}...")
+            bad.append(f"{name}: sha256 {got[:16]}... != recorded {recorded[name]['sha256'][:16]}...")
     if bad:
         print("gen_fixtures: verification FAILED", file=sys.stderr)
         for b in bad:
             print(f"  - {b}", file=sys.stderr)
         return 1
-    print(f"gen_fixtures: all {len(ALL_FIXTURES)} fixtures match the manifest "
-          f"(built from commit {manifest.get('vulcan3_commit')})")
+    print(
+        f"gen_fixtures: all {len(ALL_FIXTURES)} fixtures match the manifest "
+        f"(built from commit {manifest.get('vulcan3_commit')})"
+    )
     return 0
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument("--all", action="store_true",
-                   help="build every missing fixture, then write the manifest")
-    g.add_argument("--only", choices=sorted(GENERATORS),
-                   help="run one generator")
-    g.add_argument("--verify", action="store_true",
-                   help="check the existing fixtures against the manifest")
-    ap.add_argument("--force", action="store_true",
-                    help="rebuild even when the fixture is already present")
+    g.add_argument("--all", action="store_true", help="build every missing fixture, then write the manifest")
+    g.add_argument("--only", choices=sorted(GENERATORS), help="run one generator")
+    g.add_argument("--verify", action="store_true", help="check the existing fixtures against the manifest")
+    ap.add_argument("--force", action="store_true", help="rebuild even when the fixture is already present")
     args = ap.parse_args(argv)
 
     if args.verify:
@@ -216,15 +210,13 @@ def main(argv=None) -> int:
     for key in keys:
         have = all((FIXTURE_DIR / n).is_file() for n in GENERATORS[key]["writes"])
         if have and not args.force:
-            print(f"=== {key}: already present, skipping (--force to rebuild) "
-                  "===", flush=True)
+            print(f"=== {key}: already present, skipping (--force to rebuild) ===", flush=True)
             continue
         run_generator(key)
 
     missing = [n for n in ALL_FIXTURES if not (FIXTURE_DIR / n).is_file()]
     if missing and args.all:
-        print("gen_fixtures: generators ran but these are still missing: "
-              + ", ".join(missing), file=sys.stderr)
+        print("gen_fixtures: generators ran but these are still missing: " + ", ".join(missing), file=sys.stderr)
         return 1
     write_manifest()
     return 0

@@ -1,5 +1,9 @@
-"""Physical constants in CGS (from astropy), pressure units, the
-radiative-transfer asymmetry factor `ag0` and one numerical floor."""
+"""Physical constants in CGS (from astropy), pressure units.
+
+Also the radiative-transfer asymmetry factor `ag0` and one numerical floor.
+"""
+
+__all__ = ["ATM_BAR", "ATM_CGS", "BAR_CGS", "UNDERFLOW_DENOM", "G_grav", "Navo", "ag0", "au", "hc", "kb", "r_sun"]
 
 kb = 1.38064852e-16  # Boltzmann constant (erg/K)
 Navo = 6.02214086e23  # Avogadro's number

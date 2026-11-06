@@ -24,11 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "tests" / "data"
 W39B_FIXTURE = DATA / "adj_state_w39b.npz"
 _MANIFEST = DATA / "FIXTURES.json"
-BUILT_ON = (
-    json.loads(_MANIFEST.read_text()).get("platform_machine")
-    if _MANIFEST.is_file()
-    else None
-)
+BUILT_ON = json.loads(_MANIFEST.read_text()).get("platform_machine") if _MANIFEST.is_file() else None
 S_NETWORK = "thermo/SNCHO_photo_network_2025.txt"
 # W39b layers where H2S is a trace, not a reservoir (VMR <= 1.3e-9 on the
 # 2025-network fixture; 83-94 on the 2021 network)
@@ -43,10 +39,13 @@ PINNED_MACHINE = "arm64"
 
 
 def stage_arrays(fixture: str, cfg_name: str, dt: float, frac: float):
-    """(y, k1, k2) of one Ros2 step from a saved converged state, with the
-    repair guard set to `frac`. Also imported by the SNCHO child below."""
+    """(y, k1, k2) of one Ros2 step from a saved converged state, with the repair guard set to `frac`.
+
+    Also imported by the SNCHO child below.
+    """
     import jax.numpy as jnp
-    import vulcan3.jax_step as jax_step
+
+    from vulcan3 import jax_step
 
     atm, net, y, k_arr = load_adj_state(fixture, cfg_name)
     saved, jax_step._REPAIR_MAX_CELL_FRAC = jax_step._REPAIR_MAX_CELL_FRAC, frac
@@ -54,9 +53,7 @@ def stage_arrays(fixture: str, cfg_name: str, dt: float, frac: float):
         k1, k2, _, _ = jax_step._ros2_stages(y, k_arr, jnp.float64(dt), atm, net, None)
     finally:
         jax_step._REPAIR_MAX_CELL_FRAC = saved
-    return (np.asarray(y, dtype=np.float64),
-            np.asarray(k1, dtype=np.float64),
-            np.asarray(k2, dtype=np.float64))
+    return (np.asarray(y, dtype=np.float64), np.asarray(k1, dtype=np.float64), np.asarray(k2, dtype=np.float64))
 
 
 def step_solution(y, k1, k2):
@@ -97,7 +94,7 @@ def w39b_band_counts():
     """{dt: {"guarded": n, "unguarded": n}} from one SNCHO child run."""
     res = run_child(_CHILD, network=S_NETWORK, label="stage-repair guard (W39b)")
     line = next(ln for ln in res.stdout.splitlines() if ln.startswith("COUNTS "))
-    return {float(dt): c for dt, c in json.loads(line[len("COUNTS "):]).items()}
+    return {float(dt): c for dt, c in json.loads(line[len("COUNTS ") :]).items()}
 
 
 _NEEDS_W39B = pytest.mark.skipif(
@@ -122,8 +119,10 @@ def test_guard_keeps_the_w39b_trace_carrier_band_positive(w39b_band_counts):
     ),
 )
 def test_unguarded_repair_inverts_the_w39b_band(w39b_band_counts):
-    """Non-vacuity: without the guard the band inverts somewhere, at one of
-    the two dt (on the 2025-network fixture at 1e8, on the 2021 one at 1e11)."""
+    """Non-vacuity: without the guard the band inverts somewhere.
+
+    At one of the two dt (on the 2025-network fixture at 1e8, on the 2021 one at 1e11).
+    """
     assert max(c["unguarded"] for c in w39b_band_counts.values()) >= 1, w39b_band_counts
 
 
@@ -132,10 +131,12 @@ def test_unguarded_repair_inverts_the_w39b_band(w39b_band_counts):
     reason="HD189 fixture missing (npz artifacts are gitignored)",
 )
 def test_guard_clamps_only_trace_carrier_cells_of_the_hd189_column():
-    """At dt 1e6 the p99 per-cell correction ratio stays under 1.1e-2, the
-    guard clamps only carriers below VMR 1e-10, and stage 1 is
-    unchanged on every other cell."""
-    import vulcan3.jax_step as jax_step
+    """At dt 1e6 the p99 per-cell correction ratio stays under 1.1e-2.
+
+    The guard clamps only carriers below VMR 1e-10, and stage 1 is unchanged on every other cell.
+    """
+    from vulcan3 import jax_step
+
     args = ("adj_state_hd189.npz", "default", 1e6)
     y, g1, _ = stage_arrays(*args, jax_step._REPAIR_MAX_CELL_FRAC)
     _, u1, _ = stage_arrays(*args, float("inf"))
@@ -144,22 +145,15 @@ def test_guard_clamps_only_trace_carrier_cells_of_the_hd189_column():
 
     # frac 0.0 drops every correction, so the unguarded stage minus it IS the
     # correction, and the guard's own denominator is max(cell, |raw stage|).
-    ratio = np.abs(u1[:, ridx] - raw1[:, ridx]) / np.maximum(
-        y[:, ridx], np.abs(raw1[:, ridx])
-    )
+    ratio = np.abs(u1[:, ridx] - raw1[:, ridx]) / np.maximum(y[:, ridx], np.abs(raw1[:, ridx]))
     p99 = np.percentile(ratio, 99)
     assert p99 <= 1.1e-2, f"corrections grew on a healthy column: p99 {p99:.3e}"
 
     clamped = g1[:, ridx] != u1[:, ridx]
     vmr = (y / y.sum(axis=1, keepdims=True))[:, ridx]
     worst = float(np.max(vmr[clamped], initial=0.0))
-    assert worst < 1e-10, (
-        f"the guard clamped a real carrier: {int(clamped.sum())} cells, "
-        f"worst carrier VMR {worst:.3e}"
-    )
+    assert worst < 1e-10, f"the guard clamped a real carrier: {int(clamped.sum())} cells, worst carrier VMR {worst:.3e}"
     fired = np.zeros_like(g1, dtype=bool)
     fired[:, ridx] = clamped
-    assert np.array_equal(g1[~fired], u1[~fired]), (
-        "the guard moved a stage-1 cell it did not clamp"
-    )
+    assert np.array_equal(g1[~fired], u1[~fired]), "the guard moved a stage-1 cell it did not clamp"
     assert not np.array_equal(g1, raw1), "repair is inert here (vacuous test)"

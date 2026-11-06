@@ -24,10 +24,10 @@ def _dense_from_blocks(diag, sup, sub):
     nz, ni = diag.shape[0], diag.shape[1]
     M = np.zeros((nz * ni, nz * ni))
     for j in range(nz):
-        M[j * ni:(j + 1) * ni, j * ni:(j + 1) * ni] = diag[j]
+        M[j * ni : (j + 1) * ni, j * ni : (j + 1) * ni] = diag[j]
     for j in range(nz - 1):
-        M[j * ni:(j + 1) * ni, (j + 1) * ni:(j + 2) * ni] = sup[j]
-        M[(j + 1) * ni:(j + 2) * ni, j * ni:(j + 1) * ni] = sub[j]
+        M[j * ni : (j + 1) * ni, (j + 1) * ni : (j + 2) * ni] = sup[j]
+        M[(j + 1) * ni : (j + 2) * ni, j * ni : (j + 1) * ni] = sub[j]
     return M
 
 
@@ -62,18 +62,15 @@ def test_block_thomas_solvers_agree_with_dense_solve(case):
     sup, sub = _promote_diags(diag, jnp.asarray(sup_d), jnp.asarray(sub_d))
 
     if case == "small":
-        x_ref = np.linalg.solve(_dense_from_blocks(diag_np, np.asarray(sup),
-                                                   np.asarray(sub)),
-                                rhs_np.reshape(-1)).reshape(nz, ni)
+        x_ref = np.linalg.solve(
+            _dense_from_blocks(diag_np, np.asarray(sup), np.asarray(sub)), rhs_np.reshape(-1)
+        ).reshape(nz, ni)
     else:
         x_ref = np.asarray(banded_solve(diag_np, sup_d, sub_d, rhs_np))
     x_dense = np.asarray(block_thomas(diag, sup, sub, rhs))
-    x_diag = np.asarray(block_thomas_diag_offdiag(
-        diag, jnp.asarray(sup_d), jnp.asarray(sub_d), rhs))
+    x_diag = np.asarray(block_thomas_diag_offdiag(diag, jnp.asarray(sup_d), jnp.asarray(sub_d), rhs))
 
-    err_dense = np.max(np.abs(x_dense - x_ref)
-                       / np.maximum(np.abs(x_ref), X_FLOOR))
-    err_diag = np.max(np.abs(x_diag - x_dense)
-                      / np.maximum(np.abs(x_dense), X_FLOOR))
+    err_dense = np.max(np.abs(x_dense - x_ref) / np.maximum(np.abs(x_ref), X_FLOOR))
+    err_diag = np.max(np.abs(x_diag - x_dense) / np.maximum(np.abs(x_dense), X_FLOOR))
     assert err_dense < tol_dense, f"dense vs direct: {err_dense:.3e}"
     assert err_diag < tol_diag, f"diag vs dense: {err_diag:.3e}"

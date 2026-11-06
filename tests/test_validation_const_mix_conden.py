@@ -14,12 +14,12 @@ import pytest
 
 
 @pytest.mark.parametrize(
-    "overrides, error",
+    ("overrides", "error"),
     [
-        (dict(ini_mix="const_mix", const_mix={"H2": 0.9, "Ar": 0.1}), r"const_mix key 'Ar'"),
-        (dict(ini_mix="const_mix", const_mix={"H2": 0.9, "He": 0.1}), None),
-        (dict(use_condense=True, condense_sp=["Fe"]), r"condense_sp entry 'Fe'"),
-        (dict(use_condense=True, condense_sp=["H2S"]), None),  # sat-only tier
+        ({"ini_mix": "const_mix", "const_mix": {"H2": 0.9, "Ar": 0.1}}, r"const_mix key 'Ar'"),
+        ({"ini_mix": "const_mix", "const_mix": {"H2": 0.9, "He": 0.1}}, None),
+        ({"use_condense": True, "condense_sp": ["Fe"]}, r"condense_sp entry 'Fe'"),
+        ({"use_condense": True, "condense_sp": ["H2S"]}, None),  # sat-only tier
     ],
     ids=["inert_const_mix_key", "network_const_mix_keys", "unknown_condensate", "h2s_sat_only"],
 )
@@ -36,8 +36,10 @@ def test_up_front_validation(overrides, error):
 
 
 def test_kinetics_set_matches_sat_set():
-    """The kinetics tier must stay a subset of the saturation tier, and the
-    only sat-only species must be H2S (drift guard between the two constants)."""
+    """The kinetics tier must stay a subset of the saturation tier.
+
+    And the only sat-only species must be H2S (drift guard between the two constants).
+    """
     from vulcan3.atm_setup import _SUPPORTED_CONDENSABLES
     from vulcan3.conden import SUPPORTED_CONDEN_KINETICS
 

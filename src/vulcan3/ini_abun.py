@@ -1,20 +1,9 @@
 """JAX-native initial-abundance setup.
 
-Five `ini_mix` modes:
-- `EQ`         Gibbs-minimization equilibrium (ExoGibbs) on the network's own
-               NASA-9 thermochemistry
-- `const_mix`  apply a per-species mixing dict from cfg
-- `vulcan_ini` restore composition from a previous `.vul` file
-- `table`      read a per-layer mixing-ratio table
-- `const_lowT` solve the 5-mol H2/H2O/CH4/He/NH3 system via JAX Newton
+`compute_initial_abundance` returns a typed `IniAbunOutputs`; `InitialAbun` is the facade that mutates `data_var` and
+`data_atm`. `eq_seed` is the end-to-end JAX equilibrium seed. The five `ini_mix` modes are in docs/method.md.
 
-`compute_initial_abundance` returns a typed `IniAbunOutputs`. The
-`InitialAbun` class is a legacy facade that mutates `data_var`/`data_atm`.
-
-The EQ seed (`eq_seed`) is end-to-end JAX: it minimizes the Gibbs energy of
-the loaded network's own gas species using the same NASA-9 polynomials the
-reverse rates use, so the seed and the kinetics cannot disagree about
-thermochemistry. Its tangent is zero, and a batched lane equals the solo seed bitwise.
+Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, length in cm, time in s.
 """
 
 from __future__ import annotations
@@ -33,20 +22,32 @@ if TYPE_CHECKING:  # the exogibbs imports are function-local (pandas at import)
     from exogibbs.api.gas import EquilibriumOptions
     from exogibbs.thermo.models import ChemicalSetup
 
-from .config import default_config
-from . import chem_funs
-from . import gibbs
-from . import rates_jax
+from . import chem_funs, gibbs, rates_jax
+from ._paths import resolve_data_path
 from .composition import (
+    atom_list as _compo_atoms,
     compo,
-    compo_row,
     compo_array,
+    compo_row,
     species,
-    atom_list as _COMPO_ATOMS,
 )
+from .config import default_config
 from .phy_const import BAR_CGS
 from .state import IniAbunOutputs
-from ._paths import resolve_data_path
+
+__all__ = [
+    "InitialAbun",
+    "column_atoms",
+    "compute_atom_ini",
+    "compute_initial_abundance",
+    "element_vector",
+    "eq_column",
+    "eq_seed",
+    "operator_column_weights",
+    "ratio_indices",
+    "read_abundances",
+    "seed_elements",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ _CFG = default_config()
 
 
 def _abundance_path() -> Path:
-    """The configured elemental-abundance preset file."""
+    """Return the configured elemental-abundance preset file."""
     return resolve_data_path(str(_CFG.fastchem_solar_abundance_file))
 
 
@@ -107,19 +108,15 @@ def _build_seed_setup() -> tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]:
     """Build the ExoGibbs setup for the loaded network's gas species.
 
     Every array in the returned setup is NumPy. The result is cached for the
-    process, and the first seed call may happen inside a trace (vulcan-forward
+    process, and the first seed call may happen inside a trace (a consumer
     calls `eq_seed` from a jitted forward model); a JAX array built there is a
     tracer that escapes into every later trace.
     """
     from exogibbs.thermo.models import ChemicalSetup
 
     excluded = _condensate_species() | set(_charged_species())
-    seed_idx = np.array(
-        [i for i, sp in enumerate(species) if sp not in excluded], dtype=np.int64
-    )
-    coeffs, present = gibbs.load_nasa9(
-        tuple(species), rates_jax._thermo_dir(_CFG.network)
-    )
+    seed_idx = np.array([i for i, sp in enumerate(species) if sp not in excluded], dtype=np.int64)
+    coeffs, present = gibbs.load_nasa9(tuple(species), rates_jax._thermo_dir(_CFG.network))
     missing = [species[i] for i in seed_idx if not present[i]]
     if missing:
         raise RuntimeError(
@@ -129,12 +126,8 @@ def _build_seed_setup() -> tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]:
             "ini_mix='const_mix'."
         )
     counts = np.asarray(compo_array)[seed_idx]
-    elem_cols = [
-        j
-        for j, atom in enumerate(_COMPO_ATOMS)
-        if atom != "e" and counts[:, j].sum() > 0.0
-    ]
-    elements = tuple(_COMPO_ATOMS[j] for j in elem_cols)
+    elem_cols = [j for j, atom in enumerate(_compo_atoms) if atom != "e" and counts[:, j].sum() > 0.0]
+    elements = tuple(_compo_atoms[j] for j in elem_cols)
     setup = ChemicalSetup(
         formula_matrix=np.ascontiguousarray(counts[:, elem_cols].T),
         hvector_func=_make_hvector(coeffs[seed_idx]),
@@ -148,12 +141,12 @@ _SEED: tuple[ChemicalSetup, np.ndarray, tuple[str, ...]] | None = None
 
 
 def _seed() -> tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]:
-    """`(setup, seed species indices, element names)`, built once on first use.
+    """Return `(setup, seed species indices, element names)`, built once on first use.
 
     Lazy: it reads one `thermo/NASA9/<sp>.txt` per species, and a
     run with any other `ini_mix` must not pay for that at import.
     """
-    global _SEED
+    global _SEED  # noqa: PLW0603 (a cache of the built seed setup)
     if _SEED is None:
         _SEED = _build_seed_setup()
     return _SEED
@@ -163,14 +156,16 @@ def seed_elements() -> tuple[str, ...]:
     """Elements the seed solves for, in the order `b` is indexed."""
     return _seed()[2]
 
+
 # Sequential warm start, layer by layer. ExoGibbs's name: it flips the
 # arrays, so on VULCAN's grid (index 0 = bottom) the scan starts at the cold
 # top. `scan_hot_from_top` shifts the seed past the HD189_vulcan3 gate's step
 # cap.
 _SEED_METHOD = "scan_hot_from_bottom"
 
+
 def _seed_key() -> tuple[float, int]:
-    """The config's solver controls, read at call time (`_cfg_overlay`)."""
+    """Return the config's solver controls, read at call time (`_cfg_overlay`)."""
     return (float(_CFG.fastchem_newton_tol), int(_CFG.fastchem_newton_max_iter))
 
 
@@ -189,7 +184,7 @@ def _seed_controls(tol: float, max_iter: int) -> tuple[EquilibriumOptions, objec
     from exogibbs.api.gas import EquilibriumOptions
 
     options = EquilibriumOptions(epsilon_crit=tol, max_iter=max_iter, method=_SEED_METHOD)
-    return options, jax.jit(lambda Tco, p_bar, b: eq_seed(Tco, p_bar, b))
+    return options, jax.jit(lambda Tco, p_bar, b: eq_seed(Tco, p_bar, b))  # noqa: PLW0108 (a fresh closure)
 
 
 @jax.custom_jvp
@@ -243,8 +238,8 @@ def _eq_seed_lanes(axis_size, in_batched, Tco, p_bar, b):
     function, so a nested `vmap` also runs lane by lane.
     """
     args = tuple(
-        x if batched else jnp.broadcast_to(x, (axis_size,) + jnp.shape(x))
-        for x, batched in zip((Tco, p_bar, b), in_batched)
+        x if batched else jnp.broadcast_to(x, (axis_size, *jnp.shape(x)))
+        for x, batched in zip((Tco, p_bar, b), in_batched, strict=False)
     )
     return jax.lax.map(lambda a: _eq_seed_column(*a), args), True
 
@@ -264,7 +259,7 @@ def _eq_seed_jvp(primals, tangents):
 def read_abundances(path: Path) -> dict[str, float]:
     """Parse a `SYMBOL log10(n_X/n_H)+12` preset into n_X/n_H, with H == 1."""
     dex: dict[str, float] = {}
-    with open(path) as fh:
+    with Path(path).open() as fh:
         for line in fh:
             row = line.split("#", 1)[0].split()
             if len(row) >= 2:
@@ -316,8 +311,7 @@ def ratio_indices(names) -> jnp.ndarray:
     unknown = [sp for sp in names if sp not in elements]
     if unknown:
         raise KeyError(
-            f"{unknown} are not elements of the loaded network "
-            f"({', '.join(elements)}); setting them would do nothing."
+            f"{unknown} are not elements of the loaded network ({', '.join(elements)}); setting them would do nothing."
         )
     return jnp.asarray([elements.index(sp) for sp in names], dtype=jnp.int32)
 
@@ -330,9 +324,7 @@ def element_vector(ratios, idx) -> jnp.ndarray:
     both paths, and it is bit-identical to `_element_vector({name: value,
     ...})` for the same elements.
     """
-    return jnp.asarray(_element_vector()).at[idx].set(
-        jnp.asarray(ratios, dtype=jnp.float64)
-    )
+    return jnp.asarray(_element_vector()).at[idx].set(jnp.asarray(ratios, dtype=jnp.float64))
 
 
 def _element_vector(ratios: dict | None = None) -> np.ndarray:
@@ -347,10 +339,7 @@ def _element_vector(ratios: dict | None = None) -> np.ndarray:
         elements = seed_elements()
         for sp, value in ratios.items():
             if sp not in elements:
-                raise KeyError(
-                    f"ratios[{sp!r}] is not an element of the loaded network "
-                    f"({', '.join(elements)})."
-                )
+                raise KeyError(f"ratios[{sp!r}] is not an element of the loaded network ({', '.join(elements)}).")
             b[elements.index(sp)] = float(value)
     return b
 
@@ -449,12 +438,11 @@ def eq_column(pco, Tco, M) -> np.ndarray:
     Tco = np.asarray(Tco, dtype=np.float64)
     p_bar = np.asarray(pco, dtype=np.float64) / BAR_CGS
     logger.info(
-        f"Equilibrium seed from {_abundance_path()}: "
-        + ", ".join(
-            f"{sp}/H={b[seed_elements().index(sp)]:.8g}"
-            for sp in ("He", "C", "N", "O", "S")
-            if sp in seed_elements()
-        )
+        "Equilibrium seed from %s: %s",
+        _abundance_path(),
+        ", ".join(
+            f"{sp}/H={b[seed_elements().index(sp)]:.8g}" for sp in ("He", "C", "N", "O", "S") if sp in seed_elements()
+        ),
     )
     seed_jit = _seed_controls(*_seed_key())[1]
     ymix = np.asarray(seed_jit(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b)))
@@ -466,8 +454,9 @@ def eq_column(pco, Tco, M) -> np.ndarray:
         # more iterations do not cure; seen below ~225 K on the shipped networks.
         capped = bool(np.asarray(diag["hit_max_iter"])[bad].all())
         remedy = (
-            "Raise fastchem_newton_max_iter." if capped else
-            "The minimizer broke down before the cap (a NaN residual, seen on "
+            "Raise fastchem_newton_max_iter."
+            if capped
+            else "The minimizer broke down before the cap (a NaN residual, seen on "
             "columns colder than ~225 K); seed it with ini_mix='const_lowT' or "
             "'const_mix'."
         )
@@ -475,11 +464,9 @@ def eq_column(pco, Tco, M) -> np.ndarray:
             f"the equilibrium seed did not converge in "
             f"{_CFG.fastchem_newton_max_iter} iterations at "
             f"{bad.size} of {Tco.size} layers, tol={_CFG.fastchem_newton_tol:g}: "
-            + "; ".join(
-                f"layer {i} (T={Tco[i]:.1f} K, p={p_bar[i]:.3e} bar)"
-                for i in bad[:5]
-            )
-            + ". " + remedy
+            + "; ".join(f"layer {i} (T={Tco[i]:.1f} K, p={p_bar[i]:.3e} bar)" for i in bad[:5])
+            + ". "
+            + remedy
         )
     return ymix * np.asarray(M, dtype=np.float64)[:, None]
 
@@ -491,8 +478,8 @@ def _load_eq_y(data_atm) -> tuple[np.ndarray, list[str]]:
 
 def _load_vulcan_ini_y(data_atm) -> tuple[np.ndarray, list[str]]:
     """Load `y` from a previous `.vul` file via pickle."""
-    logger.info("Initializing with compositions from the previous run " + _CFG.vul_ini)
-    with open(resolve_data_path(_CFG.vul_ini), "rb") as handle:
+    logger.info("Initializing with compositions from the previous run %s", _CFG.vul_ini)
+    with Path(resolve_data_path(_CFG.vul_ini)).open("rb") as handle:
         vul_data = pickle.load(handle)
     nz_ = len(data_atm.pco)
     y = np.zeros((nz_, chem_funs.ni), dtype=np.float64)
@@ -502,19 +489,16 @@ def _load_vulcan_ini_y(data_atm) -> tuple[np.ndarray, list[str]]:
         if sp in prev_species:
             y[:, species.index(sp)] = prev_y[:, prev_species.index(sp)]
         else:
-            logger.warning(sp + " not included in the previous run.")
+            logger.warning("%s not included in the previous run.", sp)
     return y, (_charged_species() if _CFG.use_ion is True else [])
 
 
 def _load_table_y(data_atm) -> tuple[np.ndarray, list[str]]:
     """Load `y` from a per-layer mixing-ratio text table."""
-    table = np.genfromtxt(
-        resolve_data_path(_CFG.vul_ini), names=True, dtype=None, skip_header=1
-    )
+    table = np.genfromtxt(resolve_data_path(_CFG.vul_ini), names=True, dtype=None, skip_header=1)
     if not len(data_atm.pco) == len(table["Pressure"]):
-        raise IOError(
-            "Initial profile / cfg layer mismatch: the initial profile has "
-            "different layers than the current setting"
+        raise OSError(
+            "Initial profile / cfg layer mismatch: the initial profile has different layers than the current setting"
         )
     nz_ = len(data_atm.pco)
     y = np.zeros((nz_, chem_funs.ni), dtype=np.float64)
@@ -526,11 +510,11 @@ def _load_table_y(data_atm) -> tuple[np.ndarray, list[str]]:
 
 def _load_const_mix_y(data_atm) -> tuple[np.ndarray, list[str]]:
     """Load `y` from `_CFG.const_mix` (a per-species mixing dict)."""
-    logger.info("Initializing with constant (well-mixed): " + str(_CFG.const_mix))
+    logger.info("Initializing with constant (well-mixed): %s", _CFG.const_mix)
     nz_ = len(data_atm.pco)
     y = np.zeros((nz_, chem_funs.ni), dtype=np.float64)
     gas_tot = np.asarray(data_atm.M)
-    for sp in _CFG.const_mix.keys():
+    for sp in _CFG.const_mix:
         y[:, species.index(sp)] = gas_tot * _CFG.const_mix[sp]
     return y, (_charged_species() if _CFG.use_ion is True else [])
 
@@ -603,53 +587,41 @@ def _apply_condense(y: np.ndarray, data_atm) -> np.ndarray:
             data_atm.sat_mix[sp] *= _CFG.humidity
             if _CFG.use_sat_surfaceH2O is True:
                 logger.info(
-                    "The fixed surface water is now reset by condensation and humidity to "
-                    + str(data_atm.sat_mix[sp][0])
+                    "The fixed surface water is now reset by condensation and humidity to %s", data_atm.sat_mix[sp][0]
                 )
                 # The ymix write is overwritten by the final renormalisation;
                 # only the y replacement survives, so just update y here.
                 y[:, sp_idx] = data_atm.sat_mix[sp][0] * data_atm.n_0
 
-        if _CFG.use_ini_cold_trap is True:
-            if _CFG.ini_mix != "table":
-                if _CFG.use_sat_surfaceH2O is True:
-                    conden_bot = 0
-                else:
-                    conden_bot = np.argmax(
-                        data_atm.n_0 * data_atm.sat_mix[sp] <= y[:, sp_idx]
-                    )
-                sat_rho = data_atm.n_0 * data_atm.sat_mix[sp]
-                conden_status = y[:, sp_idx] >= sat_rho
-                y[:, sp_idx] = np.minimum(
-                    data_atm.n_0 * data_atm.sat_mix[sp],
-                    y[:, sp_idx],
+        if _CFG.use_ini_cold_trap is True and _CFG.ini_mix != "table":
+            if _CFG.use_sat_surfaceH2O is True:
+                conden_bot = 0
+            else:
+                conden_bot = np.argmax(data_atm.n_0 * data_atm.sat_mix[sp] <= y[:, sp_idx])
+            sat_rho = data_atm.n_0 * data_atm.sat_mix[sp]
+            conden_status = y[:, sp_idx] >= sat_rho
+            y[:, sp_idx] = np.minimum(
+                data_atm.n_0 * data_atm.sat_mix[sp],
+                y[:, sp_idx],
+            )
+            if list(y[conden_status, sp_idx]):
+                min_sat = np.amin(data_atm.sat_mix[sp][conden_status])
+                conden_min_lev = np.where(data_atm.sat_mix[sp] == min_sat)[0][0]
+                data_atm.conden_min_lev[sp] = conden_min_lev
+                logger.info(
+                    "%s condensed from nz = %s to the minimum level nz = %s (cold trap)", sp, conden_bot, conden_min_lev
                 )
-                if list(y[conden_status, sp_idx]):
-                    min_sat = np.amin(data_atm.sat_mix[sp][conden_status])
-                    conden_min_lev = np.where(data_atm.sat_mix[sp] == min_sat)[0][0]
-                    data_atm.conden_min_lev[sp] = conden_min_lev
-                    logger.info(
-                        sp
-                        + " condensed from nz = "
-                        + str(conden_bot)
-                        + " to the minimum level nz = "
-                        + str(conden_min_lev)
-                        + " (cold trap)"
-                    )
-                    y[conden_min_lev:, sp_idx] = (
-                        data_atm.sat_mix[sp][conden_min_lev]
-                        * data_atm.n_0[conden_min_lev:]
-                    )
+                y[conden_min_lev:, sp_idx] = data_atm.sat_mix[sp][conden_min_lev] * data_atm.n_0[conden_min_lev:]
     return y
 
 
 def _compute_ymix(y: np.ndarray) -> np.ndarray:
-    """Per-layer normalisation. Excludes condensed-out species when
-    `use_condense=True` (matches master's `non_gas_sp` carve-out)."""
+    """Per-layer normalisation.
+
+    Excludes condensed-out species when `use_condense=True` (matches master's `non_gas_sp` carve-out).
+    """
     if _CFG.use_condense is True:
-        exc_conden = [
-            i for i in range(chem_funs.ni) if species[i] not in _CFG.non_gas_sp
-        ]
+        exc_conden = [i for i in range(chem_funs.ni) if species[i] not in _CFG.non_gas_sp]
         ysum = np.sum(y[:, exc_conden], axis=1).reshape((-1, 1))
     else:
         ysum = np.sum(y, axis=1).reshape((-1, 1))
@@ -665,16 +637,14 @@ def compute_initial_abundance(data_atm) -> IniAbunOutputs:
     """
     mix = _CFG.ini_mix
     if mix not in _MODE_DISPATCH:
-        raise IOError(
-            "\nInitial mixing ratios unknown. Check the setting in the config."
-        )
+        raise OSError("\nInitial mixing ratios unknown. Check the setting in the config.")
     y, charge_list = _MODE_DISPATCH[mix](data_atm)
     y = _apply_condense(y, data_atm)
     ymix = _compute_ymix(y)
 
     if _CFG.use_ion is True:
         if not charge_list:
-            raise IOError("use_ion = True but the network with ions is not supplied.\n")
+            raise OSError("use_ion = True but the network with ions is not supplied.\n")
         if "e" in charge_list:
             charge_list = [c for c in charge_list if c != "e"]
 
@@ -690,14 +660,13 @@ class InitialAbun:
     """Legacy-mutation facade matching `atm_setup.Atm`'s pattern."""
 
     def __init__(self):
-        """Capture `cfg.atom_list` (cfg's possibly reordered/subset atom set)
-        for use in `ele_sum`.
-        """
+        """Capture `cfg.atom_list` (cfg's possibly reordered/subset atom set) for use in `ele_sum`."""
         self.atom_list = _CFG.atom_list
 
     def ini_y(self, data_var, data_atm):
-        """Compute the initial abundance and mutate `data_var.y` / `ymix` /
-        `y_ini` (plus `charge_list` when `use_ion`); returns `data_var`.
+        """Compute the initial abundance in place and return `data_var`.
+
+        Writes `data_var.y`, `ymix` and `y_ini`, plus `charge_list` when `use_ion`.
         """
         outputs = compute_initial_abundance(data_atm)
         data_var.y = np.asarray(outputs.y)
@@ -708,10 +677,10 @@ class InitialAbun:
         return data_var
 
     def ele_sum(self, data_var):
-        """Write per-atom initial totals onto `data_var.atom_ini` (with
-        `atom_loss` / `atom_conden` zeroed) from `data_var.y`, looking up each
-        cfg atom's column by name and skipping atoms in `cfg.loss_ex`; returns
-        `data_var`.
+        """Write per-atom initial totals onto `data_var.atom_ini` and return `data_var`.
+
+        Zeroes `atom_loss` and `atom_conden`, reads `data_var.y`, looks up each cfg atom's column by name and skips
+        atoms in `cfg.loss_ex`.
         """
         atoms_jax = compute_atom_ini(jnp.asarray(data_var.y))
         atoms_np = np.asarray(atoms_jax)
@@ -719,7 +688,7 @@ class InitialAbun:
         for atom in self.atom_list:
             if atom in loss_ex:
                 continue
-            col = _COMPO_ATOMS.index(atom)
+            col = _compo_atoms.index(atom)
             data_var.atom_ini[atom] = float(atoms_np[col])
             data_var.atom_loss[atom] = 0.0
             data_var.atom_conden[atom] = 0.0

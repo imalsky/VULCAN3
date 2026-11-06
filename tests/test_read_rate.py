@@ -13,7 +13,6 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-
 # Helpers
 
 
@@ -29,8 +28,10 @@ def _find_rxn_idx(net, eq: str) -> int:
 
 
 def test_lowT_caps_fire_all_three():
-    """All 3 caps should fire below their thresholds with the exact Moses+2005
-    formulas. Above the thresholds, k stays untouched."""
+    """All 3 caps should fire below their thresholds with the exact Moses+2005 formulas.
+
+    Above the thresholds, k stays untouched.
+    """
     import vulcan3.network as net_mod
     import vulcan3.rates_jax as rates
     from vulcan3.config import default_config
@@ -93,8 +94,10 @@ def test_lowT_caps_fire_all_three():
 
 
 def test_remove_list_zeros_only_listed_indices():
-    """`apply_remove_list` zeros literally the indices in `remove_list` and
-    nothing else (does not auto-zero the paired forward/reverse partner)."""
+    """`apply_remove_list` zeros literally the indices in `remove_list` and nothing else.
+
+    (does not auto-zero the paired forward/reverse partner).
+    """
     import vulcan3.network as net_mod
     import vulcan3.rates_jax as rates
     from vulcan3.config import default_config
@@ -135,9 +138,9 @@ def test_build_rate_array_matches_legacy_hd189(hd189_state):
     compute_J overwrites those slots and `build_rate_array` is the chemistry
     half only.
     """
-    import vulcan3.gibbs as gibbs
     import vulcan3.network as net_mod
     import vulcan3.rates_jax as rates
+    from vulcan3 import gibbs
     from vulcan3.config import default_config
 
     vulcan_cfg = default_config()
@@ -159,9 +162,7 @@ def test_build_rate_array_matches_legacy_hd189(hd189_state):
     nz = int(hd189_state.atm.Tco.shape[0])
     k_legacy = np.asarray(hd189_state.var.k_arr, dtype=np.float64)
     if k_legacy.shape != (nr + 1, nz):
-        raise AssertionError(
-            f"hd189_state.var.k_arr shape {k_legacy.shape} != ({nr + 1}, {nz})"
-        )
+        raise AssertionError(f"hd189_state.var.k_arr shape {k_legacy.shape} != ({nr + 1}, {nz})")
 
     # Rows set outside the legacy chain, out of build_rate_array's scope.
     skip_mask = np.zeros(nr + 1, dtype=bool)
@@ -181,18 +182,19 @@ def test_build_rate_array_matches_legacy_hd189(hd189_state):
     worst_local = int(np.unravel_index(np.argmax(relerr), relerr.shape)[0])
     worst = int(rows[worst_local])
     assert max_relerr <= 1e-13, (
-        f"build_rate_array deviates from legacy at i={worst} "
-        f"(Rf={net.Rf.get(worst, '?')!r}): relerr={max_relerr:.3e}"
+        f"build_rate_array deviates from legacy at i={worst} (Rf={net.Rf.get(worst, '?')!r}): relerr={max_relerr:.3e}"
     )
 
 
 def test_build_rate_array_with_lowT_caps(hd189_state):
-    """Pins that `use_lowT_limit_rates=True` is a no-op on HD189 (coolest
-    layer ~860 K is above every cap threshold). Cap-firing coverage lives in
-    `test_lowT_caps_fire_all_three`."""
-    import vulcan3.gibbs as gibbs
+    """Pins that `use_lowT_limit_rates=True` is a no-op on HD189.
+
+    (coolest layer ~860 K is above every cap threshold). Cap-firing coverage lives in
+    `test_lowT_caps_fire_all_three`.
+    """
     import vulcan3.network as net_mod
     import vulcan3.rates_jax as rates
+    from vulcan3 import gibbs
     from vulcan3.config import default_config
 
     vulcan_cfg = default_config()

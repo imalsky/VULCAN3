@@ -8,11 +8,16 @@ implementation, on the AD graph); this module owns the reading of
 from __future__ import annotations
 
 import functools
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from .phy_const import BAR_CGS, kb
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+__all__ = ["CORR", "load_nasa9"]
 
 # `CORR * T` is the (kB T / P0) factor K_eq carries per unit change in mole
 # number, P0 = 1 bar the standard-state pressure.
@@ -26,9 +31,7 @@ _NASA9_NCOEF = 10
 
 
 @functools.cache
-def load_nasa9(
-    species: tuple[str, ...], thermo_dir: str | Path
-) -> tuple[np.ndarray, np.ndarray]:
+def load_nasa9(species: tuple[str, ...], thermo_dir: str | Path) -> tuple[np.ndarray, np.ndarray]:
     """Load NASA-9 polynomial coefficients per species.
 
     Returns (coeffs[ni, 2, 10], present[ni]). Index 0 is low-T (T<1000 K),
@@ -50,11 +53,8 @@ def load_nasa9(
             continue
         flat = np.loadtxt(fp).flatten()
         if flat.size < 2 * _NASA9_NCOEF:
-            raise ValueError(
-                f"NASA-9 file {fp} has only {flat.size} entries; need at least "
-                f"{2 * _NASA9_NCOEF}"
-            )
+            raise ValueError(f"NASA-9 file {fp} has only {flat.size} entries; need at least {2 * _NASA9_NCOEF}")
         coeffs[j, 0] = flat[:_NASA9_NCOEF]
-        coeffs[j, 1] = flat[_NASA9_NCOEF:2 * _NASA9_NCOEF]
+        coeffs[j, 1] = flat[_NASA9_NCOEF : 2 * _NASA9_NCOEF]
         present[j] = True
     return coeffs, present

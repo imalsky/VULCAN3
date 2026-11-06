@@ -1,5 +1,4 @@
-"""Tests for the on-graph atmosphere pieces (`atm_setup.mu_dz_g_jax`,
-`atm_jax._mol_diff`).
+"""Tests for the on-graph atmosphere pieces (`atm_setup.mu_dz_g_jax`, `atm_jax._mol_diff`).
 
 Pins two things:
   1. The vm expression against the verbatim vm_branch port.
@@ -36,8 +35,10 @@ FD_RTOL = 1e-5  # forward-mode tangent vs a central difference
 
 
 def _rel(a, b):
-    """Max relative error, with an absolute floor tied to the field's own
-    magnitude so all-zero reference fields compare cleanly (0 vs 0)."""
+    """Max relative error, with an absolute floor tied to the field's own magnitude.
+
+    So all-zero reference fields compare cleanly (0 vs 0).
+    """
     a = np.asarray(a, dtype=np.float64)
     b = np.asarray(b, dtype=np.float64)
     if a.size == 0:
@@ -63,9 +64,7 @@ def _synthetic_mol_diff_setup():
     return species_list, ms_arr, nz, ni, Tco, n_0, g, Hp, dz, alpha
 
 
-def _reference_vm_branch_vm(
-    Tco, n_0, g, Hp, dz, ms, alpha, species_list, non_gas_sp, atm_base
-):
+def _reference_vm_branch_vm(Tco, n_0, g, Hp, dz, ms, alpha, species_list, non_gas_sp, atm_base):
     """Transparent NumPy port of the canonical vm_branch interface vm.
 
     Mirrors `op.update_mu_dz` from shami-EEG/VULCAN vm_branch VERBATIM,
@@ -102,44 +101,32 @@ def _reference_vm_branch_vm(
     species_Hi = ms[None, :] * g[:, None] / (Navo * kb * Tco[:, None])
     Hi_interf = 1.0 / (0.5 * (1.0 / species_Hi + 1.0 / np.roll(species_Hi, -1, axis=0)))
     Hi_interf = Hi_interf[:-1, :]
-    return -Dzz * (
-        Hi_interf
-        - 1.0 / Hpi[:, None]
-        + alpha[None, :] / Ti[:, None] * delta_Ti[:, None] / dzi[:, None]
-    )
+    return -Dzz * (Hi_interf - 1.0 / Hpi[:, None] + alpha[None, :] / Ti[:, None] * delta_Ti[:, None] / dzi[:, None])
 
 
 def test_compute_mol_diff_vm_matches_vm_branch_reference():
-    """compute_mol_diff's upwind vm equals the canonical vm_branch expression
-    (the production kernel's discretization is covered separately in
-    test_diffusion_production_kernel)."""
-    species_list, ms_arr, nz, ni, Tco, n_0, g, Hp, dz, alpha = (
-        _synthetic_mol_diff_setup()
-    )
+    """compute_mol_diff's upwind vm equals the canonical vm_branch expression.
+
+    (the production kernel's discretization is covered separately in test_diffusion_production_kernel).
+    """
+    species_list, ms_arr, nz, ni, Tco, n_0, g, Hp, dz, alpha = _synthetic_mol_diff_setup()
     cfg = types.SimpleNamespace(
         use_moldiff=True,
         atm_base="H2",
         non_gas_sp=["H2O_l_s"],
         use_vm_mol=True,
     )
-    out = atm_setup.compute_mol_diff(
-        cfg, Tco, n_0, g, Hp, dz, ms_arr, alpha, species_list
-    )
-    vm_ref = _reference_vm_branch_vm(
-        Tco, n_0, g, Hp, dz, ms_arr, alpha, species_list, ["H2O_l_s"], "H2"
-    )
+    out = atm_setup.compute_mol_diff(cfg, Tco, n_0, g, Hp, dz, ms_arr, alpha, species_list)
+    vm_ref = _reference_vm_branch_vm(Tco, n_0, g, Hp, dz, ms_arr, alpha, species_list, ["H2O_l_s"], "H2")
     assert out["vm"].shape == (nz - 1, ni), out["vm"].shape
     assert _rel(out["vm"], vm_ref) < RTOL
     assert np.any(np.asarray(vm_ref) != 0.0)  # the comparison is not vacuous
 
 
 def test_vm_branch_differentiates_wrt_Tco():
-    """Forward-mode tangent of the interface vm w.r.t. a Tco scale is finite and
-    matches a central difference."""
-    species_list, ms_arr, nz, ni, Tco, n_0, g, Hp, dz, alpha = (
-        _synthetic_mol_diff_setup()
-    )
-    nongas = np.array([s in ("H2O_l_s",) for s in species_list])
+    """Forward-mode tangent of the interface vm w.r.t. a Tco scale is finite and matches a central difference."""
+    species_list, ms_arr, nz, ni, Tco, n_0, g, Hp, dz, alpha = _synthetic_mol_diff_setup()
+    nongas = np.array([s == "H2O_l_s" for s in species_list])
     phys = PhysicalInputs(
         pco=jnp.ones(nz),
         Tco=jnp.asarray(Tco),
@@ -165,15 +152,14 @@ def test_vm_branch_differentiates_wrt_Tco():
     n0_j, g_j, Hp_j, dz_j = (jnp.asarray(a) for a in (n_0, g, Hp, dz))
 
     def vm_sum(scale):
-        _, _, vm = _mol_diff(
-            phys._replace(Tco=Tco_j * scale), spec, n0_j, g_j, Hp_j, dz_j
-        )
+        _, _, vm = _mol_diff(phys._replace(Tco=Tco_j * scale), spec, n0_j, g_j, Hp_j, dz_j)
         return jnp.sum(vm)
 
     _, tangent = jax.jvp(vm_sum, (jnp.float64(1.0),), (jnp.float64(1.0),))
     eps = 1e-6
     fd = (vm_sum(jnp.float64(1.0 + eps)) - vm_sum(jnp.float64(1.0 - eps))) / (2 * eps)
-    assert np.isfinite(float(tangent)) and float(tangent) != 0.0
+    assert np.isfinite(float(tangent))
+    assert float(tangent) != 0.0
     assert abs(float(tangent) - float(fd)) / (abs(float(fd)) + UNDERFLOW_DENOM) < FD_RTOL
 
 
@@ -181,26 +167,35 @@ def test_vm_branch_differentiates_wrt_Tco():
 
 
 def _column(hd189_state, gs_scale, T_scale):
-    """(M, dzi, Dzz) of the HD189 column through the live on-graph pieces, the
-    hydrostatic integrator and molecular diffusion, at scaled gs and Tco."""
+    """(M, dzi, Dzz) of the HD189 column through the live on-graph pieces.
+
+    The hydrostatic integrator and molecular diffusion, at scaled gs and Tco.
+    """
     from vulcan3.config import default_config
 
     atm = hd189_state.atm
-    phys, spec = make_physical_inputs(default_config(), hd189_state.var, atm,
-                                      list(_SPECIES))
+    phys, spec = make_physical_inputs(default_config(), hd189_state.var, atm, list(_SPECIES))
     Tco = phys.Tco * T_scale
     M = phys.pco / (kb * Tco)
     g, Hp, dz, _zco, _zmco, dzi, _Ti, _Hpi = mu_dz_g_jax(
-        int(atm.pref_indx), phys.gs * gs_scale, phys.Rp, Tco,
-        compute_mean_mass(phys.ymix, spec.ms), compute_pico(phys.pco), spec.nz)
+        int(atm.pref_indx),
+        phys.gs * gs_scale,
+        phys.Rp,
+        Tco,
+        compute_mean_mass(phys.ymix, spec.ms),
+        compute_pico(phys.pco),
+        spec.nz,
+    )
     Dzz, _, _ = _mol_diff(phys._replace(Tco=Tco), spec, M, g, Hp, dz)
     return M, dzi, Dzz
 
 
 @pytest.mark.parametrize("knob", ["gs", "Tco"])
 def test_column_jvp_matches_fd(hd189_state, knob):
-    """dzi responds to surface gravity; M, Dzz and dzi to temperature. The
-    forward-mode tangent of each unit scale matches a central difference."""
+    """Dzi responds to surface gravity.
+
+    M, Dzz and dzi to temperature. The forward-mode tangent of each unit scale matches a central difference.
+    """
 
     def loss(x):
         if knob == "gs":
@@ -210,14 +205,16 @@ def test_column_jvp_matches_fd(hd189_state, knob):
     _, tangent = jax.jvp(loss, (jnp.float64(1.0),), (jnp.float64(1.0),))
     eps = 1e-6
     fd = (loss(jnp.float64(1.0 + eps)) - loss(jnp.float64(1.0 - eps))) / (2 * eps)
-    assert np.isfinite(float(tangent)) and float(tangent) != 0.0
+    assert np.isfinite(float(tangent))
+    assert float(tangent) != 0.0
     assert abs(float(tangent) - float(fd)) / (abs(float(fd)) + UNDERFLOW_DENOM) < FD_RTOL
 
 
 def test_analytical_TP_front_end_differentiates():
-    """The Heng+14 T(P) front-end composes onto the Tco leaf: dTco/dT_irr is
-    finite. The pressure range stays narrow: `jax.scipy.special.expn`'s
-    forward mode is slow over many decades."""
+    """The Heng+14 T(P) front-end composes onto the Tco leaf: dTco/dT_irr is finite.
+
+    The pressure range stays narrow: `jax.scipy.special.expn`'s forward mode is slow over many decades.
+    """
     pco = jnp.asarray(np.logspace(5.0, 4.0, 8))  # narrow -> small expn argument
     base = jnp.asarray([500.0, 1200.0, 0.1, 0.02, 0.7, 0.7], dtype=jnp.float64)
 
@@ -225,7 +222,8 @@ def test_analytical_TP_front_end_differentiates():
         return jnp.sum(analytical_TP_H14(pco, base.at[1].set(T_irr), gs=2140.0, Pb=1e9))
 
     _, tangent = jax.jvp(tprofile, (jnp.float64(1200.0),), (jnp.float64(1.0),))
-    assert np.isfinite(float(tangent)) and float(tangent) != 0.0
+    assert np.isfinite(float(tangent))
+    assert float(tangent) != 0.0
 
 
 def test_kzz_profile_jax_differentiates():
@@ -250,5 +248,5 @@ def test_kzz_profile_jax_differentiates():
         )
 
     tangent = jax.jvp(total, (jnp.float64(1e6),), (jnp.float64(1.0),))[1]
-    assert np.isfinite(float(tangent)) and float(tangent) != 0.0
-
+    assert np.isfinite(float(tangent))
+    assert float(tangent) != 0.0

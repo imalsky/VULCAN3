@@ -29,6 +29,8 @@
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
 #error "block_thomas_cuda.cu needs sm_80 or newer (REDUX, cp.async); set NVCC_ARCH"
 #endif
+#include <cuda_runtime.h>
+
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -38,8 +40,6 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
-
-#include <cuda_runtime.h>
 
 #include "block_thomas_common.h"
 #include "xla/ffi/api/ffi.h"
@@ -52,7 +52,7 @@ using namespace vulcan_bt;
 
 constexpr int kWarpSize = 32;
 constexpr int kLaneMask = kWarpSize - 1;
-constexpr unsigned kFullMask = 0xffffffffu;  // every lane of a warp
+constexpr unsigned kFullMask = 0xffffffffu;                         // every lane of a warp
 constexpr int64_t kMaxGridX = std::numeric_limits<int32_t>::max();  // CUDA gridDim.x limit
 // Rows per lane the solve's substitution holds in registers: ni <= kMaxNb
 // kWarpSize = 96, the factor's kGjMaxNi. The solve kernel is compiled for
@@ -128,8 +128,7 @@ constexpr double kGjRcpQuotMin = 0x1p-960, kGjRcpQuotMax = 0x1p960;
 // is subnormal) the warp takes x_i = t_i / u_ii for every row, as the CPU
 // does; a zero pivot gives inf/nan.
 template <int NB>
-__device__ void bt_lu_solve_warp0(const double* lu, int ni, const double* tmp, double* x,
-                                  int lane) {
+__device__ void bt_lu_solve_warp0(const double* lu, int ni, const double* tmp, double* x, int lane) {
   double t[NB], rd[NB];
   bool fast = true;
 #pragma unroll
@@ -196,9 +195,7 @@ __device__ __forceinline__ BtGjSmem bt_gj_carve(double* base) {
   return m;
 }
 
-__device__ __forceinline__ void bt_prefetch_l2(const void* p) {
-  asm volatile("prefetch.global.L2 [%0];" ::"l"(p));
-}
+__device__ __forceinline__ void bt_prefetch_l2(const void* p) { asm volatile("prefetch.global.L2 [%0];" ::"l"(p)); }
 
 // v[i] for a run-time i, by selects, so v stays in registers.
 template <int N>
@@ -259,8 +256,8 @@ __device__ __forceinline__ double bt_div_by_rcp(double a, double b, double y, bo
 // divides instead. The L entries of
 // column kk and the U diagonal go to S in original-row order, the position
 // swap to sperm and spos.
-__device__ __forceinline__ void bt_gj_pivot(const double (&v)[kGjRowSlots], int kk, int nb,
-                                            int ni, int lane, const BtGjSmem& m) {
+__device__ __forceinline__ void bt_gj_pivot(const double (&v)[kGjRowSlots], int kk, int nb, int ni, int lane,
+                                            const BtGjSmem& m) {
   int pos[kGjRowSlots];
   double best_abs = -1.0, best_val = 0.0;
   int best_key = kGjNoKey;
@@ -330,9 +327,8 @@ __device__ __forceinline__ void bt_gj_pivot(const double (&v)[kGjRowSlots], int 
 // row is scaled by -1 / piv, and the owner of column `step` sets that column
 // to f, with 1 / piv in the pivot row. f is 0 in the pivot row, so the update
 // leaves it for the scale.
-__device__ __forceinline__ void bt_gj_update(double (&a)[kGjRowSlots][kGjColSlots], int step,
-                                             int nb, int ni, int lane, int warp,
-                                             const BtGjSmem& m) {
+__device__ __forceinline__ void bt_gj_update(double (&a)[kGjRowSlots][kGjColSlots], int step, int nb, int ni, int lane,
+                                             int warp, const BtGjSmem& m) {
   const int prow = m.prow[nb];
   const double rcp = m.pinfo[2 * nb + 1];
   const int pl = prow & kLaneMask, pr = prow / kWarpSize;
@@ -376,8 +372,7 @@ __device__ __forceinline__ void bt_gj_update(double (&a)[kGjRowSlots][kGjColSlot
     for (int c = 0; c < kGjColSlots; ++c)
       if (c == ck)
 #pragma unroll
-        for (int r = 0; r < kGjRowSlots; ++r)
-          a[r][c] = (lane + kWarpSize * r == prow) ? rcp : f[r];
+        for (int r = 0; r < kGjRowSlots; ++r) a[r][c] = (lane + kWarpSize * r == prow) ? rcp : f[r];
   }
   __syncwarp();  // rowbuf is reused by the next update of this phase
 }
@@ -398,9 +393,8 @@ __device__ __forceinline__ void bt_gj_update(double (&a)[kGjRowSlots][kGjColSlot
 // Schur update A'_{j+1} = D_{j+1} - (c b^T) .* inv(A'_j) into the registers,
 // barriers between them; D_{j+1} is prefetched to L2 while the layer is swept.
 __global__ void __launch_bounds__(kGjThreads, kGjMinBlocks)
-bt_gj_factor_kernel(const double* __restrict__ diag, const double* __restrict__ sup,
-                    const double* __restrict__ sub, double* __restrict__ lu,
-                    int32_t* __restrict__ perm, int nz, int ni) {
+    bt_gj_factor_kernel(const double* __restrict__ diag, const double* __restrict__ sup, const double* __restrict__ sub,
+                        double* __restrict__ lu, int32_t* __restrict__ perm, int nz, int ni) {
   extern __shared__ double bt_smem[];
   const BtGjSmem m = bt_gj_carve(bt_smem);
   const int blk = ni * ni;
@@ -516,9 +510,7 @@ bt_gj_factor_kernel(const double* __restrict__ diag, const double* __restrict__ 
 #pragma unroll
         for (int r = 0; r < kGjRowSlots; ++r) {
           const int row = lane + kWarpSize * r;
-          a[r][c] = (row < ni && col < ni)
-                        ? Dn[row * ni + col] - (cr[r] * bs) * m.S[row * ni + col]
-                        : 0.0;
+          a[r][c] = (row < ni && col < ni) ? Dn[row * ni + col] - (cr[r] * bs) * m.S[row * ni + col] : 0.0;
         }
       }
     }
@@ -536,8 +528,7 @@ bt_gj_factor_kernel(const double* __restrict__ diag, const double* __restrict__ 
 __device__ inline void bt_load_block(double* A, const double* L, int blk, int t0, int n0) {
   for (int i = t0; i < blk; i += n0) {
     const unsigned dst = static_cast<unsigned>(__cvta_generic_to_shared(A + i));
-    asm volatile("cp.async.ca.shared.global [%0], [%1], 8;" ::"r"(dst),
-                 "l"(__cvta_generic_to_global(L + i))
+    asm volatile("cp.async.ca.shared.global [%0], [%1], 8;" ::"r"(dst), "l"(__cvta_generic_to_global(L + i))
                  : "memory");
   }
   asm volatile("cp.async.commit_group;\n\tcp.async.wait_group 0;" ::: "memory");
@@ -562,18 +553,15 @@ __device__ inline void bt_swap(double*& a, double*& b) {
 // the next layer loaded) before its permuted read.
 template <bool kOneBuf, int NB>
 __global__ void __launch_bounds__(2 * kWarpSize * NB, kSolveMinBlocks[NB])
-bt_solve_kernel(const double* __restrict__ lu,
-                                const int32_t* __restrict__ perm,
-                                const double* __restrict__ sup,
-                                const double* __restrict__ sub,
-                                const double* __restrict__ rhs, double* __restrict__ x,
-                                int nz, int ni, BtBcast s) {
+    bt_solve_kernel(const double* __restrict__ lu, const int32_t* __restrict__ perm, const double* __restrict__ sup,
+                    const double* __restrict__ sub, const double* __restrict__ rhs, double* __restrict__ x, int nz,
+                    int ni, BtBcast s) {
   extern __shared__ double bt_smem[];
-  const int blk = ni * ni;  // fits an int: the block lives in shared memory
-  double* Ac = bt_smem;     // the layer being solved
+  const int blk = ni * ni;               // fits an int: the block lives in shared memory
+  double* Ac = bt_smem;                  // the layer being solved
   double* An = kOneBuf ? Ac : Ac + blk;  // the layer being prefetched (two buffers)
-  double* t = An + blk;     // one layer's solution, and
-  double* u = t + ni;       // the permuted rhs the substitution consumes
+  double* t = An + blk;                  // one layer's solution, and
+  double* u = t + ni;                    // the permuted rhs the substitution consumes
 
   const int tid = threadIdx.x, nt = blockDim.x;
   const int warp = tid / kWarpSize, lane = tid & kLaneMask;
@@ -595,8 +583,7 @@ bt_solve_kernel(const double* __restrict__ lu,
   for (int i = tid; i < ni; i += nt) u[i] = X[P[i]];  // r'_0, permuted
   for (int j = 1; j < nz; ++j) {
     __syncthreads();  // u filled, An free
-    if (!kOneBuf && prefetches)
-      bt_load_block(An, L + static_cast<int64_t>(j) * blk, blk, prefetch_tid, prefetch_nt);
+    if (!kOneBuf && prefetches) bt_load_block(An, L + static_cast<int64_t>(j) * blk, blk, prefetch_tid, prefetch_nt);
     if (warp == 0) bt_lu_solve_warp0<NB>(Ac, ni, u, t, lane);
     __syncthreads();  // t = A'_{j-1}^{-1} r'_{j-1}, An staged
     if (kOneBuf) bt_load_block(Ac, L + static_cast<int64_t>(j) * blk, blk, tid, nt);
@@ -638,17 +625,14 @@ bt_solve_kernel(const double* __restrict__ lu,
 int bt_threads(int ni) { return (2 * ni + kWarpSize - 1) / kWarpSize * kWarpSize; }
 
 // Dynamic shared memory of each kernel; the layouts are in the kernels.
-size_t bt_gj_factor_shmem(int ni) {
-  return (kGjOffS + static_cast<size_t>(ni) * ni) * sizeof(double);
-}
+size_t bt_gj_factor_shmem(int ni) { return (kGjOffS + static_cast<size_t>(ni) * ni) * sizeof(double); }
 
 size_t bt_solve_shmem(int ni, bool one_buf) {
-  return ((one_buf ? 1 : 2) * static_cast<size_t>(ni) * ni + 2 * static_cast<size_t>(ni)) *
-         sizeof(double);
+  return ((one_buf ? 1 : 2) * static_cast<size_t>(ni) * ni + 2 * static_cast<size_t>(ni)) * sizeof(double);
 }
 
-using BtSolveKernel = void (*)(const double*, const int32_t*, const double*, const double*,
-                               const double*, double*, int, int, BtBcast);
+using BtSolveKernel = void (*)(const double*, const int32_t*, const double*, const double*, const double*, double*, int,
+                               int, BtBcast);
 
 // The solve kernel with one or two buffers and NB register rows per lane.
 BtSolveKernel bt_solve_kernel_for(bool one_buf, int nb) {
@@ -735,8 +719,8 @@ const char* bt_forced_buffers() {
 // calculator, so the device's shared memory per SM, registers and block limit
 // all count): at equal waves the two-buffer kernel is as fast or faster (it
 // prefetches). Returns the error that forbids the launch, if any.
-ffi::Error bt_choose(int device, int64_t batch, const void* two, size_t shmem2, const void* one,
-                     size_t shmem1, int threads, bool* one_buf) {
+ffi::Error bt_choose(int device, int64_t batch, const void* two, size_t shmem2, const void* one, size_t shmem1,
+                     int threads, bool* one_buf) {
   BtOptIn opt;
   ffi::Error err = bt_opt_in_checked(device, &opt);
   if (err.failure()) return err;
@@ -744,15 +728,13 @@ ffi::Error bt_choose(int device, int64_t batch, const void* two, size_t shmem2, 
   if (std::strcmp(forced, "1") == 0 || std::strcmp(forced, "2") == 0) {
     *one_buf = forced[0] == '1';
   } else if (forced[0] != '\0') {
-    return ffi::Error::InvalidArgument(std::string("VULCAN3_BT_BUFFERS=") + forced +
-                                       ": expected 1, 2 or unset");
+    return ffi::Error::InvalidArgument(std::string("VULCAN3_BT_BUFFERS=") + forced + ": expected 1, 2 or unset");
   } else if (shmem2 > static_cast<size_t>(opt.limit)) {
     *one_buf = true;
   } else {
     int per_sm2 = 0, per_sm1 = 0;
     cudaError_t r = cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm2, two, threads, shmem2);
-    if (r == cudaSuccess)
-      r = cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm1, one, threads, shmem1);
+    if (r == cudaSuccess) r = cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm1, one, threads, shmem1);
     if (r != cudaSuccess) return ffi::Error::Internal(cudaGetErrorString(r));
     const auto waves = [&](int per_sm) {  // no resident block: never chosen
       const int64_t w = static_cast<int64_t>(per_sm) * opt.sms;
@@ -770,9 +752,8 @@ ffi::Error bt_launch_status() {
   return ffi::Error::Success();
 }
 
-ffi::Error FactorImplCuda(cudaStream_t stream, int32_t device, ffi::Buffer<ffi::F64> diag,
-                          ffi::Buffer<ffi::F64> sup, ffi::Buffer<ffi::F64> sub,
-                          ffi::ResultBuffer<ffi::F64> lu, ffi::ResultBuffer<ffi::S32> perm) {
+ffi::Error FactorImplCuda(cudaStream_t stream, int32_t device, ffi::Buffer<ffi::F64> diag, ffi::Buffer<ffi::F64> sup,
+                          ffi::Buffer<ffi::F64> sub, ffi::ResultBuffer<ffi::F64> lu, ffi::ResultBuffer<ffi::S32> perm) {
   BtShape shape;
   ffi::Error err = bt_check_factor(diag, sup, sub, *lu, *perm, &shape);
   if (err.failure()) return err;
@@ -786,14 +767,12 @@ ffi::Error FactorImplCuda(cudaStream_t stream, int32_t device, ffi::Buffer<ffi::
   err = bt_shared_fits(shmem, opt);
   if (err.failure()) return err;
   bt_gj_factor_kernel<<<static_cast<unsigned int>(shape.batch), kGjThreads, shmem, stream>>>(
-      diag.typed_data(), sup.typed_data(), sub.typed_data(), lu->typed_data(), perm->typed_data(),
-      shape.nz, shape.ni);
+      diag.typed_data(), sup.typed_data(), sub.typed_data(), lu->typed_data(), perm->typed_data(), shape.nz, shape.ni);
   return bt_launch_status();
 }
 
-ffi::Error SolveImplCuda(cudaStream_t stream, int32_t device, ffi::Buffer<ffi::F64> lu,
-                         ffi::Buffer<ffi::S32> perm, ffi::Buffer<ffi::F64> sup,
-                         ffi::Buffer<ffi::F64> sub, ffi::Buffer<ffi::F64> rhs,
+ffi::Error SolveImplCuda(cudaStream_t stream, int32_t device, ffi::Buffer<ffi::F64> lu, ffi::Buffer<ffi::S32> perm,
+                         ffi::Buffer<ffi::F64> sup, ffi::Buffer<ffi::F64> sub, ffi::Buffer<ffi::F64> rhs,
                          ffi::ResultBuffer<ffi::F64> x) {
   BtShape shape;
   BtBcast s;
@@ -803,48 +782,43 @@ ffi::Error SolveImplCuda(cudaStream_t stream, int32_t device, ffi::Buffer<ffi::F
   if (shape.batch > kMaxGridX) return ffi::Error::InvalidArgument("batch exceeds the CUDA grid limit");
   const int nb = (shape.ni + kWarpSize - 1) / kWarpSize;
   if (nb > kMaxNb) {
-    return ffi::Error::InvalidArgument("block-Thomas solve holds at most " +
-                                       std::to_string(kMaxNb * kWarpSize) +
-                                       " rows per block in registers; ni = " +
-                                       std::to_string(shape.ni));
+    return ffi::Error::InvalidArgument("block-Thomas solve holds at most " + std::to_string(kMaxNb * kWarpSize) +
+                                       " rows per block in registers; ni = " + std::to_string(shape.ni));
   }
   const int threads = bt_threads(shape.ni);
   bool one_buf = false;
   err = bt_choose(device, shape.batch, reinterpret_cast<const void*>(bt_solve_kernel_for(false, nb)),
-                  bt_solve_shmem(shape.ni, false),
-                  reinterpret_cast<const void*>(bt_solve_kernel_for(true, nb)),
+                  bt_solve_shmem(shape.ni, false), reinterpret_cast<const void*>(bt_solve_kernel_for(true, nb)),
                   bt_solve_shmem(shape.ni, true), threads, &one_buf);
   if (err.failure()) return err;
-  bt_solve_kernel_for(one_buf, nb)<<<static_cast<unsigned int>(shape.batch), threads,
-                                     bt_solve_shmem(shape.ni, one_buf), stream>>>(
-      lu.typed_data(), perm.typed_data(), sup.typed_data(), sub.typed_data(), rhs.typed_data(),
-      x->typed_data(), shape.nz, shape.ni, s);
+  bt_solve_kernel_for(
+      one_buf, nb)<<<static_cast<unsigned int>(shape.batch), threads, bt_solve_shmem(shape.ni, one_buf), stream>>>(
+      lu.typed_data(), perm.typed_data(), sup.typed_data(), sub.typed_data(), rhs.typed_data(), x->typed_data(),
+      shape.nz, shape.ni, s);
   return bt_launch_status();
 }
 
 }  // namespace
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    VulcanBtFactorCuda, FactorImplCuda,
-    ffi::Ffi::Bind()
-        .Ctx<ffi::PlatformStream<cudaStream_t>>()
-        .Ctx<ffi::DeviceOrdinal>()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Ret<ffi::Buffer<ffi::F64>>()
-        .Ret<ffi::Buffer<ffi::S32>>(),
-    {ffi::Traits::kCmdBufferCompatible});
+XLA_FFI_DEFINE_HANDLER_SYMBOL(VulcanBtFactorCuda, FactorImplCuda,
+                              ffi::Ffi::Bind()
+                                  .Ctx<ffi::PlatformStream<cudaStream_t>>()
+                                  .Ctx<ffi::DeviceOrdinal>()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Ret<ffi::Buffer<ffi::F64>>()
+                                  .Ret<ffi::Buffer<ffi::S32>>(),
+                              {ffi::Traits::kCmdBufferCompatible});
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    VulcanBtSolveCuda, SolveImplCuda,
-    ffi::Ffi::Bind()
-        .Ctx<ffi::PlatformStream<cudaStream_t>>()
-        .Ctx<ffi::DeviceOrdinal>()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Arg<ffi::Buffer<ffi::S32>>()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Arg<ffi::Buffer<ffi::F64>>()
-        .Ret<ffi::Buffer<ffi::F64>>(),
-    {ffi::Traits::kCmdBufferCompatible});
+XLA_FFI_DEFINE_HANDLER_SYMBOL(VulcanBtSolveCuda, SolveImplCuda,
+                              ffi::Ffi::Bind()
+                                  .Ctx<ffi::PlatformStream<cudaStream_t>>()
+                                  .Ctx<ffi::DeviceOrdinal>()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Arg<ffi::Buffer<ffi::S32>>()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Arg<ffi::Buffer<ffi::F64>>()
+                                  .Ret<ffi::Buffer<ffi::F64>>(),
+                              {ffi::Traits::kCmdBufferCompatible});

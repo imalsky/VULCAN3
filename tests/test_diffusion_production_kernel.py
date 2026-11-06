@@ -1,6 +1,6 @@
-"""Validate the PRODUCTION JAX diffusion kernel against the NumPy reference
-(`diffusion_numpy_ref`), which is itself master-validated elsewhere. JAX-only;
-no VULCAN-master oracle required.
+"""Validate the PRODUCTION JAX diffusion kernel against the NumPy reference (`diffusion_numpy_ref`).
+
+Which is itself master-validated elsewhere. JAX-only; no VULCAN-master oracle required.
 
 Pins, for the default 'gravity' mode and the upwind 'vm' mode:
   1. coefficient arrays (A/B/C eddy + mol) at ~machine precision,
@@ -13,7 +13,6 @@ import numpy as np
 import pytest
 from _helpers import relerr
 
-
 COEF_RTOL = 1e-11  # C_mol FP-ordering noise reaches ~2e-12; eddy terms ~5e-16
 OP_RTOL = 1e-4  # the operator is a small residue of large cancellations (floor ~1e-5)
 OP_FLOOR = 1e-12  # absolute and peak-relative floor for significant operator cells
@@ -21,12 +20,14 @@ OP_FLOOR = 1e-12  # absolute and peak-relative floor for significant operator ce
 
 @pytest.mark.parametrize("mode", ["gravity", "vm"])
 def test_production_kernel_matches_reference(mode):
-    """The 'vm' case pins the hot-path upwind (`use_vm_mol`) discretization
-    with a nonzero mixed-sign interface drift vm (shape (nz-1, ni))."""
+    """The 'vm' case pins the hot-path upwind.
+
+    (`use_vm_mol`) discretization with a nonzero mixed-sign interface drift vm (shape (nz-1, ni)).
+    """
+    import diffusion_numpy_ref as diff_ref
     import jax.numpy as jnp
 
-    import diffusion_numpy_ref as diff_ref
-    import vulcan3.jax_step as jax_step
+    from vulcan3 import jax_step
     from vulcan3.config import default_config
     from vulcan3.state import RunState, legacy_view
 
@@ -50,13 +51,9 @@ def test_production_kernel_matches_reference(mode):
     # --- Production kernel ---
     atm_static = jax_step.make_atm_static(data_atm, ni, nz, cfg=vulcan_cfg)
     grav = jax_step.compute_diff_grav(atm_static)
-    A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, _ = jax_step._build_diff_coeffs_jax(
-        jnp.asarray(y), atm_static, grav
-    )
+    A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, _ = jax_step._build_diff_coeffs_jax(jnp.asarray(y), atm_static, grav)
     diff_prod = np.asarray(
-        jax_step._apply_diffusion_jax(
-            jnp.asarray(y), A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, atm_static
-        )
+        jax_step._apply_diffusion_jax(jnp.asarray(y), A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, atm_static)
     )
 
     # --- NumPy reference ---

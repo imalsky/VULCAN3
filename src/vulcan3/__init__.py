@@ -8,26 +8,26 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._version import __version__
-
 # Unguarded: a jax that cannot enable x64 must
 # fail the import, not run float32 chemistry (rate constants span ~50 dex).
 from jax import config as _config
 
+from ._version import __version__
+
 _config.update("jax_enable_x64", True)
 
-from .config import Config, default_config, load_config, validate_overrides
-from .state import RunState
+from .config import Config, default_config, load_config, validate_overrides  # noqa: E402 (x64 is set first)
+from .state import RunState  # noqa: E402 (x64 is set first)
 
 __all__ = [
-    "__version__",
-    "RunState",
     "Config",
-    "load_config",
+    "RunState",
+    "__version__",
+    "conv_normal",
     "default_config",
+    "load_config",
     "make_config",
     "validate_overrides",
-    "conv_normal",
 ]
 
 

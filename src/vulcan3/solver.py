@@ -1,21 +1,7 @@
-"""Block-tridiagonal Thomas solver.
+"""Block-tridiagonal Thomas solver, the plain reference pair.
 
-Solves `[A_j; B_{j-1}, C_j] @ k = rhs` for nz layers of size ni each. The
-forward elimination computes `A'_j = A_j - C_j @ inv(A'_{j-1}) @ B_{j-1}`
-via an LU factorization and solve per block. Cost is O(nz * ni^3);
-differentiable, JIT-friendly, GPU-ready.
-
-The factorization materializes `inv(A'_{j-1})` explicitly by solving against
-`eye_ni`: with diagonal off-blocks the update becomes the elementwise product
-`A_j - (c[:, None] * b[None, :]) * inv(A'_{j-1})`, which reads every one of
-the ni^2 entries. The diagonal structure replaces an O(ni^3) matmul with an
-O(ni^2) elementwise scaling; it does not avoid the inversion, so the sweep
-stays O(nz * ni^3).
-
-It factors with `lax.linalg.lu` and keeps the row permutation in the factors,
-so the two Ros2 stages share one factorization (`factor_...` once, `solve_...`
-per stage). The dense-off-block oracle `block_thomas`, on
-`jax.scipy.linalg.lu_factor`/`lu_solve`, lives in `tests/_oracles.py`.
+`factor_block_thomas_diag_offdiag` once, then `solve_block_thomas_diag_offdiag` per Ros2 stage. Cost is O(nz * ni^3);
+differentiable and JIT-friendly. The elimination is in docs/method.md.
 """
 
 from __future__ import annotations
@@ -24,6 +10,8 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
+
+__all__ = ["BlockThomasDiagFactors", "factor_block_thomas_diag_offdiag", "solve_block_thomas_diag_offdiag"]
 
 
 def _lu_solve_perm(lu, perm, b):
@@ -35,16 +23,15 @@ def _lu_solve_perm(lu, perm, b):
     (trans=0). `b` may be (ni,) or (ni, n).
     """
     x = b[perm]
-    x = jax.lax.linalg.triangular_solve(
-        lu, x, left_side=True, lower=True, unit_diagonal=True
-    )
+    x = jax.lax.linalg.triangular_solve(lu, x, left_side=True, lower=True, unit_diagonal=True)
     return jax.lax.linalg.triangular_solve(lu, x, left_side=True, lower=False)
 
 
 class BlockThomasDiagFactors(NamedTuple):
-    """LU factors of the forward-eliminated diagonal blocks, their row
-    permutations, and the diagonal off-diagonal vectors, so a new RHS can be
-    solved without refactorising."""
+    """LU factors of the forward-eliminated diagonal blocks and their row permutations.
+
+    Also the diagonal off-diagonal vectors, so a new RHS can be solved without refactorising.
+    """
 
     diag_lu: jnp.ndarray
     diag_perm: jnp.ndarray

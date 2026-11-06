@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+__all__ = ["PACKAGE_ROOT", "resolve_data_path"]
+
 PACKAGE_ROOT = Path(__file__).resolve().parent
 
 

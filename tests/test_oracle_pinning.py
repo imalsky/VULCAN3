@@ -14,26 +14,28 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import oracle as orc
 import pytest
 import yaml
-
-import oracle as orc
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "tests" / "science_sources.yaml"
 
 
 def _git(repo: Path, *args: str) -> str:
-    r = subprocess.run(["git", "-C", str(repo), *args],
-                       capture_output=True, text=True, check=True,
-                       env={"HOME": str(repo), "GIT_CONFIG_GLOBAL": "/dev/null",
-                            "GIT_CONFIG_NOSYSTEM": "1", "PATH": "/usr/bin:/bin"})
+    r = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(repo), "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "PATH": "/usr/bin:/bin"},
+    )
     return r.stdout.strip()
 
 
 @pytest.fixture
 def fake_oracle(tmp_path):
-    """A tiny git repo standing in for an upstream checkout."""
+    """Return a tiny git repo standing in for an upstream checkout."""
     repo = tmp_path / "VULCAN-oracle"
     (repo / "thermo").mkdir(parents=True)
     (repo / "thermo" / "NCHO_photo_network.txt").write_text("# network v1\n")
@@ -43,10 +45,8 @@ def fake_oracle(tmp_path):
         if not (repo / rel).exists():
             (repo / rel).write_text("upstream\n")
     # the declared code delta must find its OLD block exactly once
-    (repo / "op.py").write_text("def read_rate():\n"
-                                + orc.ORACLE_CODE_DELTAS["op.py"][0][0])
-    _git_init = subprocess.run(
-        ["git", "init", "-q", str(repo)], capture_output=True, text=True)
+    (repo / "op.py").write_text("def read_rate():\n" + orc.ORACLE_CODE_DELTAS["op.py"][0][0])
+    _git_init = subprocess.run(["git", "init", "-q", str(repo)], capture_output=True, text=True)
     assert _git_init.returncode == 0, _git_init.stderr
     _git(repo, "config", "user.email", "t@example.invalid")
     _git(repo, "config", "user.name", "t")
@@ -57,23 +57,26 @@ def fake_oracle(tmp_path):
 
 # --- manifest shape ---------------------------------------------------------
 
+
 def test_manifest_is_well_formed():
-    """Commits are full pinned shas with reasons; newer-than-pin networks are
-    declared excluded and none was copied in; every divergence tag resolves
-    to a defined, recorded divergence."""
+    """Commits are full pinned shas with reasons.
+
+    Newer-than-pin networks are declared excluded and none was copied in; every divergence tag resolves to a
+    defined, recorded divergence.
+    """
     m = yaml.safe_load(MANIFEST.read_text())
     assert m["schema_version"] == 1
     for family, spec in m["oracles"].items():
         assert "repo" in spec, family
         commit = spec.get("commit", "")
         assert len(commit) == 40 and all(c in "0123456789abcdef" for c in commit), (
-            f"{family}: commit must be a full 40-hex sha, got {commit!r}")
+            f"{family}: commit must be a full 40-hex sha, got {commit!r}"
+        )
         assert spec.get("why", "").strip(), f"{family}: needs a reason"
     excluded = {n.upper() for n in m["not_in_this_release"]["networks"]}
     assert any("CRAHCNO" in n for n in excluded)
     thermo = ROOT / "src" / "vulcan3" / "thermo"
-    bad = [q.name for q in thermo.glob("*")
-           if "CRAHCNO" in q.name.upper() or "NCCN" in q.name.upper()]
+    bad = [q.name for q in thermo.glob("*") if "CRAHCNO" in q.name.upper() or "NCCN" in q.name.upper()]
     assert not bad, f"newer upstream network(s) present: {bad}"
     known = set(m["intentional_divergences"])
     for key, spec in m["intentional_divergences"].items():
@@ -95,29 +98,48 @@ def test_every_supported_input_exists_with_its_recorded_hash():
         assert p.is_file(), f"supported input missing: {rel}"
         got = hashlib.sha256(p.read_bytes()).hexdigest()
         assert got == spec["sha256"], (
-            f"{rel}: vendored input changed (sha256 {got[:16]}... != recorded "
-            f"{spec['sha256'][:16]}...)")
+            f"{rel}: vendored input changed (sha256 {got[:16]}... != recorded {spec['sha256'][:16]}...)"
+        )
 
 
 # FastChem's element slots, hard-coded in mass_action_constant.cpp:380-400
 # (exoclime@80f75b9) and filled in file row order (init_read_files.cpp:204).
-FASTCHEM_SLOT_ORDER = ["C", "H", "He", "N", "O", "P", "S", "Si", "Ti", "V",
-                       "Cl", "K", "Na", "Mg", "F", "Ca", "Fe", "e-"]
+FASTCHEM_SLOT_ORDER = [
+    "C",
+    "H",
+    "He",
+    "N",
+    "O",
+    "P",
+    "S",
+    "Si",
+    "Ti",
+    "V",
+    "Cl",
+    "K",
+    "Na",
+    "Mg",
+    "F",
+    "Ca",
+    "Fe",
+    "e-",
+]
 
 
-@pytest.mark.parametrize("preset", sorted(
-    (ROOT / "src" / "vulcan3" / "thermo").glob("solar_element_abundances*.dat")),
-    ids=lambda p: p.name)
+@pytest.mark.parametrize(
+    "preset", sorted((ROOT / "src" / "vulcan3" / "thermo").glob("solar_element_abundances*.dat")), ids=lambda p: p.name
+)
 def test_abundance_presets_keep_fastchem_slot_order(preset):
-    """tests/oracle.py stages these presets into upstream FastChem, which reads
-    elements by row position: a reordered row gives an element another's
-    reference polynomial."""
-    rows = [line.split()[0] for line in preset.read_text().splitlines()
-            if line.strip() and not line.startswith("#")]
+    """tests/oracle.py stages these presets into upstream FastChem, which reads elements by row position.
+
+    A reordered row gives an element another's reference polynomial.
+    """
+    rows = [line.split()[0] for line in preset.read_text().splitlines() if line.strip() and not line.startswith("#")]
     assert rows == FASTCHEM_SLOT_ORDER, preset.name
 
 
 # --- revision + cleanliness enforcement -------------------------------------
+
 
 def test_missing_oracle_dir_skips_locally_but_fails_in_release_ci(monkeypatch):
     monkeypatch.delenv(orc.ENV_DIR, raising=False)
@@ -143,23 +165,22 @@ def test_wrong_revision_fails_with_expected_and_actual(fake_oracle, monkeypatch)
         orc.require_oracle("vulcan2_ncho")
     msg = str(exc.value)
     assert "UNSUPPORTED ORACLE REVISION" in msg
-    assert orc.oracle_spec("vulcan2_ncho")["commit"] in msg   # expected
-    assert head in msg                                        # actual
-    assert "POSITIONAL" in msg          # says WHY, not just that it differs
+    assert orc.oracle_spec("vulcan2_ncho")["commit"] in msg  # expected
+    assert head in msg  # actual
+    assert "POSITIONAL" in msg  # says WHY, not just that it differs
 
 
 def test_dirty_checkout_fails_and_says_why(fake_oracle, monkeypatch):
     """A dirty tree is often the residue of a test that mutated the oracle."""
     monkeypatch.setenv(orc.ENV_DIR, str(fake_oracle))
     monkeypatch.setenv(orc.ENV_REQUIRE, "1")
-    monkeypatch.setitem(orc.manifest()["oracles"]["vulcan2_ncho"], "commit",
-                        _git(fake_oracle, "rev-parse", "HEAD"))
+    monkeypatch.setitem(orc.manifest()["oracles"]["vulcan2_ncho"], "commit", _git(fake_oracle, "rev-parse", "HEAD"))
     (fake_oracle / "thermo" / "NCHO_photo_network.txt").write_text("edited\n")
     with pytest.raises(pytest.fail.Exception) as exc:
         orc.require_oracle("vulcan2_ncho")
     msg = str(exc.value)
     assert "DIRTY" in msg
-    assert "make_chem_funs" in msg      # names the real mutation source
+    assert "make_chem_funs" in msg  # names the real mutation source
     # ... and a plain directory (no .git) is refused too
     plain = fake_oracle.parent / "plain-copy"
     plain.mkdir()
@@ -171,28 +192,27 @@ def test_dirty_checkout_fails_and_says_why(fake_oracle, monkeypatch):
 
 # --- non-mutation ------------------------------------------------------------
 
-def test_worktree_gives_a_copy_and_proves_the_original_is_untouched(
-        fake_oracle, monkeypatch):
+
+def test_worktree_gives_a_copy_and_proves_the_original_is_untouched(fake_oracle, monkeypatch):
     """Upstream setup code rewrites files in place; it must only see the copy."""
     monkeypatch.setenv(orc.ENV_DIR, str(fake_oracle))
     monkeypatch.setenv(orc.ENV_REQUIRE, "1")
-    monkeypatch.setitem(orc.manifest()["oracles"]["vulcan2_ncho"], "commit",
-                        _git(fake_oracle, "rev-parse", "HEAD"))
+    monkeypatch.setitem(orc.manifest()["oracles"]["vulcan2_ncho"], "commit", _git(fake_oracle, "rev-parse", "HEAD"))
     original = (fake_oracle / "thermo" / "NCHO_photo_network.txt").read_bytes()
     old, new, _tag = orc.ORACLE_CODE_DELTAS["op.py"][0]
     with orc.oracle_worktree("vulcan2_ncho") as work:
         assert work != fake_oracle
         # the declared delta landed on the copy ...
         copy_op = (work / "op.py").read_text()
-        assert old not in copy_op and new in copy_op
+        assert old not in copy_op
+        assert new in copy_op
         # ... and so did every declared data delta
         pkg = ROOT / "src" / "vulcan3"
         for rel in orc.ORACLE_DATA_DELTAS:
             assert (work / rel).read_bytes() == (pkg / rel).read_bytes(), rel
         # simulate make_chem_funs renumbering the network IN PLACE
         (work / "thermo" / "NCHO_photo_network.txt").write_text("renumbered\n")
-    assert (fake_oracle / "thermo"
-            / "NCHO_photo_network.txt").read_bytes() == original
+    assert (fake_oracle / "thermo" / "NCHO_photo_network.txt").read_bytes() == original
     # ... and never on the original
     assert old in (fake_oracle / "op.py").read_text()
     # a re-pinned upstream whose block no longer matches fails loudly
@@ -202,15 +222,16 @@ def test_worktree_gives_a_copy_and_proves_the_original_is_untouched(
     with pytest.raises(RuntimeError, match="ORACLE_CODE_DELTAS"):
         orc.apply_code_deltas(repinned)
     # ... and the before/after fingerprint actually catches a mutation
-    with pytest.raises(AssertionError, match="CHANGED during the test"):
-        with orc.oracle_worktree("vulcan2_ncho"):
-            (fake_oracle / "thermo" / "leak.txt").write_text("oops\n")
+    with pytest.raises(AssertionError, match="CHANGED during the test"), orc.oracle_worktree("vulcan2_ncho"):
+        (fake_oracle / "thermo" / "leak.txt").write_text("oops\n")
 
 
 def test_the_oracle_workflow_matches_the_manifest():
-    """oracle.yml pins the manifest's commits and selects only existing test
-    files. It clones upstream itself, so drifted SHAs would compare against the
-    wrong revision (reaction indices are positional)."""
+    """oracle.yml pins the manifest's commits and selects only existing test files.
+
+    It clones upstream itself, so drifted SHAs would compare against the wrong revision (reaction indices are
+    positional).
+    """
     wf_path = ROOT / ".github" / "workflows" / "oracle.yml"
     assert wf_path.is_file(), f"missing {wf_path}"
     wf = yaml.safe_load(wf_path.read_text())
@@ -220,16 +241,14 @@ def test_the_oracle_workflow_matches_the_manifest():
     covered = set()
     for entry in include:
         family = entry["family"]
-        assert family in manifest, (
-            f"oracle.yml runs family {family!r}, absent from "
-            f"science_sources.yaml")
+        assert family in manifest, f"oracle.yml runs family {family!r}, absent from science_sources.yaml"
         assert entry["commit"] == manifest[family]["commit"], (
             f"oracle.yml pins {family} at {entry['commit']} but the manifest "
-            f"says {manifest[family]['commit']}; update both together")
+            f"says {manifest[family]['commit']}; update both together"
+        )
         covered.add(family)
         for rel in entry["select"].split():
-            assert (ROOT / rel).is_file(), (
-                f"oracle.yml selects {rel}, which does not exist")
+            assert (ROOT / rel).is_file(), f"oracle.yml selects {rel}, which does not exist"
 
     # Every family a test names must have an oracle.yml job.
     used_in_tests = set()
@@ -240,4 +259,5 @@ def test_the_oracle_workflow_matches_the_manifest():
     missing = sorted(used_in_tests - covered)
     assert not missing, (
         f"oracle families {missing} are used by tests but no oracle.yml job "
-        f"runs them, so the release gate would never exercise them")
+        f"runs them, so the release gate would never exercise them"
+    )

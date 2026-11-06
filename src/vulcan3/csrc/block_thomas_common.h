@@ -26,8 +26,7 @@
 #endif
 #define BT_STRINGIFY_(x) #x
 #define BT_STRINGIFY(x) BT_STRINGIFY_(x)
-extern "C" const char VulcanBtSourceHash[] =
-    "vulcan-bt-source-sha256:" BT_STRINGIFY(VULCAN_BT_SOURCE_HASH);
+extern "C" const char VulcanBtSourceHash[] = "vulcan-bt-source-sha256:" BT_STRINGIFY(VULCAN_BT_SOURCE_HASH);
 
 namespace vulcan_bt {
 
@@ -82,18 +81,15 @@ inline ffi::Error bt_blocks(Dims dims, const char* name, BtShape* shape) {
 // Checks every factor operand: diag and lu [..., nz, ni, ni], sup and sub
 // [..., nz-1, ni], perm [..., nz, ni], one set of leading dimensions (the
 // batch). A mismatch is an error, never an out-of-bounds access.
-inline ffi::Error bt_check_factor(const ffi::Buffer<ffi::F64>& diag,
-                                  const ffi::Buffer<ffi::F64>& sup,
-                                  const ffi::Buffer<ffi::F64>& sub,
-                                  const ffi::Buffer<ffi::F64>& lu,
+inline ffi::Error bt_check_factor(const ffi::Buffer<ffi::F64>& diag, const ffi::Buffer<ffi::F64>& sup,
+                                  const ffi::Buffer<ffi::F64>& sub, const ffi::Buffer<ffi::F64>& lu,
                                   const ffi::Buffer<ffi::S32>& perm, BtShape* shape) {
   const Dims dims = diag.dimensions();
   ffi::Error err = bt_blocks(dims, "diag", shape);
   if (err.failure()) return err;
   const int64_t nz = shape->nz, ni = shape->ni;
   const Dims lead = dims.first(dims.size() - 3);
-  if (!bt_shape_is(sup.dimensions(), lead, {nz - 1, ni}) ||
-      !bt_shape_is(sub.dimensions(), lead, {nz - 1, ni})) {
+  if (!bt_shape_is(sup.dimensions(), lead, {nz - 1, ni}) || !bt_shape_is(sub.dimensions(), lead, {nz - 1, ni})) {
     return ffi::Error::InvalidArgument("sup/sub must be [..., nz-1, ni]");
   }
   if (!(lu.dimensions() == dims)) {
@@ -110,12 +106,11 @@ inline ffi::Error bt_check_factor(const ffi::Buffer<ffi::F64>& diag,
 // Checks factor operand `op` of a solve: its leading dimensions (as many as
 // the rhs has) each equal the rhs's or are 1, followed by `trail`. Records the
 // strides in `s`.
-inline ffi::Error bt_leading(BtBcast* s, BtOperand op, Dims dims,
-                             std::initializer_list<int64_t> trail, const char* name) {
+inline ffi::Error bt_leading(BtBcast* s, BtOperand op, Dims dims, std::initializer_list<int64_t> trail,
+                             const char* name) {
   const size_t nb = static_cast<size_t>(s->nd);
   if (dims.size() != nb + trail.size()) {
-    return ffi::Error::InvalidArgument(std::string(name) +
-                                       " must have the rhs's number of leading dimensions");
+    return ffi::Error::InvalidArgument(std::string(name) + " must have the rhs's number of leading dimensions");
   }
   if (!std::equal(trail.begin(), trail.end(), dims.begin() + nb)) {
     return ffi::Error::InvalidArgument(std::string(name) + " has the wrong trailing shape");
@@ -123,8 +118,7 @@ inline ffi::Error bt_leading(BtBcast* s, BtOperand op, Dims dims,
   int64_t stride = 1;
   for (int k = s->nd - 1; k >= 0; --k) {
     if (dims[k] != s->dim[k] && dims[k] != 1) {
-      return ffi::Error::InvalidArgument(std::string(name) +
-                                         " leading dimensions must equal the rhs's or be 1");
+      return ffi::Error::InvalidArgument(std::string(name) + " leading dimensions must equal the rhs's or be 1");
     }
     s->stride[op][k] = (dims[k] == 1) ? 0 : stride;
     stride *= dims[k];
@@ -137,12 +131,10 @@ inline ffi::Error bt_leading(BtBcast* s, BtOperand op, Dims dims,
 // rhs leading dimensions; the factors' leading dimensions broadcast against
 // them (equal, or 1), as vmap_method="expand_dims" passes them when only the
 // rhs is batched at a vmap level.
-inline ffi::Error bt_check_solve(const ffi::Buffer<ffi::F64>& lu,
-                                 const ffi::Buffer<ffi::S32>& perm,
-                                 const ffi::Buffer<ffi::F64>& sup,
-                                 const ffi::Buffer<ffi::F64>& sub,
-                                 const ffi::Buffer<ffi::F64>& rhs,
-                                 const ffi::Buffer<ffi::F64>& x, BtShape* shape, BtBcast* s) {
+inline ffi::Error bt_check_solve(const ffi::Buffer<ffi::F64>& lu, const ffi::Buffer<ffi::S32>& perm,
+                                 const ffi::Buffer<ffi::F64>& sup, const ffi::Buffer<ffi::F64>& sub,
+                                 const ffi::Buffer<ffi::F64>& rhs, const ffi::Buffer<ffi::F64>& x, BtShape* shape,
+                                 BtBcast* s) {
   ffi::Error err = bt_blocks(lu.dimensions(), "lu", shape);
   if (err.failure()) return err;
   const int64_t nz = shape->nz, ni = shape->ni;
@@ -151,8 +143,7 @@ inline ffi::Error bt_check_solve(const ffi::Buffer<ffi::F64>& lu,
     return ffi::Error::InvalidArgument("rhs must be [..., nz, ni]");
   }
   if (rd.size() - 2 > static_cast<size_t>(kBtMaxBatch)) {
-    return ffi::Error::InvalidArgument("rhs has more than " + std::to_string(kBtMaxBatch) +
-                                       " leading dimensions");
+    return ffi::Error::InvalidArgument("rhs has more than " + std::to_string(kBtMaxBatch) + " leading dimensions");
   }
   if (!(x.dimensions() == rd)) {
     return ffi::Error::InvalidArgument("the result must have the rhs's shape");

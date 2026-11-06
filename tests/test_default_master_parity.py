@@ -21,8 +21,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
 from _helpers import relerr
+
 from vulcan3._paths import PACKAGE_ROOT
 
 # (count_max, update_frq, diff_esc, rtol, ymix_min). Case 1: default HD189
@@ -49,7 +49,9 @@ MASTER_ONLY = {
 # The pinned VULCAN 2 oracle has no refreshed-interface vm and no hybrid flip
 # (which extends the budget past count_max), so both are off.
 JAX_ONLY = {
-    "use_vm_mol": False, "use_hybrid_vm_mol": False, "high_temp_cut": False,
+    "use_vm_mol": False,
+    "use_hybrid_vm_mol": False,
+    "high_temp_cut": False,
 }
 
 
@@ -218,9 +220,10 @@ print("JAX_OK")
 
 
 def _run_script(script: str, args: list) -> subprocess.CompletedProcess[str]:
-    """Run a script string in a subprocess with PYTHONHASHSEED=0: master's
-    matched-step trajectory depends on set order and is not reproducible
-    without it."""
+    """Run a script string in a subprocess with PYTHONHASHSEED=0.
+
+    Master's matched-step trajectory depends on set order and is not reproducible without it.
+    """
     return subprocess.run(
         [sys.executable, "-c", script, *map(str, args)],
         capture_output=True,
@@ -237,10 +240,7 @@ def _cfg_lines(prefix: str, *tables: dict) -> str:
     'cfg.' for the JAX config object), so the two sides of the comparison
     cannot drift apart.
     """
-    return "\n".join(
-        f"{prefix}{name} = {value!r}"
-        for table in tables for name, value in table.items()
-    )
+    return "\n".join(f"{prefix}{name} = {value!r}" for table in tables for name, value in table.items())
 
 
 def _run_pair(master_root: Path, knobs: dict, jax_script: str) -> tuple[dict, dict]:
@@ -257,7 +257,8 @@ def _run_pair(master_root: Path, knobs: dict, jax_script: str) -> tuple[dict, di
         master_root,
         (master_root / "cfg_examples" / "vulcan_cfg_HD189.py").read_text()
         + "\n# === parity test overrides ===\n"
-        + _cfg_lines("", knobs, MASTER_ONLY) + "\n",
+        + _cfg_lines("", knobs, MASTER_ONLY)
+        + "\n",
     )
     with tempfile.TemporaryDirectory(prefix="master_parity_") as tmp:
         master_npz = Path(tmp) / "master.npz"
@@ -268,12 +269,9 @@ def _run_pair(master_root: Path, knobs: dict, jax_script: str) -> tuple[dict, di
         ):
             res = _run_script(script, args)
             assert res.returncode == 0 and tag in res.stdout, (
-                f"{tag} subprocess failed {res.returncode}\n"
-                f"--- stdout ---\n{res.stdout}\n"
-                f"--- stderr ---\n{res.stderr}"
+                f"{tag} subprocess failed {res.returncode}\n--- stdout ---\n{res.stdout}\n--- stderr ---\n{res.stderr}"
             )
-        return (dict(np.load(master_npz, allow_pickle=True)),
-                dict(np.load(jax_npz, allow_pickle=True)))
+        return (dict(np.load(master_npz, allow_pickle=True)), dict(np.load(jax_npz, allow_pickle=True)))
 
 
 def _atom_dict(data: dict) -> dict[str, float]:
@@ -283,6 +281,7 @@ def _atom_dict(data: dict) -> dict[str, float]:
         for key, value in zip(
             data["atom_loss_keys"].tolist(),
             data["atom_loss_vals"].tolist(),
+            strict=False,
         )
     }
 
@@ -293,9 +292,7 @@ def test_audit_refuses_a_contaminated_oracle() -> None:
 
     with tempfile.TemporaryDirectory(prefix="fake_oracle_") as tmp:
         contaminated = Path(tmp)
-        (contaminated / "op.py").write_text(
-            "stall_window = getattr(vulcan_cfg, 'conv_stall_window', 200)\n"
-        )
+        (contaminated / "op.py").write_text("stall_window = getattr(vulcan_cfg, 'conv_stall_window', 200)\n")
         errors = _check_oracle_is_pristine(contaminated)
 
     assert errors, "the guard did not flag a checkout containing conv_stall_window"
@@ -307,6 +304,7 @@ def test_audit_refuses_a_contaminated_oracle() -> None:
 def test_audit_master_parity_against_pinned_oracle() -> None:
     """The static HD189 audit is clean against its exact, pristine oracle."""
     from oracle import require_oracle
+
     from tools.audit_master_parity import audit
 
     master = require_oracle("vulcan2_ncho")
@@ -314,9 +312,7 @@ def test_audit_master_parity_against_pinned_oracle() -> None:
     assert errors == []
 
 
-@pytest.mark.parametrize(
-    "count_max, update_frq, diff_esc, rtol, ymix_min", MATCHED_CASES
-)
+@pytest.mark.parametrize(("count_max", "update_frq", "diff_esc", "rtol", "ymix_min"), MATCHED_CASES)
 def test_default_hd189_preloop_and_matched_steps_match_master(
     count_max: int, update_frq: int, diff_esc: list[str], rtol: float, ymix_min: float
 ) -> None:
@@ -354,9 +350,7 @@ def test_default_hd189_preloop_and_matched_steps_match_master(
     y_relerr = relerr(jax["y"], master["y"], mask=sig)
     ymix_relerr = relerr(jax["ymix"], master["ymix"], mask=sig)
     t_relerr = abs(float(jax["t"]) - float(master["t"])) / abs(float(master["t"]))
-    dt_relerr = abs(float(jax["dt"]) - float(master["dt"])) / abs(
-        float(master["dt"])
-    )
+    dt_relerr = abs(float(jax["dt"]) - float(master["dt"])) / abs(float(master["dt"]))
 
     max_relerr = max(y_relerr, ymix_relerr, t_relerr, dt_relerr)
     assert int(jax["count"]) == int(master["count"])
@@ -388,8 +382,7 @@ CONDEN_KNOBS = {
     "P_t": 1.0e2,
     "atm_base": "H2",
     "ini_mix": "const_mix",
-    "const_mix": {"H2": 0.9878, "H2O": 1.0e-2, "CH4": 1.0e-3,
-                  "CO": 1.0e-3, "CO2": 2.0e-4},
+    "const_mix": {"H2": 0.9878, "H2O": 1.0e-2, "CH4": 1.0e-3, "CO": 1.0e-3, "CO2": 2.0e-4},
     "use_photo": False,
     "use_ion": False,
     "use_Kzz": True,
@@ -427,7 +420,7 @@ CONDEN_KNOBS = {
 CONDEN_RTOL = 1.0e-12
 
 
-_CONDEN_JAX_SCRIPT = r'''
+_CONDEN_JAX_SCRIPT = r"""
 import os
 import sys
 from pathlib import Path
@@ -474,7 +467,7 @@ np.savez_compressed(
                         dtype=np.int64),
 )
 print("JAX_OK")
-'''
+"""
 
 
 def test_conden_fix_species_pin_matches_master() -> None:
@@ -496,9 +489,9 @@ def test_conden_fix_species_pin_matches_master() -> None:
         # Both sides must read the SAME network file: the condensation rows are
         # indexed positionally off `299 [ H2O -> H2O_l_s ]`.
         network_rel = CONDEN_KNOBS["network"]
-        assert (master_root / network_rel).read_bytes() == (
-            PACKAGE_ROOT / network_rel
-        ).read_bytes(), f"{network_rel} differs between the oracle and this tree"
+        assert (master_root / network_rel).read_bytes() == (PACKAGE_ROOT / network_rel).read_bytes(), (
+            f"{network_rel} differs between the oracle and this tree"
+        )
         master, jax = _run_pair(master_root, CONDEN_KNOBS, jax_script)
 
     # With use_photo=False master's codegen drops the photolysis rows and their

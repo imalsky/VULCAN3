@@ -1,4 +1,7 @@
-"""JAX photochemistry: optical depth, two-stream RT, J-rate computation."""
+"""JAX photochemistry: optical depth, two-stream RT, J-rate computation.
+
+Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, length in cm, time in s.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +13,20 @@ import jax.numpy as jnp
 import numpy as np
 
 from .phy_const import UNDERFLOW_DENOM
+
+__all__ = [
+    "PhotoData",
+    "PhotoJData",
+    "compute_J_jax",
+    "compute_J_jax_flat",
+    "compute_flux_jax",
+    "compute_tau_jax",
+    "pack_branch_to_k_index_map",
+    "photo_J_data_from_static",
+    "photo_data_from_static",
+    "photo_ion_data_from_static",
+    "update_k_with_J",
+]
 
 # Single-scattering albedo cap: keeps w0 < 1 (no pure scatterer), op.py:2638.
 _W0_MAX = 1.0 - 1e-8
@@ -97,7 +114,8 @@ def compute_tau_jax(y: jnp.ndarray, dz: jnp.ndarray, photo: PhotoData) -> jnp.nd
         dz:      (nz,)       layer thicknesses
         photo:   PhotoData   pre-stacked cross-section arrays
 
-    Returns:
+    Returns
+    -------
         tau:     (nz+1, nbin) staggered. tau[nz] = 0 (top boundary), tau[0]
                               is the total column.
     """
@@ -105,18 +123,14 @@ def compute_tau_jax(y: jnp.ndarray, dz: jnp.ndarray, photo: PhotoData) -> jnp.nd
     nbin = photo.absp_cross.shape[1]
 
     if photo.absp_idx.shape[0] > 0:
-        abs_per_layer = (
-            jnp.einsum("js,sb->jb", y[:, photo.absp_idx], photo.absp_cross)
-            * dz[:, None]
-        )
+        abs_per_layer = jnp.einsum("js,sb->jb", y[:, photo.absp_idx], photo.absp_cross) * dz[:, None]
     else:
         abs_per_layer = jnp.zeros((nz, nbin))
 
     if photo.absp_T_idx.shape[0] > 0:
         absT_per_layer = (
             jnp.sum(
-                y[:, photo.absp_T_idx][:, :, None]
-                * photo.absp_T_cross.transpose(1, 0, 2),
+                y[:, photo.absp_T_idx][:, :, None] * photo.absp_T_cross.transpose(1, 0, 2),
                 axis=1,
             )
             * dz[:, None]
@@ -124,16 +138,12 @@ def compute_tau_jax(y: jnp.ndarray, dz: jnp.ndarray, photo: PhotoData) -> jnp.nd
         abs_per_layer = abs_per_layer + absT_per_layer
 
     if photo.scat_idx.shape[0] > 0:
-        scat_per_layer = (
-            jnp.einsum("js,sb->jb", y[:, photo.scat_idx], photo.scat_cross)
-            * dz[:, None]
-        )
+        scat_per_layer = jnp.einsum("js,sb->jb", y[:, photo.scat_idx], photo.scat_cross) * dz[:, None]
         abs_per_layer = abs_per_layer + scat_per_layer
 
     # cumsum gives bottom-up partial sums; flip to obtain top-down accumulation.
     tau_no_top = jnp.flip(jnp.cumsum(jnp.flip(abs_per_layer, axis=0), axis=0), axis=0)
-    tau = jnp.concatenate([tau_no_top, jnp.zeros((1, nbin))], axis=0)
-    return tau
+    return jnp.concatenate([tau_no_top, jnp.zeros((1, nbin))], axis=0)
 
 
 def _two_stream_sweeps(
@@ -173,6 +183,7 @@ def _two_stream_sweeps(
 
 
 @_partial(jax.jit, static_argnames=("ag0_is_zero",))
+# size-limit-ok: one two-stream sweep; its order is the program
 def compute_flux_jax(
     tau: jnp.ndarray,  # (nz+1, nbin) staggered
     sflux_top: jnp.ndarray,  # (nbin,) at TOA
@@ -206,8 +217,7 @@ def compute_flux_jax(
         tot_abs = jnp.zeros_like(delta_tau)
     if photo.absp_T_idx.shape[0] > 0:
         absT = jnp.sum(
-            ymix[:, photo.absp_T_idx][:, :, None]
-            * photo.absp_T_cross.transpose(1, 0, 2),
+            ymix[:, photo.absp_T_idx][:, :, None] * photo.absp_T_cross.transpose(1, 0, 2),
             axis=1,
         )
         tot_abs = tot_abs + absT
@@ -236,17 +246,9 @@ def compute_flux_jax(
         tran = jnp.exp(-1.0 / edd * ((1.0 - w0 * ag0) * (1.0 - w0)) ** 0.5 * delta_tau)
         zeta_p = 0.5 * (1.0 + ((1.0 - w0) / (1.0 - w0 * ag0)) ** 0.5)
         zeta_m = 0.5 * (1.0 - ((1.0 - w0) / (1.0 - w0 * ag0)) ** 0.5)
-        ll = ((1.0 - w0) * (1.0 - w0 * ag0) - 1.0) / (
-            1.0 / mu_ang**2 - 1.0 / edd**2 * (1.0 - w0) * (1.0 - w0 * ag0)
-        )
-        g_p = 0.5 * (
-            ll * (1.0 / edd + 1.0 / (mu_ang * (1.0 - w0 * ag0)))
-            + w0 * ag0 * mu_ang / (1.0 - w0 * ag0)
-        )
-        g_m = 0.5 * (
-            ll * (1.0 / edd - 1.0 / (mu_ang * (1.0 - w0 * ag0)))
-            - w0 * ag0 * mu_ang / (1.0 - w0 * ag0)
-        )
+        ll = ((1.0 - w0) * (1.0 - w0 * ag0) - 1.0) / (1.0 / mu_ang**2 - 1.0 / edd**2 * (1.0 - w0) * (1.0 - w0 * ag0))
+        g_p = 0.5 * (ll * (1.0 / edd + 1.0 / (mu_ang * (1.0 - w0 * ag0))) + w0 * ag0 * mu_ang / (1.0 - w0 * ag0))
+        g_m = 0.5 * (ll * (1.0 / edd - 1.0 / (mu_ang * (1.0 - w0 * ag0))) - w0 * ag0 * mu_ang / (1.0 - w0 * ag0))
 
     chi = zeta_m**2 * tran**2 - zeta_p**2
     chi = jnp.where(chi > -UNDERFLOW_DENOM, -UNDERFLOW_DENOM, chi)
@@ -256,15 +258,10 @@ def compute_flux_jax(
     i_u = phi * g_p * dir_flux[:-1] - (xi * g_m + chi * g_p) * dir_flux[1:]
     i_d = phi * g_m * dir_flux[1:] - (chi * g_m + xi * g_p) * dir_flux[:-1]
 
-    dflux_d, dflux_u = _two_stream_sweeps(
-        chi, phi, xi, i_d, i_u, dflux_u_prev, mu_ang
-    )
+    dflux_d, dflux_u = _two_stream_sweeps(chi, phi, xi, i_d, i_u, dflux_u_prev, mu_ang)
 
     ave_dir_flux = 0.5 * (sflux[:-1] + sflux[1:])
-    tot_flux = (
-        ave_dir_flux
-        + 0.5 * (dflux_u[:-1] + dflux_u[1:] + dflux_d[1:] + dflux_d[:-1]) / edd
-    )
+    tot_flux = ave_dir_flux + 0.5 * (dflux_u[:-1] + dflux_u[1:] + dflux_d[1:] + dflux_d[:-1]) / edd
 
     aflux = tot_flux / (hc / bins[None, :])
     return aflux, sflux, dflux_d, dflux_u
@@ -332,7 +329,8 @@ def compute_J_jax_flat(aflux, cross_J, cross_J_T, din12_indx, dbin1, dbin2):
         din12_indx:    static int          wavelength index where dbin transitions
         dbin1, dbin2:  scalars            bin spacings
 
-    Returns:
+    Returns
+    -------
         J_br:   (n_br,   nz)   per-branch J-rate (non-T)
         J_br_T: (n_br_T, nz)   per-branch J-rate (T-dependent)
     """
@@ -345,25 +343,9 @@ def compute_J_jax_flat(aflux, cross_J, cross_J_T, din12_indx, dbin1, dbin2):
         c2 = cross_J[:, din12_indx:]
         # Trapezoid integration written as rectangle sum minus half the endpoints.
         J1 = jnp.einsum("jb,nb->nj", flux1, c1) * dbin1
-        J1 = (
-            J1
-            - 0.5
-            * (
-                flux1[:, 0][None] * c1[:, 0][:, None]
-                + flux1[:, -1][None] * c1[:, -1][:, None]
-            )
-            * dbin1
-        )
+        J1 = J1 - 0.5 * (flux1[:, 0][None] * c1[:, 0][:, None] + flux1[:, -1][None] * c1[:, -1][:, None]) * dbin1
         J2 = jnp.einsum("jb,nb->nj", flux2, c2) * dbin2
-        J2 = (
-            J2
-            - 0.5
-            * (
-                flux2[:, 0][None] * c2[:, 0][:, None]
-                + flux2[:, -1][None] * c2[:, -1][:, None]
-            )
-            * dbin2
-        )
+        J2 = J2 - 0.5 * (flux2[:, 0][None] * c2[:, 0][:, None] + flux2[:, -1][None] * c2[:, -1][:, None]) * dbin2
         J_br = J1 + J2
     else:
         J_br = jnp.zeros((0, nz))
@@ -372,19 +354,9 @@ def compute_J_jax_flat(aflux, cross_J, cross_J_T, din12_indx, dbin1, dbin2):
         cT1 = cross_J_T[:, :, :din12_indx]
         cT2 = cross_J_T[:, :, din12_indx:]
         JT1 = jnp.sum(flux1[None] * cT1, axis=2) * dbin1
-        JT1 = (
-            JT1
-            - 0.5
-            * (flux1[:, 0][None] * cT1[:, :, 0] + flux1[:, -1][None] * cT1[:, :, -1])
-            * dbin1
-        )
+        JT1 = JT1 - 0.5 * (flux1[:, 0][None] * cT1[:, :, 0] + flux1[:, -1][None] * cT1[:, :, -1]) * dbin1
         JT2 = jnp.sum(flux2[None] * cT2, axis=2) * dbin2
-        JT2 = (
-            JT2
-            - 0.5
-            * (flux2[:, 0][None] * cT2[:, :, 0] + flux2[:, -1][None] * cT2[:, :, -1])
-            * dbin2
-        )
+        JT2 = JT2 - 0.5 * (flux2[:, 0][None] * cT2[:, :, 0] + flux2[:, -1][None] * cT2[:, :, -1]) * dbin2
         J_br_T = JT1 + JT2
     else:
         J_br_T = jnp.zeros((0, nz))
@@ -406,12 +378,10 @@ def compute_J_jax(aflux: jnp.ndarray, photo_J: PhotoJData):
         photo_J.dbin2,
     )
 
-    J_sp = {}
-    for k, J_row in zip(photo_J.branch_keys, J_br):
-        J_sp[k] = J_row
-    for k, J_row in zip(photo_J.branch_T_keys, J_br_T):
-        J_sp[k] = J_row
-    return J_sp
+    return {
+        **dict(zip(photo_J.branch_keys, J_br, strict=False)),
+        **dict(zip(photo_J.branch_T_keys, J_br_T, strict=False)),
+    }
 
 
 def pack_branch_to_k_index_map(branch_keys, rate_index, remove_list):

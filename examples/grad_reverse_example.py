@@ -1,19 +1,18 @@
-"""Reverse-mode reaction ranking on a converged HD189 column.
+"""Reverse-mode reaction ranking on a converged HD189 column."""
 
-`steady_state_reaction_sensitivity` returns dL/d(ln k_r) for every
-directional rate-table row in one adjoint solve; finite differences would
-need one re-converged run per row. It linearizes the hydrostatic-
-renormalized map the runner iterates and averages an ensemble of twin
-solves (default n_solves=3, body_dt=1e7); the printed twin spread is a
-stability diagnostic. Rows are k-only: for a detailed-balance perturbation
-of a reversible reaction, sum its forward and reverse rows. Forward mode
-(grad_jvp_example.py) stays the route for a single row.
-
-Needs tests/data/adj_state_hd189.npz (gitignored): build it with
-`python tests/_gen_adj_state.py hd189`. The first call pays a one-time
-step-VJP compile (~10-20 min). Run from VULCAN-JAX/ as
-`python examples/grad_reverse_example.py`.
-"""
+# `steady_state_reaction_sensitivity` returns dL/d(ln k_r) for every
+# directional rate-table row in one adjoint solve; finite differences would
+# need one re-converged run per row. It linearizes the hydrostatic-
+# renormalized map the runner iterates and averages an ensemble of twin
+# solves (default n_solves=3, body_dt=1e7); the printed twin spread is a
+# stability diagnostic. Rows are k-only: for a detailed-balance perturbation
+# of a reversible reaction, sum its forward and reverse rows. Forward mode
+# (grad_jvp_example.py) stays the route for a single row.
+#
+# Needs tests/data/adj_state_hd189.npz (gitignored): build it with
+# `python tests/_gen_adj_state.py hd189`. The first call pays a one-time
+# step-VJP compile (~10-20 min). Run from VULCAN-JAX/ as
+# `python examples/grad_reverse_example.py`.
 
 from __future__ import annotations
 
@@ -26,9 +25,9 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 ROOT = Path(__file__).resolve().parent.parent
 os.chdir(ROOT)
 
-import numpy as np
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 jax.config.update("jax_enable_x64", True)
 
@@ -40,13 +39,10 @@ FD_ANCHORS = {13: -5.651e-01, 14: +5.651e-01, 115: -1.919e-05, 116: +2.712e-05}
 
 def main() -> int:
     if not FIXTURE.exists():
-        print(
-            f"Missing fixture {FIXTURE}; build it with "
-            "`python tests/_gen_adj_state.py hd189`."
-        )
+        print(f"Missing fixture {FIXTURE}; build it with `python tests/_gen_adj_state.py hd189`.")
         return 1
 
-    import vulcan3.chem_funs as chem_funs
+    from vulcan3 import chem_funs
     from vulcan3.jax_step import AtmStatic
     from vulcan3.steady_state_grad import steady_state_reaction_sensitivity
 
@@ -68,9 +64,7 @@ def main() -> int:
     rf = chem_funs._NETWORK.Rf
     ch4 = chem_funs._NETWORK.species_idx["CH4"]
     L0 = nz // 2
-    print(
-        f"Loaded converged HD189: nz={nz} ni={ni} nr={net.nr}  ({time.time() - t0:.1f}s)"
-    )
+    print(f"Loaded converged HD189: nz={nz} ni={ni} nr={net.nr}  ({time.time() - t0:.1f}s)")
 
     def loss(y):  # log10 CH4 volume mixing ratio at mid-column
         ymix = y / jnp.sum(y, axis=1, keepdims=True)

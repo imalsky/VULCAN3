@@ -29,9 +29,9 @@ warnings.filterwarnings("ignore")
 
 
 def _assert_testing_repo_checkout() -> None:
-    """Fail collection loudly if `import vulcan3` resolves outside this
-    repo: a non-editable install shadows the checkout and the suite silently
-    tests stale code.
+    """Fail collection loudly if `import vulcan3` resolves outside this repo.
+
+    A non-editable install shadows the checkout and the suite silently tests stale code.
     """
     import vulcan3
 
@@ -63,9 +63,10 @@ def _clear_jax_caches() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def _cfg_snapshot_session():
-    """Snapshot the process default config (a single object that
-    `state._cfg_overlay` mutates in place) so `_cfg_guard` can restore it
-    after every test."""
+    """Snapshot the process default config (a single object that `state._cfg_overlay` mutates in place).
+
+    So `_cfg_guard` can restore it after every test.
+    """
     from vulcan3.config import default_config
 
     canonical = default_config()
@@ -75,8 +76,7 @@ def _cfg_snapshot_session():
 
 
 def _restore_cfg(snap: dict) -> None:
-    """Restore the process default config in place (keeping its identity) and
-    drop any attribute a test added."""
+    """Restore the process default config in place (keeping its identity) and drop any attribute a test added."""
     attrs = vars(snap["cfg"])
     attrs.clear()
     attrs.update(copy.deepcopy(snap["attrs"]))
@@ -99,14 +99,13 @@ def _cfg_guard(request, _cfg_snapshot_session):
 
 @pytest.fixture(autouse=True, scope="module")
 def _release_jax_caches_per_module():
-    """Drop a module's compiled programs when it finishes, so per-xdist-worker
-    caches do not exhaust runner memory."""
+    """Drop a module's compiled programs when it finishes, so per-xdist-worker caches do not exhaust runner memory."""
     yield
     _clear_jax_caches()
 
 
 def pytest_collection_modifyitems(config, items):
-    """The full-tier switch: `slow` tests skip unless VULCAN3_RUN_SLOW=1."""
+    """Apply the full-tier switch: `slow` tests skip unless VULCAN3_RUN_SLOW=1."""
     if os.environ.get("VULCAN3_RUN_SLOW") == "1":
         return
     skip = pytest.mark.skip(reason="full tier; set VULCAN3_RUN_SLOW=1")
@@ -128,7 +127,7 @@ class HD189State:
 @pytest.fixture(scope="session")
 def _hd189_pristine() -> HD189State:
     """One-time HD189 pre-loop build."""
-    import vulcan3.op_jax as op_jax
+    from vulcan3 import op_jax
     from vulcan3.config import default_config
     from vulcan3.state import RunState, legacy_view
 
@@ -178,10 +177,7 @@ def pytest_collection_finish():
     }
     if not missing:
         return
-    lines = [
-        f"  - {rel}\n      (individually: python {how})"
-        for rel, how in sorted(missing.items())
-    ]
+    lines = [f"  - {rel}\n      (individually: python {how})" for rel, how in sorted(missing.items())]
     msg = (
         f"{len(missing)} numerical-regression oracle(s) are missing, so the tests "
         f"comparing against them would SKIP and the suite would still report "

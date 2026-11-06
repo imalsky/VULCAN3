@@ -1,5 +1,6 @@
-"""Full-integration vmap tests for `OuterLoop.run_batch` (per-step vmap is
-covered by test_vmap_step.py). Pins:
+"""Full-integration vmap tests for `OuterLoop.run_batch` (per-step vmap is covered by test_vmap_step.py).
+
+Pins:
 
   1. Heterogeneous freeze-on-done: lanes that finish at different iterations
      each match their solo run (early finishers freeze, stragglers run).
@@ -16,8 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from _helpers import (fast_cfg, mass_for_gravity, stack_atm_statics,
-                      stack_integ_states, unstack_integ_states)
+from _helpers import fast_cfg, mass_for_gravity, stack_atm_statics, stack_integ_states, unstack_integ_states
 
 # Termination via count_max for speed -> reason 3 ("too_many"). Kept small so
 # the whole batch integrates in a few seconds including JIT compile.
@@ -32,17 +32,22 @@ YMIX_FLOOR = 1e-15  # ignore ULP-noise trace species below this in the ref
 
 
 def _pin_cfg():
-    """Fast photo-off batched config (photo-on: test_vmap_photo_batch). Hybrid
-    vm_mol is off: its per-lane scheme switch on count exhaustion breaks
-    freeze-on-done equivalence."""
+    """Fast photo-off batched config (photo-on: test_vmap_photo_batch).
+
+    Hybrid vm_mol is off: its per-lane scheme switch on count exhaustion breaks freeze-on-done equivalence.
+    """
     return fast_cfg(
         count_max=COUNT_MAX,
         use_vm_mol=False,
         use_hybrid_vm_mol=False,
     )
+
+
 def _build_rs(vulcan_cfg, *, Tiso=None, gs=None, Rp=None):
-    """Build a RunState, optionally overriding temperature / gravity / radius
-    so two calls produce genuinely different atmospheres."""
+    """Build a RunState, optionally overriding temperature / gravity / radius.
+
+    So two calls produce genuinely different atmospheres.
+    """
     from vulcan3.state import RunState
 
     if Tiso is not None:
@@ -55,9 +60,8 @@ def _build_rs(vulcan_cfg, *, Tiso=None, gs=None, Rp=None):
 
 
 def _build_integ():
-    import vulcan3.outer_loop as outer_loop
     import vulcan3.legacy_io as op
-    import vulcan3.op_jax as op_jax
+    from vulcan3 import op_jax, outer_loop
 
     return outer_loop.OuterLoop(op_jax.Ros2JAX(), op.Output())
 
@@ -75,6 +79,7 @@ def _max_rel_diff(batched_ymix, ref_ymix, floor=YMIX_FLOOR):
 @pytest.mark.strict_isolation
 def test_run_batch_matches_solo_runs():
     import jax.numpy as jnp
+
     from vulcan3.atm_setup import surface_gravity
 
     vulcan_cfg = _pin_cfg()
@@ -120,8 +125,7 @@ def test_run_batch_matches_solo_runs():
     poisoned_yprev = init_state.y_prev.at[0, 0].set(jnp.nan)
     nan_states[bad] = init_state._replace(y=poisoned_y, y_prev=poisoned_yprev)
     nan_out = run_batch(nan_states, [atm_static] * K)
-    assert int(nan_out[bad].termination_reason) == 5, (
-        "poisoned lane reason", int(nan_out[bad].termination_reason))
+    assert int(nan_out[bad].termination_reason) == 5, ("poisoned lane reason", int(nan_out[bad].termination_reason))
     for i in range(K):
         if i == bad:
             continue
@@ -138,12 +142,9 @@ def test_run_batch_matches_solo_runs():
     initB, atmB = integB.prepare_runstate(rsB)
     soloB = integB._runner(initB, atmB)
     soloA = ref
-    het2_out = run_batch(
-        [init_state, initB] * (K // 2), [atm_static, atmB] * (K // 2)
-    )
+    het2_out = run_batch([init_state, initB] * (K // 2), [atm_static, atmB] * (K // 2))
     relA = max(_max_rel_diff(o.ymix, soloA.ymix, floor=BATCH_FLOOR) for o in het2_out[0::2])
     relB = max(_max_rel_diff(o.ymix, soloB.ymix, floor=BATCH_FLOOR) for o in het2_out[1::2])
     # Sanity: the two profiles must actually differ, else the test is vacuous.
     profiles_differ = _max_rel_diff(soloB.ymix, soloA.ymix)
-    assert relA <= RTOL and relB <= RTOL and profiles_differ >= 1e-6, (
-        "diff-profiles", relA, relB, profiles_differ)
+    assert relA <= RTOL and relB <= RTOL and profiles_differ >= 1e-6, ("diff-profiles", relA, relB, profiles_differ)

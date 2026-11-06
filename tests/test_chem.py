@@ -6,12 +6,11 @@ We compare on a real (y, M, k) state captured from VULCAN-master's pipeline.
 from __future__ import annotations
 
 import numpy as np
-
 from _helpers import relerr
-from oracle import (assert_below, enter_master, leave_master,
-                    run_oracle_subprocess, upstream_preloop)
+from oracle import assert_below, enter_master, leave_master, run_oracle_subprocess, upstream_preloop
 
 
+# size-limit-ok: one oracle script, run in a subprocess on a copy of master
 def main() -> None:
     # === 1. Run VULCAN-master pipeline to get reference y/M/k state and chemdf/symjac ===
     enter_master()
@@ -22,8 +21,8 @@ def main() -> None:
     import vulcan_cfg as cfg_v
 
     data_var, data_atm = upstream_preloop(
-        cfg_v, st_v.Variables(), st_v.AtmData(), ba_v.Atm(), op_v.ReadRate(),
-        ba_v.InitialAbun())
+        cfg_v, st_v.Variables(), st_v.AtmData(), ba_v.Atm(), op_v.ReadRate(), ba_v.InitialAbun()
+    )
 
     M = np.asarray(data_atm.M, dtype=np.float64).copy()
     y = np.asarray(data_var.y, dtype=np.float64).copy()
@@ -37,10 +36,10 @@ def main() -> None:
     # === 2. Switch over to VULCAN-JAX modules ===
     leave_master()
 
-    import vulcan3.network as net_mod
-    import vulcan3.chem as chem_mod
     import jax.numpy as jnp
 
+    import vulcan3.chem as chem_mod
+    import vulcan3.network as net_mod
     from vulcan3._paths import resolve_data_path
 
     net = net_mod.parse_network(resolve_data_path(cfg_v.network))
@@ -76,8 +75,7 @@ def main() -> None:
 
     Jblk_jax = np.asarray(chem_jac(y_j, M_j, k_j, net_jax))
     # symjac layout: per-layer (ni, ni) blocks live at J_ref[j*ni:(j+1)*ni, j*ni:(j+1)*ni]
-    Jblk_ref = np.stack(
-        [J_ref[j * ni : (j + 1) * ni, j * ni : (j + 1) * ni] for j in range(nz)])
+    Jblk_ref = np.stack([J_ref[j * ni : (j + 1) * ni, j * ni : (j + 1) * ni] for j in range(nz)])
 
     # Bulk species: bound every cell, including those below the significance
     # floor, against the species' peak |dydt|.
@@ -85,23 +83,20 @@ def main() -> None:
     for sp in ("H2O", "CO2", "SO", "SO2", "H2", "CO", "S", "H2S"):
         if sp in net.species_idx:
             j = net.species_idx[sp]
-            r = float(
-                np.abs(dydt_jax[:, j] - dydt_ref[:, j]).max()
-                / max(np.abs(dydt_ref[:, j]).max(), 1e-30)
-            )
+            r = float(np.abs(dydt_jax[:, j] - dydt_ref[:, j]).max() / max(np.abs(dydt_ref[:, j]).max(), 1e-30))
             bulk_relerr = max(bulk_relerr, r)
 
-    assert_below({
-        "chem_rhs (cells > 1e-6 of species peak)":
-            (relerr(dydt_jax, dydt_ref, mask=significant), 1e-5),
-        "chem_rhs bulk species": (bulk_relerr, 1e-5),
-        "chem_jac": (relerr(Jblk_jax, Jblk_ref), 1e-6),
-    })
+    assert_below(
+        {
+            "chem_rhs (cells > 1e-6 of species peak)": (relerr(dydt_jax, dydt_ref, mask=significant), 1e-5),
+            "chem_rhs bulk species": (bulk_relerr, 1e-5),
+            "chem_jac": (relerr(Jblk_jax, Jblk_ref), 1e-6),
+        }
+    )
 
 
 def test_main():
-    run_oracle_subprocess(__file__, "vulcan2_ncho",
-                          "cfg_examples/vulcan_cfg_HD189.py")
+    run_oracle_subprocess(__file__, "vulcan2_ncho", "cfg_examples/vulcan_cfg_HD189.py")
 
 
 if __name__ == "__main__":

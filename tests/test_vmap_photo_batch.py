@@ -14,8 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from _helpers import (fast_cfg, stack_atm_statics, stack_integ_states,
-                      unstack_integ_states)
+from _helpers import fast_cfg, stack_atm_statics, stack_integ_states, unstack_integ_states
 from test_vmap_while_loop import _build_integ, _build_rs, _max_rel_diff
 
 COUNT_MAX = 30
@@ -29,26 +28,29 @@ RTOL = 5e-2
 # closure-baked photo field makes lane 1 equal soloA (ratio ~1). Bit
 # identity depends on the XLA version. The photolysis cadence differs (tick
 # vs accepted count), so rejected steps move the lanes apart: 1.6e-4 with the
-# C29 step control (8 rejections of 39 attempts on lane A).
+# Step control (8 rejections of 39 attempts on lane A).
 SCALE_TOL = 1e-3
 
 
 def _pin_cfg(**extra):
-    """Small photo-on batched config: isothermal, const_mix init, fixed
-    diffusion scheme (the hybrid flips schemes per lane), photo cadence low
-    enough to fire within COUNT_MAX. `T_cross_sp=["H2O"]` gives the two Tiso
-    lanes different cross sections."""
-    return fast_cfg(**{
-        "count_max": COUNT_MAX,
-        "use_photo": True,
-        "ini_mix": "const_mix",
-        "use_vm_mol": False,
-        "use_hybrid_vm_mol": False,
-        "nz": 40,
-        "ini_update_photo_frq": 5,
-        "T_cross_sp": ["H2O"],
-        **extra,
-    })
+    """Small photo-on batched config: isothermal, const_mix init.
+
+    Fixed diffusion scheme (the hybrid flips schemes per lane), photo cadence low enough to fire within COUNT_MAX.
+    `T_cross_sp=["H2O"]` gives the two Tiso lanes different cross sections.
+    """
+    return fast_cfg(
+        **{
+            "count_max": COUNT_MAX,
+            "use_photo": True,
+            "ini_mix": "const_mix",
+            "use_vm_mol": False,
+            "use_hybrid_vm_mol": False,
+            "nz": 40,
+            "ini_update_photo_frq": 5,
+            "T_cross_sp": ["H2O"],
+            **extra,
+        }
+    )
 
 
 def _peak_ratio(bat, sol):
@@ -83,15 +85,18 @@ def test_photo_lane_matches_its_solo_run():
     tdiff = _max_rel_diff(sB.pv.p_absp_T_cross, sA.pv.p_absp_T_cross, floor=0.0)
     jdiff = _max_rel_diff(sB.pv.p_cross_J_T, sA.pv.p_cross_J_T, floor=0.0)
     assert n_absp_T != 0 and tdiff != 0.0 and jdiff != 0.0, (
-        "T-dep cross sections do not differ between lanes", n_absp_T, tdiff, jdiff)
+        "T-dep cross sections do not differ between lanes",
+        n_absp_T,
+        tdiff,
+        jdiff,
+    )
 
     # --- solo runs --------------------------------------------------------
     soloA = integA._runner(sA, atmA)
     soloB = integB._runner(sB_own, atmB_own)
 
     # photo really fired: actinic flux nonzero, photo branch wrote k rows.
-    assert np.any(np.asarray(soloA.aflux) > 0) and float(soloA.aflux_change) != 0.0, (
-        "photo branch never fired in soloA")
+    assert np.any(np.asarray(soloA.aflux) > 0) and float(soloA.aflux_change) != 0.0, "photo branch never fired in soloA"
 
     # --- batch on A's runner ----------------------------------------------
     batched = integA.run_batch(
@@ -124,12 +129,12 @@ def test_photo_lane_matches_its_solo_run():
 
 @pytest.mark.strict_isolation
 def test_lane_gone_nonfinite_on_a_photo_tick_keeps_its_whole_carry():
-    """A lane whose step goes non-finite freezes at its last good carry, leaf
-    for leaf and bitwise, also when that step's tick updated its photolysis
-    arrays. The batched freeze never re-selects the convergence ring (the step
-    writes its slot already frozen) and reads the pre-step photolysis arrays
-    only inside the photolysis tick's cond, so a regression in either shows
-    up here as a frozen lane that kept part of the failed tick.
+    """A lane whose step goes non-finite freezes at its last good carry, leaf for leaf and bitwise.
+
+    Also when that step's tick updated its photolysis arrays. The batched freeze never re-selects the convergence
+    ring (the step writes its slot already frozen) and reads the pre-step photolysis arrays only inside the
+    photolysis tick's cond, so a regression in either shows up here as a frozen lane that kept part of the failed
+    tick.
 
     Lane 1 is lane 0 with one thermal rate row non-finite and dt at dt_min:
     tick 0 is on the photolysis cadence, the lane takes the update, its solve
@@ -139,6 +144,7 @@ def test_lane_gone_nonfinite_on_a_photo_tick_keeps_its_whole_carry():
     """
     import jax
     import jax.numpy as jnp
+
     from vulcan3 import outer_loop
 
     vulcan_cfg = _pin_cfg()
@@ -164,12 +170,13 @@ def test_lane_gone_nonfinite_on_a_photo_tick_keeps_its_whole_carry():
     assert int(frozen.termination_reason) == outer_loop.TERM_NONFINITE
     assert int(good.termination_reason) != outer_loop.TERM_NONFINITE
     # vacuity: the update the frozen lane took would have made these nonzero
-    assert np.any(np.asarray(good.aflux) != 0.0) and np.any(np.asarray(good.tau) != 0.0)
+    assert np.any(np.asarray(good.aflux) != 0.0)
+    assert np.any(np.asarray(good.tau) != 0.0)
 
     done_flags = ("is_done", "termination_reason")
     leaves_in = jax.tree_util.tree_flatten_with_path(bad)[0]
     leaves_out = jax.tree_util.tree_leaves(frozen)
-    for (path, a), b in zip(leaves_in, leaves_out):
+    for (path, a), b in zip(leaves_in, leaves_out, strict=False):
         name = jax.tree_util.keystr(path)
         if name.lstrip(".") in done_flags:
             continue
@@ -193,7 +200,6 @@ def test_queue_on_photo_lanes_matches_the_batch():
     refilled lane left on its predecessor's RT state would integrate a
     different column.
     """
-
     vulcan_cfg = _pin_cfg()
     integ = _build_integ()
     sA, atmA = integ.prepare_runstate(_build_rs(vulcan_cfg, Tiso=900.0))
@@ -216,7 +222,7 @@ def test_queue_on_photo_lanes_matches_the_batch():
     ):
         assert np.array_equal(np.asarray(a), np.asarray(b)), name
 
-    (y, reason), n_iter = integ.run_queue(
+    (y, reason), _n_iter = integ.run_queue(
         lambda job: job,
         (init_b, atm_b),
         n_lanes=1,
@@ -226,24 +232,19 @@ def test_queue_on_photo_lanes_matches_the_batch():
     assert np.array_equal(np.asarray(reason), np.asarray(ref.termination_reason))
     for k in (0, 1):
         yk, yr = np.asarray(y[k]), np.asarray(ref.y[k])
-        rel = _max_rel_diff(
-            yk / yk.sum(axis=1, keepdims=True), yr / yr.sum(axis=1, keepdims=True)
-        )
+        rel = _max_rel_diff(yk / yk.sum(axis=1, keepdims=True), yr / yr.sum(axis=1, keepdims=True))
         assert rel < RTOL, (k, rel)
 
 
 @pytest.mark.strict_isolation
 def test_refill_on_a_photo_tick_applies_photolysis_once():
-    """A lane refilled at a tick on its photolysis cadence takes photolysis
-    once, from its first step's own gate, as a plain-batch lane does at tick
-    0. With the photo and geometry cadences at 1 every tick is on cadence, so
-    the refilled job sees the ticks it would see alone and the two results
-    are bitwise equal. A second application at the refill moves
-    aflux_change, which gates the convergence certificate.
-    """
+    """A lane refilled at a tick on its photolysis cadence takes photolysis once, from its first step's own gate.
 
-    vulcan_cfg = _pin_cfg(ini_update_photo_frq=1, final_update_photo_frq=1,
-                          update_frq=1)
+    As a plain-batch lane does at tick 0. With the photo and geometry cadences at 1 every tick is on cadence, so the
+    refilled job sees the ticks it would see alone and the two results are bitwise equal. A second application at
+    the refill moves aflux_change, which gates the convergence certificate.
+    """
+    vulcan_cfg = _pin_cfg(ini_update_photo_frq=1, final_update_photo_frq=1, update_frq=1)
     integ = _build_integ()
     sA, atmA = integ.prepare_runstate(_build_rs(vulcan_cfg, Tiso=900.0))
     sB, atmB = integ.prepare_runstate(_build_rs(vulcan_cfg, Tiso=1600.0))
@@ -254,14 +255,16 @@ def test_refill_on_a_photo_tick_applies_photolysis_once():
 
     pair, _ = integ.run_queue(
         lambda job: job,
-        (stack_integ_states([sA, sB]),
-         stack_atm_statics([atmA, atmB])),
-        n_lanes=1, out_fn=out_fn, chunk=1,
+        (stack_integ_states([sA, sB]), stack_atm_statics([atmA, atmB])),
+        n_lanes=1,
+        out_fn=out_fn,
+        chunk=1,
     )
     alone, _ = integ.run_queue(
         lambda job: job,
         (stack_integ_states([sB]), stack_atm_statics([atmB])),
-        n_lanes=1, out_fn=out_fn,
+        n_lanes=1,
+        out_fn=out_fn,
     )
-    for name, refilled, own in zip(fields, pair, alone):
+    for name, refilled, own in zip(fields, pair, alone, strict=False):
         assert np.array_equal(np.asarray(refilled[1]), np.asarray(own[0])), name

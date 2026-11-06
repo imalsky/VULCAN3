@@ -1,19 +1,18 @@
-"""Pinned, isolated access to an upstream VULCAN checkout for oracle tests.
+"""Pinned, isolated access to an upstream VULCAN checkout for oracle tests."""
 
-Four rules:
-
-1. `VULCAN_MASTER_DIR` names the checkout; there is no default path.
-2. `require_oracle()` checks HEAD against tests/science_sources.yaml and a
-   clean tree before any calculation (reaction indices are positional).
-3. `oracle_worktree()` hands out a temporary copy, since upstream setup
-   rewrites files in place, and proves the original unchanged afterwards.
-4. An upstream defect corrected on both sides is listed once in
-   `ORACLE_CODE_DELTAS` and applied to the copy only; each delta must match
-   the pinned text once.
-
-Local runs skip without an oracle; release CI sets
-`VULCAN3_REQUIRE_ORACLE=1` so a missing oracle fails.
-"""
+# Four rules:
+#
+# 1. `VULCAN_MASTER_DIR` names the checkout; there is no default path.
+# 2. `require_oracle()` checks HEAD against tests/science_sources.yaml and a
+#    clean tree before any calculation (reaction indices are positional).
+# 3. `oracle_worktree()` hands out a temporary copy, since upstream setup
+#    rewrites files in place, and proves the original unchanged afterwards.
+# 4. An upstream defect corrected on both sides is listed once in
+#    `ORACLE_CODE_DELTAS` and applied to the copy only; each delta must match
+#    the pinned text once.
+#
+# Local runs skip without an oracle; release CI sets
+# `VULCAN3_REQUIRE_ORACLE=1` so a missing oracle fails.
 
 from __future__ import annotations
 
@@ -46,23 +45,20 @@ def manifest() -> dict:
 
 
 def oracle_spec(family: str) -> dict:
-    """The manifest entry for one oracle-test family."""
+    """Return the manifest entry for one oracle-test family."""
     oracles = manifest()["oracles"]
     if family not in oracles:
-        raise KeyError(
-            f"unknown oracle family {family!r}; science_sources.yaml defines "
-            f"{sorted(oracles)}")
+        raise KeyError(f"unknown oracle family {family!r}; science_sources.yaml defines {sorted(oracles)}")
     return oracles[family]
 
 
 def _git(repo: Path, *args: str) -> tuple[int, str]:
-    r = subprocess.run(["git", "-C", str(repo), *args],
-                       capture_output=True, text=True, timeout=30)
+    r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=30)
     return r.returncode, r.stdout.strip()
 
 
 def oracle_dir() -> Path | None:
-    """The configured oracle checkout, or None when unset."""
+    """Return the configured oracle checkout, or None when unset."""
     raw = os.environ.get(ENV_DIR)
     return Path(raw).expanduser().resolve() if raw else None
 
@@ -74,8 +70,7 @@ def _fail_or_skip(msg: str):
     pytest.skip(msg)
 
 
-def run_oracle_subprocess(test_file, family: str,
-                          config_rel: str | None = None) -> None:
+def run_oracle_subprocess(test_file, family: str, config_rel: str | None = None) -> None:
     """Run `test_file`'s `main()` in a fresh process against an oracle COPY.
 
     Upstream's modules are top-level names bound to one copy's cfg, so every
@@ -85,12 +80,10 @@ def run_oracle_subprocess(test_file, family: str,
         env = os.environ.copy()
         env["VULCAN_MASTER_DIR"] = str(master)
         result = subprocess.run(
-            [sys.executable, str(Path(test_file).resolve())],
-            capture_output=True, text=True, env=env)
+            [sys.executable, str(Path(test_file).resolve())], capture_output=True, text=True, env=env
+        )
     assert result.returncode == 0, (
-        f"subprocess exited {result.returncode}\n"
-        f"--- stdout ---\n{result.stdout}\n"
-        f"--- stderr ---\n{result.stderr}"
+        f"subprocess exited {result.returncode}\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
     )
 
 
@@ -102,20 +95,20 @@ UPSTREAM_MODULES = ("vulcan_cfg", "store", "build_atm", "op", "chem_funs")
 
 
 def enter_master() -> Path:
-    """chdir into the oracle copy (upstream reads its inputs by relative path)
-    and put it first on sys.path."""
+    """Chdir into the oracle copy (upstream reads its inputs by relative path) and put it first on sys.path."""
     master = oracle_dir()
     if master is None or not master.is_dir():
-        raise SystemExit(f"${ENV_DIR} must name the oracle copy; run this file "
-                         "through pytest, which passes one")
+        raise SystemExit(f"${ENV_DIR} must name the oracle copy; run this file through pytest, which passes one")
     os.chdir(master)
     sys.path.insert(0, str(master))
     return master
 
 
 def leave_master() -> None:
-    """Drop upstream's modules and path entry and chdir back to ROOT, so no
-    later import resolves to upstream. References already held stay valid."""
+    """Drop upstream's modules and path entry and chdir back to ROOT, so no later import resolves to upstream.
+
+    References already held stay valid.
+    """
     master = str(oracle_dir())
     for name in UPSTREAM_MODULES:
         sys.modules.pop(name, None)
@@ -150,8 +143,10 @@ def upstream_preloop(cfg, var, atm, make_atm, rate, ini=None, output=None):
 
 
 def assert_below(scores: dict[str, tuple[float, float]]) -> None:
-    """Print every `name: (error, bound)`, then fail on each error not below
-    its bound (NaN included)."""
+    """Print every `name.
+
+    (error, bound)`, then fail on each error not below its bound (NaN included).
+    """
     for name, (err, bound) in scores.items():
         print(f"{name}: {err:.3e} (bound {bound:.0e})")
     over = [name for name, (err, bound) in scores.items() if not err < bound]
@@ -159,8 +154,9 @@ def assert_below(scores: dict[str, tuple[float, float]]) -> None:
 
 
 def write_master_cfg(root: Path, cfg_text: str) -> None:
-    """Write `vulcan_cfg.py` into the oracle COPY at `root` and regenerate its
-    chem_funs.py with upstream's make_chem_funs.py.
+    """Write `vulcan_cfg.py` into the oracle COPY at `root`.
+
+    And regenerate its chem_funs.py with upstream's make_chem_funs.py.
 
     The old module is deleted first, so a failed generator cannot pass by
     leaving the shipped one importable. make_chem_funs.py writes chem_funs.py
@@ -172,15 +168,22 @@ def write_master_cfg(root: Path, cfg_text: str) -> None:
     (root / "vulcan_cfg.py").write_text(cfg_text)
     (root / "chem_funs.py").unlink(missing_ok=True)
     env = {**os.environ, "PYTHONHASHSEED": "0"}
-    gen = subprocess.run([sys.executable, "make_chem_funs.py"], cwd=root,
-                         env=env, capture_output=True, text=True, timeout=1800)
+    gen = subprocess.run(
+        [sys.executable, "make_chem_funs.py"], cwd=root, env=env, capture_output=True, text=True, timeout=1800
+    )
     probe = subprocess.run(
         [sys.executable, "-c", "import chem_funs as c; assert c.ni > 0 and c.nr > 0"],
-        cwd=root, env=env, capture_output=True, text=True, timeout=300)
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
     assert probe.returncode == 0, (
         f"make_chem_funs.py exited {gen.returncode} and left no importable "
         f"chem_funs:\n{gen.stdout[-2000:]}\n{gen.stderr[-2000:]}\n"
-        f"{probe.stderr[-2000:]}")
+        f"{probe.stderr[-2000:]}"
+    )
 
 
 def require_oracle(family: str) -> Path:
@@ -201,7 +204,8 @@ def require_oracle(family: str) -> Path:
             f"    git clone {spec['repo']} /tmp/vulcan-oracle\n"
             f"    git -C /tmp/vulcan-oracle checkout {want}\n"
             f"    export {ENV_DIR}=/tmp/vulcan-oracle\n"
-            "There is no default path.")
+            "There is no default path."
+        )
 
     if not path.is_dir():
         _fail_or_skip(f"{ENV_DIR}={path} does not exist")
@@ -211,7 +215,8 @@ def require_oracle(family: str) -> Path:
         _fail_or_skip(
             f"{ENV_DIR}={path} is not a git checkout, so its revision cannot "
             "be verified; an unversioned copy cannot serve as an oracle. Clone "
-            f"{spec['repo']} and check out {want[:12]}.")
+            f"{spec['repo']} and check out {want[:12]}."
+        )
 
     if head != want:
         _fail_or_skip(
@@ -223,7 +228,8 @@ def require_oracle(family: str) -> Path:
             "Reaction indices are POSITIONAL, so a different revision shifts "
             "every rate/Gibbs comparison and produces failures unrelated to "
             "the ported kernels. Check out the pinned commit, or update "
-            "tests/science_sources.yaml and re-run the oracle tests.")
+            "tests/science_sources.yaml and re-run the oracle tests."
+        )
 
     rc, dirty = _git(path, "status", "--porcelain")
     if rc != 0:
@@ -233,10 +239,11 @@ def require_oracle(family: str) -> Path:
             f"oracle checkout {path} is DIRTY:\n"
             + "\n".join(f"    {ln}" for ln in dirty.splitlines()[:20])
             + "\nAn oracle must be pristine: upstream setup rewrites files in "
-              "place (make_chem_funs renumbers a network file; FastChem writes "
-              "into fastchem_vulcan/), so a dirty tree is usually residue of a "
-              "run outside oracle_worktree(). Reset it: git -C "
-            f"{path} checkout . && git -C {path} clean -fd")
+            "place (make_chem_funs renumbers a network file; FastChem writes "
+            "into fastchem_vulcan/), so a dirty tree is usually residue of a "
+            "run outside oracle_worktree(). Reset it: git -C "
+            f"{path} checkout . && git -C {path} clean -fd"
+        )
 
     return path
 
@@ -253,13 +260,19 @@ def tree_fingerprint(path: Path) -> str:
 # Rule 4. {relative file: ((OLD, NEW, tag), ...)}; OLD/NEW are exact upstream
 # text (24-space indent, LF).
 ORACLE_CODE_DELTAS: dict[str, tuple[tuple[str, str, str], ...]] = {
-    "op.py": ((
-        ("                        nn = 0.75 - 1.27*np.log(Fc)\n"
-         "                        ff = np.exp( np.log(Fc)/(1.+ (np.log(k[i]*M/k_inf)/nn)**2 ) )\n"),
-        ("                        nn = 0.75 - 1.27*np.log10(Fc)\n"
-         "                        ff = Fc**( 1./(1.+ (np.log10(k[i]*M/k_inf)/nn)**2 ) )\n"),
-        "OH+CH3+M Troe width in log10 (Visscher & Moses 2011 eq 14)",
-    ),),
+    "op.py": (
+        (
+            (
+                "                        nn = 0.75 - 1.27*np.log(Fc)\n"
+                "                        ff = np.exp( np.log(Fc)/(1.+ (np.log(k[i]*M/k_inf)/nn)**2 ) )\n"
+            ),
+            (
+                "                        nn = 0.75 - 1.27*np.log10(Fc)\n"
+                "                        ff = Fc**( 1./(1.+ (np.log10(k[i]*M/k_inf)/nn)**2 ) )\n"
+            ),
+            "OH+CH3+M Troe width in log10 (Visscher & Moses 2011 eq 14)",
+        ),
+    ),
 }
 
 
@@ -299,7 +312,8 @@ def apply_code_deltas(root: Path) -> list[str]:
                 raise RuntimeError(
                     f"{path}: delta {tag!r} expects its OLD block exactly once, "
                     f"found {n}; the pinned upstream no longer matches "
-                    "ORACLE_CODE_DELTAS -- re-derive or delete the entry")
+                    "ORACLE_CODE_DELTAS -- re-derive or delete the entry"
+                )
             text = text.replace(old, new)
             applied.append(tag)
         path.write_bytes(text.encode("utf-8"))
@@ -322,16 +336,15 @@ def _oracle_fastchem_binary(family: str, src: Path) -> Path:
     holder = tempfile.TemporaryDirectory(prefix="vulcan-oracle-fastchem-")
     _FASTCHEM_BUILD_DIRS.append(holder)
     tree = Path(holder.name) / "fastchem_vulcan"
-    shutil.copytree(src / "fastchem_vulcan", tree, symlinks=True,
-                    ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    shutil.copytree(src / "fastchem_vulcan", tree, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__"))
     (tree / "obj").mkdir(exist_ok=True)
-    build = subprocess.run(["make"], cwd=str(tree), capture_output=True,
-                           text=True, timeout=1800)
+    build = subprocess.run(["make"], cwd=str(tree), capture_output=True, text=True, timeout=1800)
     binary = tree / "fastchem"
     if build.returncode != 0 or not binary.is_file():
         raise RuntimeError(
             f"building the oracle's FastChem in {tree} failed "
-            f"({build.returncode}):\n{build.stdout[-2000:]}\n{build.stderr[-2000:]}")
+            f"({build.returncode}):\n{build.stdout[-2000:]}\n{build.stderr[-2000:]}"
+        )
     _FASTCHEM_BUILDS[family] = binary
     return binary
 
@@ -354,38 +367,32 @@ def oracle_worktree(
     with tempfile.TemporaryDirectory(prefix="vulcan-oracle-") as tmp:
         dst = Path(tmp) / src.name
         # copy2 preserves mtimes; skip .git (large, and the copy is disposable)
-        shutil.copytree(src, dst, symlinks=True,
-                        ignore=shutil.ignore_patterns(".git", "__pycache__"))
+        shutil.copytree(src, dst, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__"))
         apply_code_deltas(dst)
         apply_data_deltas(dst)
         if config_rel is not None:
             config_source = dst / config_rel
             if not config_source.is_file():
-                raise FileNotFoundError(
-                    f"oracle config does not exist: {config_source}")
+                raise FileNotFoundError(f"oracle config does not exist: {config_source}")
             shutil.copy2(config_source, dst / "vulcan_cfg.py")
         oracle_fastchem = dst / "fastchem_vulcan"
         # Upstream ships FastChem source only, so an ini_mix='EQ' oracle run needs a
         # build of upstream's own source (the oracle stays unmodified).
         if oracle_fastchem.is_dir() and not (oracle_fastchem / "fastchem").exists():
-            shutil.copy2(_oracle_fastchem_binary(family, src),
-                         oracle_fastchem / "fastchem")
+            shutil.copy2(_oracle_fastchem_binary(family, src), oracle_fastchem / "fastchem")
         if fastchem_abundance is not None:
-            abundance = (ROOT / "src" / "vulcan3" / "thermo"
-                         / fastchem_abundance)
+            abundance = ROOT / "src" / "vulcan3" / "thermo" / fastchem_abundance
             if not abundance.is_file():
                 raise FileNotFoundError(f"no such abundance preset: {abundance}")
-            shutil.copy2(
-                abundance,
-                oracle_fastchem / "input" / "solar_element_abundances.dat")
+            shutil.copy2(abundance, oracle_fastchem / "input" / "solar_element_abundances.dat")
         try:
             yield dst
         finally:
             after = tree_fingerprint(src)
             if after != before:
-                rc, dirty = _git(src, "status", "--porcelain")
+                _rc, dirty = _git(src, "status", "--porcelain")
                 raise AssertionError(
                     f"the oracle checkout at {src} CHANGED during the test. "
                     "Upstream code must only ever run against the temporary "
-                    "copy.\nDirty files now:\n"
-                    + "\n".join(f"    {ln}" for ln in dirty.splitlines()[:20]))
+                    "copy.\nDirty files now:\n" + "\n".join(f"    {ln}" for ln in dirty.splitlines()[:20])
+                )

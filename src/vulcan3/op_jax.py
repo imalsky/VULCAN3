@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import logging
 
-import numpy as np
 import jax.numpy as jnp
+import numpy as np
 
+from . import chem_funs, photo as _photo_mod, phy_const as _phy_const
 from .config import default_config
-from . import chem_funs
-from . import photo as _photo_mod
-from . import phy_const as _phy_const
+
+__all__ = ["Ros2JAX"]
 
 logger = logging.getLogger(__name__)
 
 _CFG = default_config()
-_NETWORK = chem_funs._NETWORK   # the one parse per process
+_NETWORK = chem_funs._NETWORK  # the one parse per process
 
 
 class Ros2JAX:
@@ -27,26 +27,30 @@ class Ros2JAX:
         self._photo_J_data = None
         self._photo_ion_data = None
 
+    @property
+    def photo_static(self):
+        """The pre-built photolysis tables, or None; the old name `_photo_static` is deprecated (docs/api.md)."""
+        return self._photo_static
+
+    @photo_static.setter
+    def photo_static(self, value):
+        self._photo_static = value
+
     def _ensure_photo_static(self, var, atm):
-        """Build (or refresh) and return the cached `PhotoStaticInputs` for
-        `(var, atm)`."""
+        """Build (or refresh) and return the cached `PhotoStaticInputs` for `(var, atm)`."""
         if self._photo_static is None:
             from . import photo_setup as _photo_setup
 
             self._photo_static = _photo_setup._build_photo_static_dense(var, atm)
         if int(self._photo_static.din12_indx) < 0 and hasattr(var, "sflux_din12_indx"):
-            self._photo_static = self._photo_static.with_din12_indx(
-                int(var.sflux_din12_indx)
-            )
+            self._photo_static = self._photo_static.with_din12_indx(int(var.sflux_din12_indx))
         return self._photo_static
 
     def compute_tau(self, var, atm):
         """Compute optical depth and write to `var.tau`."""
         if self._photo_data is None:
             static = self._ensure_photo_static(var, atm)
-            self._photo_data = _photo_mod.photo_data_from_static(
-                static, list(_NETWORK.species)
-            )
+            self._photo_data = _photo_mod.photo_data_from_static(static, list(_NETWORK.species))
         tau_j = _photo_mod.compute_tau_jax(
             jnp.asarray(var.y),
             jnp.asarray(atm.dz),
@@ -78,11 +82,7 @@ class Ros2JAX:
         mask = var.aflux > _CFG.flux_atol
         if np.any(mask):
             with np.errstate(invalid="ignore"):
-                var.aflux_change = float(
-                    np.nanmax(
-                        np.abs(var.aflux - var.prev_aflux)[mask] / var.aflux[mask]
-                    )
-                )
+                var.aflux_change = float(np.nanmax(np.abs(var.aflux - var.prev_aflux)[mask] / var.aflux[mask]))
         else:
             var.aflux_change = 0.0
 
@@ -105,22 +105,17 @@ class Ros2JAX:
         if self._photo_J_data is None:
             static = self._ensure_photo_static(var, atm)
             self._photo_J_data = _photo_mod.photo_J_data_from_static(static)
-        var.J_sp = self._fill_J(
-            var, self._photo_J_data, var.photo_sp, var.n_branch, var.pho_rate_index
-        )
+        var.J_sp = self._fill_J(var, self._photo_J_data, var.photo_sp, var.n_branch, var.pho_rate_index)
 
     def compute_Jion(self, var, atm):
         """Photo-ionisation rates per (species, branch). Writes to var.Jion_sp + var.k_arr."""
         if self._photo_ion_data is None:
             static = self._ensure_photo_static(var, atm)
             self._photo_ion_data = _photo_mod.photo_ion_data_from_static(static)
-        var.Jion_sp = self._fill_J(
-            var, self._photo_ion_data, var.ion_sp, var.ion_branch, var.ion_rate_index
-        )
+        var.Jion_sp = self._fill_J(var, self._photo_ion_data, var.ion_sp, var.ion_branch, var.ion_rate_index)
 
     def naming_solver(self, para):
-        """Log the molecular-diffusion line and stamp `para.solver_str`
-        (op.py:3078-3088)."""
+        """Log the molecular-diffusion line and stamp `para.solver_str` (op.py:3078-3088)."""
         if _CFG.use_moldiff:
             logger.info("Include molecular diffusion.")
         else:

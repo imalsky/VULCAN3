@@ -1,5 +1,4 @@
-"""Validate forward rates and the NASA-9 reverse-rate path against
-VULCAN-master's read_rate and rev_rate.
+"""Validate forward rates and the NASA-9 reverse-rate path against VULCAN-master's read_rate and rev_rate.
 
 Runs master's setup until `data_var.k` holds the forward rates, compares
 `rates_jax.compute_forward_k` on the same T/M atmosphere, then lets master
@@ -13,10 +12,8 @@ nothing.
 from __future__ import annotations
 
 import numpy as np
-
 from _helpers import relerr
-from oracle import (assert_below, enter_master, leave_master,
-                    run_oracle_subprocess, upstream_preloop)
+from oracle import assert_below, enter_master, leave_master, run_oracle_subprocess, upstream_preloop
 
 
 def main() -> None:
@@ -30,14 +27,13 @@ def main() -> None:
     from vulcan3.atm_setup import Atm
 
     import vulcan3.network as net_mod
-    import vulcan3.rates_jax as rates_jax
+    from vulcan3 import rates_jax
     import vulcan3.gibbs as gibbs_mod
 
     # === 1. VULCAN setup: build atm + read forward rates, then reverse rates ===
     use_lowT = bool(getattr(vulcan_cfg, "use_lowT_limit_rates", False))
     rate = op.ReadRate()
-    data_var, data_atm = upstream_preloop(
-        vulcan_cfg, store.Variables(), store.AtmData(), Atm(), rate)
+    data_var, data_atm = upstream_preloop(vulcan_cfg, store.Variables(), store.AtmData(), Atm(), rate)
     k_forward = {i: np.array(v, dtype=np.float64) for i, v in data_var.k.items()}
     if use_lowT:
         data_var = rate.lim_lowT_rates(data_var, data_atm)
@@ -61,7 +57,7 @@ def main() -> None:
             use_lowT_caps=use_lowT,
         )
     )
-    missing = [sp for sp, p in zip(net.species, present) if not p]
+    missing = [sp for sp, p in zip(net.species, present, strict=False) if not p]
     if missing:
         print(f"  Missing: {missing}")
 
@@ -79,24 +75,24 @@ def main() -> None:
     print(f"reverse k compared: {len(rev)}")
 
     # === 5. Beyond stop_rev_indx all reverses are zero ===
-    bad_zero = sum(k_full[i].max() != 0.0
-                   for i in range(net.stop_rev_indx + 1, net.nr + 1, 2))
+    bad_zero = sum(k_full[i].max() != 0.0 for i in range(net.stop_rev_indx + 1, net.nr + 1, 2))
 
-    assert_below({
-        # Both sides can be very small or zero: relative error with a floor.
-        "forward k (nonzero rows)": (relerr(
-            k_fwd[live], np.stack([k_forward[i] for i in live]), floor=1e-300), 1e-10),
-        "forward k (zero rows) max |k|": (
-            float(np.max(np.abs(k_fwd[dead]), initial=0.0)), 1e-300),
-        "reverse k": (relerr(
-            k_full[rev], np.stack([data_var.k[i] for i in rev]), floor=1e-300), 1e-8),
-        "non-zero reverses beyond stop_rev_indx": (bad_zero, 1),
-    })
+    assert_below(
+        {
+            # Both sides can be very small or zero: relative error with a floor.
+            "forward k (nonzero rows)": (
+                relerr(k_fwd[live], np.stack([k_forward[i] for i in live]), floor=1e-300),
+                1e-10,
+            ),
+            "forward k (zero rows) max |k|": (float(np.max(np.abs(k_fwd[dead]), initial=0.0)), 1e-300),
+            "reverse k": (relerr(k_full[rev], np.stack([data_var.k[i] for i in rev]), floor=1e-300), 1e-8),
+            "non-zero reverses beyond stop_rev_indx": (bad_zero, 1),
+        }
+    )
 
 
 def test_main():
-    run_oracle_subprocess(__file__, "vulcan2_ncho",
-                          "cfg_examples/vulcan_cfg_HD189.py")
+    run_oracle_subprocess(__file__, "vulcan2_ncho", "cfg_examples/vulcan_cfg_HD189.py")
 
 
 if __name__ == "__main__":

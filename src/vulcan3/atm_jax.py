@@ -16,6 +16,8 @@ import numpy as np
 
 from .atm_setup import mol_diff_jax, settling_coeff_array, surface_gravity
 
+__all__ = ["AtmSpec", "PhysicalInputs", "make_physical_inputs", "mol_diff"]
+
 
 class PhysicalInputs(NamedTuple):
     """Differentiable atmosphere inputs (the leaves AD flows through).
@@ -37,10 +39,10 @@ class PhysicalInputs(NamedTuple):
 
 
 class AtmSpec(NamedTuple):
-    """Static, non-differentiated configuration for `_mol_diff` and the
-    settling velocity: discrete host-side choices (species identities,
-    background gas, transport toggles) plus the per-species constant arrays.
-    Close over it; do not trace through it.
+    """Static, non-differentiated configuration for `_mol_diff` and the settling velocity.
+
+    Discrete host-side choices (species identities, background gas, transport toggles) plus the per-species constant
+    arrays. Close over it; do not trace through it.
     """
 
     nz: int
@@ -82,9 +84,10 @@ def _mol_diff(phys: PhysicalInputs, spec: AtmSpec, n_0, gz, Hp, dz):
     )
 
 
-def make_physical_inputs(
-    cfg, var, atm, species_list: list[str]
-) -> tuple[PhysicalInputs, AtmSpec]:
+mol_diff = _mol_diff  # the public name; `_mol_diff` is deprecated (docs/api.md)
+
+
+def make_physical_inputs(cfg, var, atm, species_list: list[str]) -> tuple[PhysicalInputs, AtmSpec]:
     """Bridge a legacy (cfg, var, atm) setup into (PhysicalInputs, AtmSpec).
 
     Pulls the differentiable profiles into `PhysicalInputs` and the discrete

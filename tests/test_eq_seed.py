@@ -1,22 +1,21 @@
-"""The `ini_mix: EQ` Gibbs seed: agreement with upstream, and its own invariants.
+"""The `ini_mix: EQ` Gibbs seed: agreement with upstream, and its own invariants."""
 
-The seed is a JAX Gibbs minimizer over the loaded network's gas species, on
-the NASA-9 polynomials of the reverse rates. Two things need proving:
-
-1. It is the same equilibrium. `test_seed_matches_upstream_fastchem` runs the
-   pinned upstream VULCAN's own initializer on the same column with the same
-   elemental abundances and compares dex by dex. Upstream's FastChem reads the
-   same NASA-9 polynomials (its HO2 row is older) but shares no algorithm and
-   no species list, so the bar is the measured agreement (see MAX_DEX below),
-   not machine precision.
-
-2. It is exact where it must be: element ratios, normalisation, excluded
-   species, and the jit / vmap / jvp boundary. Those need no oracle.
-
-Both sides run in subprocesses: the network is import-frozen, so the W39b
-(SNCHO) case cannot share a process with the NCHO default, and master's
-modules must never be imported into a pytest worker.
-"""
+# The seed is a JAX Gibbs minimizer over the loaded network's gas species, on
+# the NASA-9 polynomials of the reverse rates. Two things need proving:
+#
+# 1. It is the same equilibrium. `test_seed_matches_upstream_fastchem` runs the
+#    pinned upstream VULCAN's own initializer on the same column with the same
+#    elemental abundances and compares dex by dex. Upstream's FastChem reads the
+#    same NASA-9 polynomials (its HO2 row is older) but shares no algorithm and
+#    no species list, so the bar is the measured agreement (see MAX_DEX below),
+#    not machine precision.
+#
+# 2. It is exact where it must be: element ratios, normalisation, excluded
+#    species, and the jit / vmap / jvp boundary. Those need no oracle.
+#
+# Both sides run in subprocesses: the network is import-frozen, so the W39b
+# (SNCHO) case cannot share a process with the NCHO default, and master's
+# modules must never be imported into a pytest worker.
 
 from __future__ import annotations
 
@@ -215,11 +214,13 @@ def _run(script: str, *args) -> None:
     """Run a probe subprocess and surface both streams on failure."""
     result = subprocess.run(
         [sys.executable, "-c", script, *map(str, args)],
-        capture_output=True, text=True, timeout=1800, check=False,
+        capture_output=True,
+        text=True,
+        timeout=1800,
+        check=False,
     )
     assert result.returncode == 0, (
-        f"probe exited {result.returncode}\n"
-        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        f"probe exited {result.returncode}\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
     )
 
 
@@ -239,16 +240,10 @@ def _master_cfg(master_root: Path, config_name: str, scratch: Path) -> Path:
 
     cfg = load_config("W39b")
     legacy = (master_root / "vulcan_cfg.py").read_text()
-    lines = [
-        f"{key} = {getattr(cfg, key)!r}"
-        for key in sorted(vars(cfg))
-        if not key.startswith("_")
-    ]
+    lines = [f"{key} = {getattr(cfg, key)!r}" for key in sorted(vars(cfg)) if not key.startswith("_")]
     lines.append(f"gs = {G_grav * float(cfg.Mp) / float(cfg.Rp) ** 2!r}")
     cfg_path = scratch / "vulcan_cfg_W39b_resolved.py"
-    cfg_path.write_text(
-        legacy + "\n# resolved W39b overrides\n" + "\n".join(lines) + "\n"
-    )
+    cfg_path.write_text(legacy + "\n# resolved W39b overrides\n" + "\n".join(lines) + "\n")
     for rel in (
         "thermo/SNCHO_photo_network_2025.txt",
         "atm/atm_W39b_evening_TP_Kzz.txt",
@@ -260,20 +255,20 @@ def _master_cfg(master_root: Path, config_name: str, scratch: Path) -> Path:
     return cfg_path
 
 
-@pytest.mark.parametrize(
-    "config_name, abundance", [c[1:] for c in CASES], ids=[c[0] for c in CASES]
-)
+@pytest.mark.parametrize(("config_name", "abundance"), [c[1:] for c in CASES], ids=[c[0] for c in CASES])
 def test_seed_matches_upstream_fastchem(config_name: str, abundance: str) -> None:
     """The Gibbs seed reproduces upstream's FastChem seed to MAX_DEX."""
     from oracle import oracle_worktree
 
-    with tempfile.TemporaryDirectory(prefix="eq_seed_") as tmp, \
-            oracle_worktree(
-                "vulcan2_ncho",
-                # Both sides must start from the SAME composition: an
-                # unmatched preset compares two atmospheres, not two codes.
-                fastchem_abundance=abundance,
-            ) as master_root:
+    with (
+        tempfile.TemporaryDirectory(prefix="eq_seed_") as tmp,
+        oracle_worktree(
+            "vulcan2_ncho",
+            # Both sides must start from the SAME composition: an
+            # unmatched preset compares two atmospheres, not two codes.
+            fastchem_abundance=abundance,
+        ) as master_root,
+    ):
         scratch = Path(tmp)
         jax_npz, master_npz = scratch / "jax.npz", scratch / "master.npz"
         cfg_path = _master_cfg(master_root, config_name, scratch)
@@ -320,9 +315,7 @@ def test_seed_reproduces_its_element_vector_and_normalisation(Tiso) -> None:
     if Tiso is not None:
         Tco = np.full_like(Tco, Tiso)
     b = ini_abun._element_vector()
-    ymix = np.asarray(
-        ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b))
-    )
+    ymix = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b)))
 
     assert np.isfinite(ymix).all()
     seed_idx = set(ini_abun._seed()[1].tolist())
@@ -333,11 +326,9 @@ def test_seed_reproduces_its_element_vector_and_normalisation(Tiso) -> None:
     counts = np.asarray(composition.compo_array)
     elements = ini_abun.seed_elements()
     cols = [composition.atom_list.index(e) for e in elements]
-    got = ymix @ counts[:, cols]                       # (nz, E)
+    got = ymix @ counts[:, cols]  # (nz, E)
     got = got / got[:, [elements.index("H")]]
-    np.testing.assert_allclose(
-        got, np.broadcast_to(b / b[0], got.shape), rtol=ELEMENT_RTOL, atol=0.0
-    )
+    np.testing.assert_allclose(got, np.broadcast_to(b / b[0], got.shape), rtol=ELEMENT_RTOL, atol=0.0)
 
 
 def test_ratios_path_matches_the_config_path_and_moves_carbon() -> None:
@@ -363,16 +354,13 @@ def test_ratios_path_matches_the_config_path_and_moves_carbon() -> None:
         np.testing.assert_array_equal(ini_abun._element_vector(ratios), b_cfg)
         idx = ini_abun.ratio_indices(elements)
         np.testing.assert_array_equal(
-            np.asarray(ini_abun.element_vector(
-                jnp.asarray([ratios[a] for a in elements]), idx)),
+            np.asarray(ini_abun.element_vector(jnp.asarray([ratios[a] for a in elements]), idx)),
             b_cfg,
         )
         # No-override case, both branches of `use_solar`: the traced path
         # must read the same vector the host path reads, preset or <X>_H.
         empty = ini_abun.ratio_indices([])
-        np.testing.assert_array_equal(
-            np.asarray(ini_abun.element_vector(jnp.zeros(0), empty)), b_cfg
-        )
+        np.testing.assert_array_equal(np.asarray(ini_abun.element_vector(jnp.zeros(0), empty)), b_cfg)
         b_c2 = ini_abun._element_vector({**ratios, "C": 2.0 * ratios["C"]})
     finally:
         cfg.use_solar = True
@@ -385,29 +373,24 @@ def test_ratios_path_matches_the_config_path_and_moves_carbon() -> None:
     # it does not name keep the preset on both paths.
     c_only = {"C": 2.0 * ratios["C"]}
     np.testing.assert_array_equal(
-        np.asarray(ini_abun.element_vector(
-            jnp.asarray(list(c_only.values())), ini_abun.ratio_indices(list(c_only)))),
+        np.asarray(ini_abun.element_vector(jnp.asarray(list(c_only.values())), ini_abun.ratio_indices(list(c_only)))),
         ini_abun._element_vector(c_only),
     )
 
     Tco, p_bar = _hd189_column()
-    y_cfg = np.asarray(
-        ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b_cfg))
-    )
-    y_c2 = np.asarray(
-        ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b_c2))
-    )
+    y_cfg = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b_cfg)))
+    y_c2 = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b_c2)))
     sp = composition.species
     assert np.all(y_c2[:, sp.index("CH4")] > y_cfg[:, sp.index("CH4")])
-    np.testing.assert_allclose(
-        y_c2[:, sp.index("He")], y_cfg[:, sp.index("He")], rtol=2e-2
-    )
+    np.testing.assert_allclose(y_c2[:, sp.index("He")], y_cfg[:, sp.index("He")], rtol=2e-2)
 
 
 def test_solver_controls_force_a_retrace() -> None:
-    """Changing the seed's solver controls retraces: `eq_seed` reads tol and
-    max_iter at trace time, so after a converged run `max_iter = 1` must
-    return the all-NaN non-convergence signal."""
+    """Changing the seed's solver controls retraces.
+
+    `eq_seed` reads tol and max_iter at trace time, so after a converged run `max_iter = 1` must return the all-NaN
+    non-convergence signal.
+    """
     import jax.numpy as jnp
 
     from vulcan3 import ini_abun
@@ -451,8 +434,9 @@ def test_seed_setup_survives_being_built_inside_a_trace() -> None:
 
 
 def test_seed_lane_is_bitwise_the_solo_seed_at_any_batch_width() -> None:
-    """A lane's seed is the solo seed bit for bit at any `vmap` width, nested
-    or under `jvp`, and the `jvp` tangent is exactly zero.
+    """A lane's seed is the solo seed bit for bit at any `vmap` width, nested or under `jvp`.
+
+    And the `jvp` tangent is exactly zero.
 
     Callers vmap the seed over lanes (vulcan-forward's batched prep,
     `run_queue`'s refill) and the solver amplifies a 1-ulp seed difference to
@@ -471,7 +455,7 @@ def test_seed_lane_is_bitwise_the_solo_seed_at_any_batch_width() -> None:
     T = jnp.asarray(Tco) * jnp.asarray([1.0, 1.05, 0.95, 1.10, 0.90])[:, None]
     B = jnp.tile(jnp.asarray(ini_abun._element_vector()), (5, 1))
     seed = ini_abun.eq_seed
-    lanes = jax.vmap(seed, in_axes=(0, None, 0))   # vulcan-forward's pattern
+    lanes = jax.vmap(seed, in_axes=(0, None, 0))  # vulcan-forward's pattern
 
     def lane_1(tree):
         return jax.tree_util.tree_map(lambda x: x[1], tree)
@@ -481,15 +465,15 @@ def test_seed_lane_is_bitwise_the_solo_seed_at_any_batch_width() -> None:
         "width 2": lambda: lanes(T[:2], p, B[:2])[1],
         "width 5": lambda: lanes(T, p, B)[1],
         "nested 2x2": lambda: jax.vmap(lanes, in_axes=(0, None, 0))(
-            T[:4].reshape(2, 2, -1), p, B[:4].reshape(2, 2, -1))[0, 1],
+            T[:4].reshape(2, 2, -1), p, B[:4].reshape(2, 2, -1)
+        )[0, 1],
     }
-    jvps = {   # (primal, tangent) along d/d(T scale) at scale 1
+    jvps = {  # (primal, tangent) along d/d(T scale) at scale 1
         "jvp": lambda: jax.jvp(lambda s: seed(T[1] * s, p, B[1]), (1.0,), (1.0,)),
-        "jvp of vmap": lambda: lane_1(
-            jax.jvp(lambda s: lanes(T * s, p, B), (1.0,), (1.0,))),
-        "vmap of jvp": lambda: lane_1(jax.vmap(
-            lambda t, b: jax.jvp(lambda s: seed(t * s, p, b), (1.0,), (1.0,))
-        )(T, B)),
+        "jvp of vmap": lambda: lane_1(jax.jvp(lambda s: lanes(T * s, p, B), (1.0,), (1.0,))),
+        "vmap of jvp": lambda: lane_1(
+            jax.vmap(lambda t, b: jax.jvp(lambda s: seed(t * s, p, b), (1.0,), (1.0,)))(T, B)
+        ),
     }
     solo = np.asarray(jax.jit(seed)(T[1], p, B[1]))
     assert np.isfinite(solo).all()
@@ -498,14 +482,13 @@ def test_seed_lane_is_bitwise_the_solo_seed_at_any_batch_width() -> None:
         y, dy = (out, None) if name in widths else out
         y = np.asarray(y)
         assert np.array_equal(y, solo), (
-            f"{name}: {int(np.sum(y != solo))} entries differ from the solo "
-            f"seed, max {np.abs(y - solo).max():.3e}"
+            f"{name}: {int(np.sum(y != solo))} entries differ from the solo seed, max {np.abs(y - solo).max():.3e}"
         )
         assert dy is None or not np.asarray(dy).any(), f"{name}: nonzero tangent"
 
 
 def _hd189_column() -> tuple[np.ndarray, np.ndarray]:
-    """The shipped HD189 T-P column as (Tco [K], p [bar])."""
+    """Return the shipped HD189 T-P column as (Tco [K], p [bar])."""
     from vulcan3.atm_setup import Atm
     from vulcan3.state import _AtmData
 

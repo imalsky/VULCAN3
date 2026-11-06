@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+type: software
+title: "VULCAN3"
+authors:
+  - family-names: "Malsky"
+    given-names: "Isaac"
+repository-code: "https://github.com/imalsky/VULCAN3"
+license: GPL-3.0-only

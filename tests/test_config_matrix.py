@@ -12,12 +12,9 @@ import pytest
 from _helpers import load_tpk_state, set_cfg
 
 
-
 def test_T_cross_sp_path_finite_positive():
-    """T-dependent absp cross-section path is finite and non-negative for
-    every (sp, layer) pair.
-    """
-    import vulcan3.photo_setup as photo_setup
+    """T-dependent absp cross-section path is finite and non-negative for every (sp, layer) pair."""
+    from vulcan3 import photo_setup
 
     data_var, data_atm, _ = load_tpk_state()
     import vulcan3.legacy_io as op
@@ -29,18 +26,14 @@ def test_T_cross_sp_path_finite_positive():
     static = photo_setup._build_photo_static_dense(data_var, data_atm)
 
     absp_T_cross = np.asarray(static.absp_T_cross)
-    assert absp_T_cross.shape[0] == 3, (
-        f"expected 3 T-dep species rows, got {absp_T_cross.shape}"
-    )
+    assert absp_T_cross.shape[0] == 3, f"expected 3 T-dep species rows, got {absp_T_cross.shape}"
     assert np.all(np.isfinite(absp_T_cross))
     assert np.all(absp_T_cross >= 0.0)
     assert np.any(absp_T_cross > 0.0), "T-dep cross-sections all zero"
 
 
 def test_use_vm_mol_populates_vm():
-    """``use_vm_mol=True`` writes finite, non-zero advective velocity into
-    ``atm.vm``.
-    """
+    """``use_vm_mol=True`` writes finite, non-zero advective velocity into ``atm.vm``."""
     import vulcan3.legacy_io as op
     from vulcan3.ini_abun import InitialAbun
 
@@ -62,7 +55,7 @@ def test_use_vm_mol_populates_vm():
 
 
 @pytest.mark.parametrize(
-    "flag,file_attr,file_path,target_sp",
+    ("flag", "file_attr", "file_path", "target_sp"),
     [
         (
             "use_topflux",
@@ -78,15 +71,25 @@ def test_use_vm_mol_populates_vm():
         ),
     ],
 )
-def test_bc_flux_loaded_from_file(flag, file_attr, file_path, target_sp):
+def test_bc_flux_loaded_from_file(flag, file_attr, file_path, target_sp, tmp_path):
     """``use_topflux=True`` / ``use_botflux=True`` populates
     ``atm.top_flux`` / ``atm.bot_flux`` from the matching cfg file.
     Verifies non-zero flux for at least one network species.
     """
-    import vulcan3.composition as composition
+    from vulcan3 import composition
+
+    from vulcan3._paths import resolve_data_path
 
     species_list = list(composition.species)
-    set_cfg(**{flag: True, file_attr: file_path})
+    # Only the rows of this network: a row outside it is refused (test below).
+    rows = [
+        line
+        for line in resolve_data_path(file_path).read_text().splitlines()
+        if not line.strip() or line.startswith("#") or line.split()[0] in species_list
+    ]
+    bc_file = tmp_path / "bc.txt"
+    bc_file.write_text("\n".join(rows) + "\n")
+    set_cfg(**{flag: True, file_attr: str(bc_file)})
     _, data_atm, make_atm = load_tpk_state()
     make_atm.BC_flux(data_atm)
 
@@ -94,7 +97,13 @@ def test_bc_flux_loaded_from_file(flag, file_attr, file_path, target_sp):
     arr = np.asarray(getattr(data_atm, arr_name))
     assert arr.shape == (len(species_list),)
     idx = species_list.index(target_sp)
-    assert arr[idx] != 0.0, (
-        f"expected nonzero {arr_name} for {target_sp} from {file_path}"
-    )
+    assert arr[idx] != 0.0, f"expected nonzero {arr_name} for {target_sp} from {file_path}"
     assert np.any(arr != 0.0)
+
+
+def test_bc_flux_refuses_a_species_outside_the_network():
+    """A row for a species the network lacks raises, as upstream's `species.index` does (build_atm.py:759,768)."""
+    set_cfg(use_botflux=True, bot_BC_flux_file="atm/BC_bot_Earth.txt")  # sulfur rows; the default network has no sulfur
+    _, data_atm, make_atm = load_tpk_state()
+    with pytest.raises(ValueError, match="not in the network"):
+        make_atm.BC_flux(data_atm)

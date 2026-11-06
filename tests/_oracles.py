@@ -1,20 +1,19 @@
-"""Reference kernels only the tests use: independent oracles for production code.
+"""Reference kernels only the tests use: independent oracles for production code."""
 
-- `chem_jac`: the `jax.jacrev` of the vectorised `y**stoich` +
-  `segment_sum` RHS, the oracle for the analytical
-  Jacobian `chem.chem_jac_analytical` (jacrev is an order of magnitude slower;
-  the Jacobian has no cancellation amplifier, so the RHS form's term order
-  does not matter here).
-- `chem_rhs_numpy`: the RHS in master's term order, NumPy float64, the oracle
-  for the codegen RHS.
-- `block_thomas`: the dense-off-block Thomas solve on
-  `jax.scipy.linalg.lu_factor` / `lu_solve`, independent of the production
-  `lax.linalg.lu` path; `block_thomas_diag_offdiag`: the production
-  factor/solve pair in one call; `banded_solve`: LAPACK's banded solve of
-  the same system with diagonal off-blocks, the backward-stable yardstick.
-- `stage_defects`: each Ros2 stage vector's element-identity defect and the
-  bound the stage repair leaves it under.
-"""
+# - `chem_jac`: the `jax.jacrev` of the vectorised `y**stoich` +
+#   `segment_sum` RHS, the oracle for the analytical
+#   Jacobian `chem.chem_jac_analytical` (jacrev is an order of magnitude slower;
+#   the Jacobian has no cancellation amplifier, so the RHS form's term order
+#   does not matter here).
+# - `chem_rhs_numpy`: the RHS in master's term order, NumPy float64, the oracle
+#   for the codegen RHS.
+# - `block_thomas`: the dense-off-block Thomas solve on
+#   `jax.scipy.linalg.lu_factor` / `lu_solve`, independent of the production
+#   `lax.linalg.lu` path; `block_thomas_diag_offdiag`: the production
+#   factor/solve pair in one call; `banded_solve`: LAPACK's banded solve of
+#   the same system with diagonal off-blocks, the backward-stable yardstick.
+# - `stage_defects`: each Ros2 stage vector's element-identity defect and the
+#   bound the stage repair leaves it under.
 
 from __future__ import annotations
 
@@ -131,7 +130,7 @@ def chem_rhs_numpy(y, M, k, net):
 
 
 def block_thomas_diag_offdiag(diag, sup_d, sub_d, rhs):
-    """The production factor/solve pair in one call.
+    """Return the production factor/solve pair in one call.
 
     Shapes: diag (nz, ni, ni), sup_d/sub_d (nz-1, ni), rhs (nz, ni) -> (nz, ni).
     """
@@ -140,7 +139,7 @@ def block_thomas_diag_offdiag(diag, sup_d, sub_d, rhs):
 
 
 def block_thomas(diag, sup, sub, rhs):
-    """Generic dense block-tridiagonal Thomas solve.
+    """Solve a generic dense block-tridiagonal Thomas solve.
 
     Shapes: diag (nz, ni, ni), sup/sub (nz-1, ni, ni), rhs (nz, ni) -> (nz, ni).
     """
@@ -165,9 +164,7 @@ def block_thomas(diag, sup, sub, rhs):
 
     _, (A_lu_stack, rhs_mod_stack) = jax.lax.scan(fwd_step, (A0_lu, rhs0), inputs)
 
-    A_lu_full = jax.tree.map(
-        lambda a, b: jnp.concatenate([a[None], b], axis=0), A0_lu, A_lu_stack
-    )
+    A_lu_full = jax.tree.map(lambda a, b: jnp.concatenate([a[None], b], axis=0), A0_lu, A_lu_stack)
     rhs_mod_full = jnp.concatenate([rhs0[None], rhs_mod_stack], axis=0)
 
     k_last = lu_solve(jax.tree.map(lambda x: x[-1], A_lu_full), rhs_mod_full[-1])
@@ -190,7 +187,7 @@ def block_thomas(diag, sup, sub, rhs):
 
 
 def banded_solve(diag, sup, sub, b):
-    """A BACKWARD-STABLE solve of the block-tridiagonal system (LAPACK gbsv).
+    """Return a BACKWARD-STABLE solve of the block-tridiagonal system (LAPACK gbsv).
 
     Shapes: diag (nz, ni, ni), sup/sub (nz-1, ni), b (nz, ni) -> (nz, ni).
     The system is assembled banded (kl = ku = 2*ni-1) rather than dense: at
@@ -216,17 +213,16 @@ def banded_solve(diag, sup, sub, b):
 
 
 def stage_defects(y, k_arr, dt, atm, net):
-    """Per-layer, per-atom defect of each Ros2 stage vector against its
-    element identity, and the bound the repair leaves it under:
-    `max(_DEFECT_FLOOR * scale, REPAIR_ABS_FLOOR * c0 * n_tot)` with `scale`
-    the atom-weighted sum of the identity's terms (`c0 |k|`, `|T k|`
-    contributions, `|b_tr|`). Returns (k1, k2, defect1, defect2, bound).
+    """Per-layer, per-atom defect of each Ros2 stage vector against its element identity.
+
+    And the bound the repair leaves it under. `max(_DEFECT_FLOOR * scale, REPAIR_ABS_FLOOR * c0 * n_tot)` with
+    `scale` the atom-weighted sum of the identity's terms (`c0 |k|`, `|T k|` contributions, `|b_tr|`). Returns (k1,
+    k2, defect1, defect2, bound).
 
     Reads `jax_step`'s module state at trace time, so a test that
-    monkeypatches `jax_step._REPAIR_MAX_CELL_FRAC` sees it here."""
-    k1, k2, _, (c0, diag_d, sup_d, sub_d, b1, b2) = jax_step._ros2_stages(
-        y, k_arr, dt, atm, net, None
-    )
+    monkeypatches `jax_step._REPAIR_MAX_CELL_FRAC` sees it here.
+    """
+    k1, k2, _, (c0, diag_d, sup_d, sub_d, b1, b2) = jax_step._ros2_stages(y, k_arr, dt, atm, net, None)
     n_tot = jnp.sum(y, axis=1, keepdims=True)
 
     def parts(k, b):
@@ -234,7 +230,5 @@ def stage_defects(y, k_arr, dt, atm, net):
 
     d1, s1 = parts(k1, b1)
     d2, s2 = parts(k2, b2)
-    bound = jnp.maximum(
-        jax_step._DEFECT_FLOOR * jnp.maximum(s1, s2), REPAIR_ABS_FLOOR * c0 * n_tot
-    )
+    bound = jnp.maximum(jax_step._DEFECT_FLOOR * jnp.maximum(s1, s2), REPAIR_ABS_FLOOR * c0 * n_tot)
     return k1, k2, d1, d2, bound

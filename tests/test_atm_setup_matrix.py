@@ -36,25 +36,16 @@ def _ref_TP_H14(pco, params, gs, Pb):
     m = pco / gs
     m_0 = Pb / gs
     ka_l = ka_0 + ka_CIA * m / m_0
-    term1 = (
-        T_int**4
-        / 4
-        * (1 / eps_L + m / (eps_L3 * beta_l**2) * (ka_0 + ka_CIA * m / (2 * m_0)))
-    )
+    term1 = T_int**4 / 4 * (1 / eps_L + m / (eps_L3 * beta_l**2) * (ka_0 + ka_CIA * m / (2 * m_0)))
     term2 = 1 / (2 * eps_L) + scipy_expn(2, ka_s * m / beta_s) * (
         ka_s / (ka_l * beta_s) - ka_CIA * m * beta_s / (eps_L3 * ka_s * m_0 * beta_l**2)
     )
-    term3 = (
-        ka_0
-        * beta_s
-        / (eps_L3 * ka_s * beta_l**2)
-        * (1.0 / 3 - scipy_expn(4, ka_s * m / beta_s))
-    )
+    term3 = ka_0 * beta_s / (eps_L3 * ka_s * beta_l**2) * (1.0 / 3 - scipy_expn(4, ka_s * m / beta_s))
     return (term1 + T_irr**4 / 8 * (term2 + term3)) ** 0.25
 
 
 @pytest.mark.parametrize(
-    "atm_type,P_b,P_t,nz,gs",
+    ("atm_type", "P_b", "P_t", "nz", "gs"),
     [
         ("isothermal", 1e9, 1e-2, 50, 2140.0),
         # ~4 min: jax.scipy.special.expn is slow on a grid that mixes
@@ -65,8 +56,8 @@ def _ref_TP_H14(pco, params, gs, Pb):
 )
 def test_load_TPK_atm_types(atm_type, P_b, P_t, nz, gs):
     """`load_TPK` matches a direct numpy reference for each standalone atm_type."""
-    from vulcan3.phy_const import kb
     from vulcan3.atm_setup import compute_pico, load_TPK
+    from vulcan3.phy_const import kb
 
     pco = make_pco(P_b, P_t, nz)
     pico = np.asarray(compute_pico(pco))
@@ -127,9 +118,7 @@ def test_load_TPK_kzz_modes(Kzz_prof):
     elif Kzz_prof == "JM16":
         Kzz_ref = np.maximum(cfg.K_deep, 1e5 * (300.0 / (pico[1:-1] * 1e-3)) ** 0.5)
     elif Kzz_prof == "Pfunc":
-        Kzz_ref = np.maximum(
-            cfg.K_max, cfg.K_max * (cfg.K_p_lev * 1e6 / pico[1:-1]) ** 0.4
-        )
+        Kzz_ref = np.maximum(cfg.K_max, cfg.K_max * (cfg.K_p_lev * 1e6 / pico[1:-1]) ** 0.4)
     else:  # file
         tab = np.genfromtxt(cfg.atm_file, names=True, dtype=None, skip_header=1)
         Kzz_file = tab["Kzz"].astype(np.float64)
@@ -147,24 +136,34 @@ def test_load_TPK_kzz_modes(Kzz_prof):
 
 
 def test_disabled_switches_give_zero_arrays():
-    """use_Kzz, use_moldiff, use_settling and the BC-flux flags off give
-    all-zero arrays of the right shape."""
+    """use_Kzz, use_moldiff, use_settling and the BC-flux flags off give all-zero arrays of the right shape."""
     from vulcan3.atm_setup import (
-        compute_mol_diff, compute_pico, compute_settling_velocity, load_TPK, read_bc_flux,
+        compute_mol_diff,
+        compute_pico,
+        compute_settling_velocity,
+        load_TPK,
+        read_bc_flux,
     )
 
     nz, sp = 10, ["H2", "He", "H2O"]
     ni = len(sp)
     pco = make_pco(1e6, 1e-2, nz)
-    off = SimpleNamespace(atm_base="H2", use_moldiff=False, use_vm_mol=False,
-                          use_settling=False, non_gas_sp=[], use_topflux=False,
-                          use_botflux=False, use_fix_sp_bot={})
+    off = SimpleNamespace(
+        atm_base="H2",
+        use_moldiff=False,
+        use_vm_mol=False,
+        use_settling=False,
+        non_gas_sp=[],
+        use_topflux=False,
+        use_botflux=False,
+        use_fix_sp_bot={},
+    )
     T, g = np.full(nz, 300.0), np.full(nz, 980.0)
-    mol = compute_mol_diff(off, T, np.full(nz, 1e15), g, np.full(nz, 8e5),
-                           np.full(nz, 1e5), np.ones(ni), np.zeros(ni), sp)
+    mol = compute_mol_diff(
+        off, T, np.full(nz, 1e15), g, np.full(nz, 8e5), np.full(nz, 1e5), np.ones(ni), np.zeros(ni), sp
+    )
     arrays = {
-        "Kzz": (load_TPK(tpk_cfg(use_Kzz=False, P_b=1e6), pco,
-                         pico=np.asarray(compute_pico(pco)))["Kzz"], (nz - 1,)),
+        "Kzz": (load_TPK(tpk_cfg(use_Kzz=False, P_b=1e6), pco, pico=np.asarray(compute_pico(pco)))["Kzz"], (nz - 1,)),
         "vs": (compute_settling_velocity(off, T, g, sp, rho_p={}, r_p={}), (nz - 1, ni)),
         "Dzz": (mol["Dzz"], (nz - 1, ni)),
         "Dzz_cen": (mol["Dzz_cen"], (nz, ni)),
@@ -181,9 +180,7 @@ def test_disabled_switches_give_zero_arrays():
 def _ref_Dzz(atm_base, T, n_tot, mi):
     """Numpy versions of the master `Dzz_gen` lambdas."""
     if atm_base == "H2":
-        return (
-            2.2965e17 * T**0.765 / n_tot * (16.04 / mi * (mi + 2.016) / 18.059) ** 0.5
-        )
+        return 2.2965e17 * T**0.765 / n_tot * (16.04 / mi * (mi + 2.016) / 18.059) ** 0.5
     if atm_base == "N2":
         return 7.34e16 * T**0.75 / n_tot * (16.04 / mi * (mi + 28.014) / 44.054) ** 0.5
     if atm_base == "O2":
@@ -196,7 +193,7 @@ def _ref_Dzz(atm_base, T, n_tot, mi):
 @pytest.mark.parametrize("atm_base", ["H2", "N2", "O2", "CO2"])
 def test_compute_mol_diff_atm_base(atm_base):
     """compute_mol_diff matches a direct numpy `Dzz_gen` reference per atm_base."""
-    from vulcan3.atm_setup import compute_mol_diff, _alpha_array_for_base
+    from vulcan3.atm_setup import _alpha_array_for_base, compute_mol_diff
 
     nz = 30
     Tco = np.linspace(150.0, 2500.0, nz)
@@ -211,9 +208,7 @@ def test_compute_mol_diff_atm_base(atm_base):
         use_condense=False,
         non_gas_sp=[],
     )
-    alpha_ref = _alpha_array_for_base(
-        atm_base, species_list, mol_mass=lambda sp: ms_arr[species_list.index(sp)]
-    )
+    alpha_ref = _alpha_array_for_base(atm_base, species_list, mol_mass=lambda sp: ms_arr[species_list.index(sp)])
 
     out = compute_mol_diff(
         cfg,
@@ -260,7 +255,8 @@ def test_read_bc_flux_use_topflux(tmp_path):
     out = read_bc_flux(cfg, species_list)
     assert out["top_flux"][1] == 1.5e8
     assert out["top_flux"][2] == 3.7e7
-    assert out["top_flux"][0] == 0.0 and out["top_flux"][3] == 0.0
+    assert out["top_flux"][0] == 0.0
+    assert out["top_flux"][3] == 0.0
 
 
 def test_read_bc_flux_use_botflux(tmp_path):
@@ -287,7 +283,7 @@ def test_read_bc_flux_use_botflux(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "sp,T_K",
+    ("sp", "T_K"),
     [
         ("H2O", 300.0),
         ("NH3", 200.0),
@@ -316,8 +312,7 @@ def test_compute_sat_p_each_species(sp, T_K):
 
 
 def test_compute_pico_matches_master_formula():
-    """`compute_pico` matches the `Atm.f_pico` formula (geometric-mean
-    interior, log extrapolation at edges)."""
+    """`compute_pico` matches the `Atm.f_pico` formula (geometric-mean interior, log extrapolation at edges)."""
     from vulcan3.atm_setup import compute_pico
 
     pco = np.logspace(9, -2, 50)
@@ -333,25 +328,26 @@ def test_compute_pico_matches_master_formula():
 
 
 @pytest.mark.parametrize(
-    "rocky,Rp,g,P_b,P_t,nz,T_bot,T_top,mix,ms",
+    ("rocky", "Rp", "g", "P_b", "P_t", "nz", "T_bot", "T_top", "mix", "ms"),
     [
-        (True, R_EARTH_CM, 980.0, 1e6, 5e-2, 40, 273.0, 273.0,
-         [0.78, 0.21, 0.01], [28.014, 32.0, 39.948]),  # N2/O2/Ar
+        (True, R_EARTH_CM, 980.0, 1e6, 5e-2, 40, 273.0, 273.0, [0.78, 0.21, 0.01], [28.014, 32.0, 39.948]),  # N2/O2/Ar
         (False, HD189_RP_CM, 2140.0, 1e9, 1e-2, 60, 2500.0, 800.0, [1.0], [2.016]),  # H2
     ],
     ids=["rocky", "gas_giant"],
 )
 def test_compute_mu_dz_g_anchor(rocky, Rp, g, P_b, P_t, nz, T_bot, T_top, mix, ms):
-    """rocky=True anchors pref_indx at the surface (index 0); rocky=False with
-    P_b >= 1 bar anchors it at the layer nearest 1 bar. At the anchor zco = 0
-    and g is the surface gravity; zco increases upward."""
+    """rocky=True anchors pref_indx at the surface (index 0).
+
+    Rocky=False with P_b >= 1 bar anchors it at the layer nearest 1 bar. At the anchor zco = 0 and g is the surface
+    gravity; zco increases upward.
+    """
     from vulcan3.atm_setup import compute_mu_dz_g, compute_pico, surface_gravity
 
     pico = np.asarray(compute_pico(make_pco(P_b, P_t, nz)))
-    cfg = SimpleNamespace(Rp=Rp, Mp=mass_for_gravity(g, Rp), rocky=rocky, P_b=P_b,
-                          use_moldiff=False, use_settling=False)
-    out = compute_mu_dz_g(cfg, np.tile(mix, (nz, 1)), np.array(ms), pico,
-                          np.linspace(T_bot, T_top, nz))
+    cfg = SimpleNamespace(
+        Rp=Rp, Mp=mass_for_gravity(g, Rp), rocky=rocky, P_b=P_b, use_moldiff=False, use_settling=False
+    )
+    out = compute_mu_dz_g(cfg, np.tile(mix, (nz, 1)), np.array(ms), pico, np.linspace(T_bot, T_top, nz))
     pref = out["pref_indx"]
     assert (pref == 0) if rocky else (pref > 0)
     assert out["g"][pref] == surface_gravity(cfg)
@@ -363,8 +359,10 @@ def test_compute_mu_dz_g_anchor(rocky, Rp, g, P_b, P_t, nz, T_bot, T_top, mix, m
 
 
 def test_compute_settling_velocity_h2so4_negative():
-    """`use_settling=True` produces negative (downward) vs for non-gas species
-    when atm_base has a tabulated viscosity polynomial."""
+    """`use_settling=True` produces negative (downward) vs for non-gas species.
+
+    When atm_base has a tabulated viscosity polynomial.
+    """
     from vulcan3.atm_setup import compute_settling_velocity
 
     cfg = SimpleNamespace(use_settling=True, atm_base="N2", non_gas_sp=["H2SO4_l"])
@@ -379,5 +377,5 @@ def test_compute_settling_velocity_h2so4_negative():
     )
     assert out.shape == (9, 3)
     assert np.all(out[:, 2] < 0.0)
-    assert np.all(out[:, 0] == 0.0) and np.all(out[:, 1] == 0.0)
-
+    assert np.all(out[:, 0] == 0.0)
+    assert np.all(out[:, 1] == 0.0)

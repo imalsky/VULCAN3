@@ -1,9 +1,9 @@
-"""Validate the SymPy-faithful chem_rhs codegen against `chem_rhs_numpy`
-(master-faithful term order, NumPy float64): rtol=1e-5 on significant cells.
-The threshold absorbs XLA FMA fusion vs NumPy `*`-chains; actual worst-cell
-agreement is ~2e-13. The comparison with master's `chemdf` is test_chem.py.
-The grouped RHS (`VULCAN3_CHEM_RHS=grouped`) must equal the codegen bitwise
-(an expected failure on Apple Silicon, where the two agree to roundoff only).
+"""Validate the SymPy-faithful chem_rhs codegen against `chem_rhs_numpy`.
+
+(master-faithful term order, NumPy float64): rtol=1e-5 on significant cells. The threshold absorbs XLA FMA fusion vs
+NumPy `*`-chains; actual worst-cell agreement is ~2e-13. The comparison with master's `chemdf` is test_chem.py. The
+grouped RHS (`VULCAN3_CHEM_RHS=grouped`) must equal the codegen bitwise (an expected failure on Apple Silicon, where the
+two agree to roundoff only).
 
 The (y, M, k) state is captured fresh from `RunState.with_pre_loop_setup`.
 """
@@ -138,6 +138,7 @@ def test_codegen_cache_key_changes_with_the_generator(tmp_path, monkeypatch):
 def test_codegen_cache_key_changes_with_consumed_network_fields(tmp_path):
     """Cache key invalidates when any codegen-consumed network table changes."""
     import dataclasses
+
     import vulcan3.make_chem_funs as mcf
 
     net = _toy_network_for_codegen(tmp_path)
@@ -145,9 +146,7 @@ def test_codegen_cache_key_changes_with_consumed_network_fields(tmp_path):
 
     st_changed = net.reactant_stoich.copy()
     st_changed[1, 0] = 1.0
-    key_stoich = mcf.chem_rhs_cache_key(
-        dataclasses.replace(net, reactant_stoich=st_changed)
-    )
+    key_stoich = mcf.chem_rhs_cache_key(dataclasses.replace(net, reactant_stoich=st_changed))
 
     m_changed = net.is_three_body.copy()
     m_changed[2] = True
@@ -160,22 +159,28 @@ def test_codegen_cache_key_changes_with_consumed_network_fields(tmp_path):
 def _hd209_repeated_final_layer_fixture() -> tuple[
     np.ndarray, np.ndarray, np.ndarray, object, tuple[str, ...], np.ndarray
 ]:
-    """Return one HD209 final-state layer repeated to the production column shape
-    (`tests/data/state_hd209.npz`, the shipped HD209 run's final state)."""
-    from vulcan3.config import default_config
+    """Return one HD209 final-state layer repeated to the production column shape.
+
+    (`tests/data/state_hd209.npz`, the shipped HD209 run's final state).
+    """
     import vulcan3.network as net_mod
+    from vulcan3.config import default_config
 
     saved = ROOT / "tests" / "data" / "state_hd209.npz"
     if not saved.exists():
         # conftest refuses a missing fixture unless VULCAN3_ALLOW_MISSING_FIXTURES=1
-        pytest.skip(f"{saved.name} missing (VULCAN3_ALLOW_MISSING_FIXTURES=1); build it "
-                    "with `python tests/gen_fixtures.py --only hd209`")
+        pytest.skip(
+            f"{saved.name} missing (VULCAN3_ALLOW_MISSING_FIXTURES=1); build it "
+            "with `python tests/gen_fixtures.py --only hd209`"
+        )
     state = np.load(saved)
 
     net = net_mod.parse_network(default_config().network)
     if list(state["species"]) != list(net.species):
-        pytest.fail("Current default network does not match the saved HD209 state; rebuild "
-                    "it with `python tests/gen_fixtures.py --only hd209 --force`")
+        pytest.fail(
+            "Current default network does not match the saved HD209 state; rebuild "
+            "it with `python tests/gen_fixtures.py --only hd209 --force`"
+        )
 
     layer = 2
     n_layers = int(state["y"].shape[0])
@@ -189,14 +194,17 @@ def _hd209_repeated_final_layer_fixture() -> tuple[
 
 
 def test_hd209_jit_rhs_projection_removes_atom_residual() -> None:
-    """Projected HD209 RHS carries no atom residual above float64 roundoff. The
-    raw jitted residual depends on the compiler (FMA fusion differs by
-    platform), so only the unjitted and projected residuals are asserted."""
+    """Projected HD209 RHS carries no atom residual above float64 roundoff.
+
+    The raw jitted residual depends on the compiler (FMA fusion differs by platform), so only the unjitted and
+    projected residuals are asserted.
+    """
     import jax
     import jax.numpy as jnp
-    import vulcan3.make_chem_funs as mcf
-    import vulcan3.jax_step as jax_step
     from _oracles import chem_rhs_numpy
+
+    import vulcan3.make_chem_funs as mcf
+    from vulcan3 import jax_step
 
     y, M, k_arr, net, atoms, atom_counts = _hd209_repeated_final_layer_fixture()
     ns: dict = {}
@@ -221,8 +229,7 @@ def test_hd209_jit_rhs_projection_removes_atom_residual() -> None:
     floor = _ATOM_RESIDUAL_EPS * (np.abs(out_jit) @ np.abs(atom_counts))
     # The projection zeroes the residual to roundoff whatever the raw one was,
     # so this also says it is no worse than the raw residual beyond roundoff.
-    assert np.all(np.abs(projected_residual) <= floor), (
-        projected_residual[0, c_idx], floor[0, c_idx])
+    assert np.all(np.abs(projected_residual) <= floor), (projected_residual[0, c_idx], floor[0, c_idx])
     assert np.all(np.abs(nojit_residual) <= floor)
 
     reservoir_idx = [net.species_idx[sp] for sp in ("H2", "H2O", "CO", "N2")]
@@ -234,8 +241,9 @@ def test_hd209_jacobian_projection_uses_same_reservoir_rows() -> None:
     """Projected chemistry Jacobian: atom residual at roundoff, only reservoir rows changed."""
     import jax
     import jax.numpy as jnp
+
     import vulcan3.chem as chem_mod
-    import vulcan3.jax_step as jax_step
+    from vulcan3 import jax_step
 
     y, M, k_arr, net, _, atom_counts = _hd209_repeated_final_layer_fixture()
     net_jax = chem_mod.to_jax(net)
@@ -247,9 +255,7 @@ def test_hd209_jacobian_projection_uses_same_reservoir_rows() -> None:
     projected = np.asarray(jax_step._project_chem_jac(jnp.asarray(chem_jac)))
 
     after = np.einsum("ia,zij->zaj", atom_counts, projected)
-    floor = _ATOM_RESIDUAL_EPS * np.einsum(
-        "ia,zij->zaj", np.abs(atom_counts), np.abs(chem_jac)
-    )
+    floor = _ATOM_RESIDUAL_EPS * np.einsum("ia,zij->zaj", np.abs(atom_counts), np.abs(chem_jac))
     assert np.all(np.abs(after) <= floor), float(np.max(np.abs(after) - floor))
 
     reservoir_idx = [net.species_idx[sp] for sp in ("H2", "H2O", "CO", "N2")]
@@ -258,10 +264,11 @@ def test_hd209_jacobian_projection_uses_same_reservoir_rows() -> None:
 
 
 def test_codegen_matches_numpy_oracle(hd189_state):
-    """Codegen RHS matches chem_rhs_numpy; the per-species floor absorbs
-    cancellation on trace species. The column is scaled by exp(U(-1,1)) off
-    equilibrium: at the EQ seed the net RHS is a small difference of large
-    terms, where a per-cell relative comparison is ill-posed."""
+    """Codegen RHS matches chem_rhs_numpy; the per-species floor absorbs cancellation on trace species.
+
+    The column is scaled by exp(U(-1,1)) off equilibrium: at the EQ seed the net RHS is a small difference of large
+    terms, where a per-cell relative comparison is ill-posed.
+    """
     import vulcan3.network as net_mod
     from vulcan3.config import default_config
 
@@ -272,8 +279,9 @@ def test_codegen_matches_numpy_oracle(hd189_state):
     y = y * np.exp(np.random.default_rng(0).uniform(-1.0, 1.0, y.shape))
 
     import jax.numpy as jnp
-    import vulcan3.make_chem_funs as mcf
     from _oracles import chem_rhs_numpy
+
+    import vulcan3.make_chem_funs as mcf
 
     fn = mcf.build_chem_rhs(net)
     out_codegen = np.asarray(fn(jnp.asarray(y), jnp.asarray(M), jnp.asarray(k_arr)))
@@ -291,19 +299,22 @@ def test_codegen_matches_numpy_oracle(hd189_state):
     )
 
 
-
 @pytest.mark.xfail(
-    sys.platform == "darwin" and platform.machine() == "arm64", strict=True,
+    sys.platform == "darwin" and platform.machine() == "arm64",
+    strict=True,
     reason="XLA:CPU on Apple Silicon rounds the grouped and codegen operation orders "
-    "differently: roundoff only (notes \"Efficiency program\", grouped RHS row)",
+    'differently: roundoff only (notes "Efficiency program", grouped RHS row)',
 )
 @pytest.mark.parametrize("n_lanes", [0, 8], ids=["solo", "vmap8"])
 def test_grouped_rhs_is_bitwise_codegen(hd189_state, monkeypatch, n_lanes):
-    """`VULCAN3_CHEM_RHS=grouped` evaluates the codegen's operation trees as
-    vectorised gathers, so it must equal the codegen RHS bit for bit, solo and
-    under a lane vmap of perturbed columns (the batched runner's shape)."""
+    """`VULCAN3_CHEM_RHS=grouped` evaluates the codegen's operation trees as vectorised gathers.
+
+    So it must equal the codegen RHS bit for bit, solo and under a lane vmap of perturbed columns (the batched
+    runner's shape).
+    """
     import jax
     import jax.numpy as jnp
+
     import vulcan3.make_chem_funs as mcf
     import vulcan3.network as net_mod
     from vulcan3.config import default_config

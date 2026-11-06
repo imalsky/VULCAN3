@@ -20,9 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_save_evolution_snapshots_and_vul_round_trip():
-    import vulcan3.legacy_io as legacy_io
-    import vulcan3.op_jax as op_jax
-    import vulcan3.outer_loop as outer_loop
+    from vulcan3 import legacy_io, op_jax, outer_loop
     from vulcan3.state import RunState
 
     save_evo_frq = 10
@@ -42,15 +40,15 @@ def test_save_evolution_snapshots_and_vul_round_trip():
     rs_out = integ(RunState.with_pre_loop_setup(vulcan_cfg))
     rs_chunked = integ(RunState.with_pre_loop_setup(vulcan_cfg), chunk=7)
     assert int(rs_chunked.params.count) == int(rs_out.params.count)
-    for got, ref in ((rs_chunked.step.y, rs_out.step.y),
-                     (rs_chunked.step.y_evo, rs_out.step.y_evo)):
+    for got, ref in ((rs_chunked.step.y, rs_out.step.y), (rs_chunked.step.y_evo, rs_out.step.y_evo)):
         np.testing.assert_array_equal(np.asarray(got), np.asarray(ref))
 
     y_time = np.asarray(rs_out.step.y_evo)
     t_time = np.asarray(rs_out.step.t_evo)
     assert y_time.ndim == 3 and y_time.shape[0] == expected_n, y_time.shape
     assert t_time.shape == (expected_n,), t_time.shape
-    assert np.isfinite(y_time).all() and np.isfinite(t_time).all()
+    assert np.isfinite(y_time).all()
+    assert np.isfinite(t_time).all()
     assert np.all(np.diff(t_time) > 0), t_time
 
     # Round trip through legacy_io.save_out and a pickle load.

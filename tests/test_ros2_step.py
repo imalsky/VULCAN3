@@ -6,24 +6,28 @@ Compares sol after a single 2nd-order Rosenbrock step.
 from __future__ import annotations
 
 import numpy as np
-
 from _helpers import relerr
-from oracle import (assert_below, enter_master, leave_master,
-                    run_oracle_subprocess, upstream_preloop)
+from oracle import assert_below, enter_master, leave_master, run_oracle_subprocess, upstream_preloop
 
 
 def main() -> None:
     # === VULCAN-master pipeline + Ros2 step ===
     enter_master()
-    from vulcan3.config import default_config
-
-    import store as st_v
     import build_atm as ba_v
     import op as op_v
+    import store as st_v
+
+    from vulcan3.config import default_config
 
     data_var, data_atm = upstream_preloop(
-        default_config(), st_v.Variables(), st_v.AtmData(), ba_v.Atm(),
-        op_v.ReadRate(), ba_v.InitialAbun(), op_v.Output())
+        default_config(),
+        st_v.Variables(),
+        st_v.AtmData(),
+        ba_v.Atm(),
+        op_v.ReadRate(),
+        ba_v.InitialAbun(),
+        op_v.Output(),
+    )
     data_var.dt = 1e-10
     data_var.ymix = data_var.y / np.vstack(np.sum(data_var.y, axis=1))
 
@@ -42,8 +46,9 @@ def main() -> None:
     # === Switch to VULCAN-JAX ===
     leave_master()
 
-    import vulcan3.chem_funs as chem_funs
     import jax.numpy as jnp
+
+    from vulcan3 import chem_funs
     from vulcan3.jax_step import jax_ros2_step, make_atm_static
 
     nz, ni = y0.shape
@@ -68,8 +73,7 @@ def main() -> None:
 
 
 def test_main():
-    run_oracle_subprocess(__file__, "vulcan2_ncho",
-                          "cfg_examples/vulcan_cfg_HD189.py")
+    run_oracle_subprocess(__file__, "vulcan2_ncho", "cfg_examples/vulcan_cfg_HD189.py")
 
 
 if __name__ == "__main__":

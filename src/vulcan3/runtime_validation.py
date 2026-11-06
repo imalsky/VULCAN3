@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import math
+from pathlib import Path
 
 import numpy as np
 
@@ -11,20 +12,26 @@ from . import chem_funs
 from ._paths import resolve_data_path
 from .config import _ELEMENT_RATIO_KEY
 
+__all__ = ["RuntimeConfigError", "rate_temp_range_exposure", "validate_runtime_config"]
+
+
+class RuntimeConfigError(ValueError, RuntimeError):
+    """A config the runtime refuses. Also a RuntimeError, which callers caught before this type existed."""
+
 
 def _validate_abundance_preset(cfg) -> list[str]:
-    """The EQ seed's abundance preset must parse and cover the network.
+    """Check that the EQ seed's abundance preset parses and covers the network.
 
     The file is read as `SYMBOL log10(n_X/n_H)+12` rows. The seed needs a
     finite, positive ratio for hydrogen and for every element the loaded
     network contains; a truncated or hand-mangled file otherwise drops an
     element silently (its species then cannot form at all).
     """
-    if getattr(cfg, "ini_mix", None) != "EQ":
+    if cfg.ini_mix != "EQ":
         return []
     from . import ini_abun
 
-    rel = getattr(cfg, "fastchem_solar_abundance_file", None)
+    rel = cfg.fastchem_solar_abundance_file
     if not rel or not resolve_data_path(rel).exists():
         return []  # unset or missing is reported by the caller
     try:
@@ -39,7 +46,7 @@ def _validate_abundance_preset(cfg) -> list[str]:
     if bad:
         message = (
             f"abundance preset {rel!r} has no finite, positive abundance for "
-            f"{', '.join(bad)}, which the {getattr(cfg, 'network', '?')!r} "
+            f"{', '.join(bad)}, which the {cfg.network!r} "
             "network contains. Every element of the loaded network must have "
             "a row in the preset."
         )
@@ -63,20 +70,20 @@ def _validate_network_assets(cfg) -> list[str]:
     """
     errors: list[str] = []
 
-    com_path = resolve_data_path(getattr(cfg, "com_file", ""))
+    com_path = resolve_data_path(cfg.com_file)
     if not com_path.exists():
         return errors  # file-existence error already captured by caller
 
     # Read species column from composition table.
-    with open(com_path) as f:
+    with Path(com_path).open() as f:
         header = f.readline().split()
         rows = {r[0]: r[1:] for r in (line.split() for line in f) if r}
     compose_atoms = set(header[1:])  # every column after 'species' (elements, 'e', 'mass')
-    net_name = getattr(cfg, "network", "")
+    net_name = cfg.network
 
     # 1. Photo species need a cross-section file.
-    if bool(getattr(cfg, "use_photo", False)):
-        cross_folder = resolve_data_path(getattr(cfg, "cross_folder", ""))
+    if bool(cfg.use_photo):
+        cross_folder = resolve_data_path(cfg.cross_folder)
         for sp in chem_funs._NETWORK.photo_sp:
             cross_csv = cross_folder / sp / f"{sp}_cross.csv"
             if not cross_csv.exists():
@@ -93,7 +100,7 @@ def _validate_network_assets(cfg) -> list[str]:
             errors.append(f"{key!r}: {key[:-2]!r} is not an element of {cfg.com_file}.")
 
     # 2. Refuse atom_list entries not in the composition table header.
-    for atom in getattr(cfg, "atom_list", []):
+    for atom in cfg.atom_list:
         if atom not in compose_atoms:
             errors.append(
                 f"atom_list entry {atom!r} is not a column in {cfg.com_file} "
@@ -102,18 +109,14 @@ def _validate_network_assets(cfg) -> list[str]:
             )
             continue
         # 3. ... and must occur in at least one network species.
-        if atom in getattr(cfg, "loss_ex", []):
+        if atom in cfg.loss_ex:
             continue
         col = header.index(atom) - 1
-        carried = any(
-            float(rows[sp][col]) > 0 for sp in chem_funs.spec_list if sp in rows
-        )
+        carried = any(float(rows[sp][col]) > 0 for sp in chem_funs.spec_list if sp in rows)
         # Without use_solar the seed reads `<X>_H` for every carried element
         # (ini_abun._base_vector).
-        if (carried and atom != "H" and getattr(cfg, "use_solar", True) is not True
-                and not hasattr(cfg, f"{atom}_H")):
-            errors.append(f"use_solar is off and {atom!r} has no `{atom}_H` "
-                          f"(n_{atom}/n_H) in the config.")
+        if carried and atom != "H" and cfg.use_solar is not True and not hasattr(cfg, f"{atom}_H"):
+            errors.append(f"use_solar is off and {atom!r} has no `{atom}_H` (n_{atom}/n_H) in the config.")
         if not carried:
             errors.append(
                 f"atom_list entry {atom!r} has no species in network {net_name!r}, "
@@ -127,8 +130,15 @@ def _validate_network_assets(cfg) -> list[str]:
 
 # Knobs `_validate_numerical_bounds` checks.
 _FINITE_POSITIVE = ("Mp", "Rp", "rtol", "geom_conv_tol", "element_budget_tol")
-_COUNTERS = ("count_min", "count_max", "update_frq", "conv_step",
-             "batch_max_retries", "ini_update_photo_frq", "final_update_photo_frq")
+_COUNTERS = (
+    "count_min",
+    "count_max",
+    "update_frq",
+    "conv_step",
+    "batch_max_retries",
+    "ini_update_photo_frq",
+    "final_update_photo_frq",
+)
 
 
 def _validate_numerical_bounds(cfg) -> list[str]:
@@ -177,11 +187,13 @@ def _validate_numerical_bounds(cfg) -> list[str]:
         errors.append(f"humidity={humidity:g} must be a fraction in [0, 1].")
     # The element budget is measured relative to H, and a loss_ex entry outside
     # atom_list would be ignored without a word.
-    atom_list = list(getattr(cfg, "atom_list", []))
-    loss_ex = list(getattr(cfg, "loss_ex", []))
+    atom_list = list(cfg.atom_list)
+    loss_ex = list(cfg.loss_ex)
     if "H" in loss_ex or not set(loss_ex) <= set(atom_list):
-        errors.append(f"loss_ex={loss_ex} must be a subset of atom_list={atom_list} "
-                      "without H (the element budget is measured relative to H).")
+        errors.append(
+            f"loss_ex={loss_ex} must be a subset of atom_list={atom_list} "
+            "without H (the element budget is measured relative to H)."
+        )
     return errors
 
 
@@ -195,14 +207,14 @@ def _validate_condensation(cfg) -> list[str]:
     contract is enforced at the autodiff entry points in
     `steady_state_grad.py`, not here (see README.md, Limits).
     """
-    if not bool(getattr(cfg, "use_condense", False)):
+    if not bool(cfg.use_condense):
         return []
 
     from .atm_setup import _SUPPORTED_CONDENSABLES
     from .conden import SUPPORTED_CONDEN_KINETICS
 
     errors: list[str] = []
-    condense_sp = list(getattr(cfg, "condense_sp", []) or [])
+    condense_sp = list(cfg.condense_sp or [])
 
     if not condense_sp:
         errors.append(
@@ -214,7 +226,7 @@ def _validate_condensation(cfg) -> list[str]:
     # The condensation growth coefficient Dg IS the molecular-diffusion Dzz,
     # which setup zeros when use_moldiff=False, so every condensation rate
     # would silently be zero. Refuse rather than run inert.
-    if not bool(getattr(cfg, "use_moldiff", True)):
+    if not bool(cfg.use_moldiff):
         errors.append(
             "use_condense=True requires use_moldiff=True: the condensation "
             "growth coefficient Dg is the molecular-diffusion coefficient Dzz, "
@@ -226,8 +238,7 @@ def _validate_condensation(cfg) -> list[str]:
     stop_ct = float(cfg.stop_conden_time)
     if stop_ct < start_ct:
         errors.append(
-            f"stop_conden_time={stop_ct} < start_conden_time={start_ct}: the "
-            "condensation window would never open."
+            f"stop_conden_time={stop_ct} < start_conden_time={start_ct}: the condensation window would never open."
         )
 
     # Support tier: kinetics-ported condensates vs saturation-only (H2S).
@@ -245,8 +256,9 @@ def _validate_condensation(cfg) -> list[str]:
     return errors
 
 
-def validate_runtime_config(cfg) -> None:
-    """Raise RuntimeError if cfg is unsupported or required files are missing.
+# size-limit-ok: one refusal per knob, in order
+def validate_runtime_config(cfg) -> None:  # noqa: C901 (one refusal per knob, in order)
+    """Raise `RuntimeConfigError` if cfg is unsupported or required files are missing.
 
     Aggregates every configuration error (flag consistency, required
     files, network assets, abundance preset, numerical bounds) and raises once
@@ -257,16 +269,20 @@ def validate_runtime_config(cfg) -> None:
     errors: list[str] = []
     species = set(chem_funs.spec_list)
 
-    if bool(getattr(cfg, "use_ion", False)) and not bool(
-        getattr(cfg, "use_photo", False)
-    ):
+    if bool(cfg.use_condense):
+        errors.extend(
+            f"non_gas_sp entry {sp!r} is not in the network {cfg.network!r}; remove it or use a network that has it."
+            for sp in cfg.non_gas_sp
+            if sp not in species
+        )
+    if bool(cfg.use_ion) and "e" not in species:
+        errors.append(f"use_ion=True needs the species 'e', which {cfg.network!r} does not have.")
+    if bool(cfg.use_ion) and not bool(cfg.use_photo):
         errors.append("use_ion=True requires use_photo=True in VULCAN3.")
 
-    fix_sp = list(getattr(cfg, "fix_species", []) or [])
-    if fix_sp and not bool(getattr(cfg, "use_condense", False)):
-        errors.append(
-            "fix_species is set but use_condense=False; this configuration is inconsistent."
-        )
+    fix_sp = list(cfg.fix_species or [])
+    if fix_sp and not bool(cfg.use_condense):
+        errors.append("fix_species is set but use_condense=False; this configuration is inconsistent.")
     if fix_sp:
         # Otherwise an entry absent from the import-locked network dies later
         # on a bare `.index()` ValueError naming neither species nor remedy.
@@ -280,16 +296,13 @@ def validate_runtime_config(cfg) -> None:
                 f"first import."
             )
 
-    if bool(getattr(cfg, "use_fix_H2He", False)):
+    if bool(cfg.use_fix_H2He):
         for sp in ("H2", "He"):
             if sp not in species:
-                errors.append(
-                    f"use_fix_H2He=True requires {sp!r} in the network; "
-                    f"got species list without it."
-                )
+                errors.append(f"use_fix_H2He=True requires {sp!r} in the network; got species list without it.")
 
-    if getattr(cfg, "ini_mix", None) == "const_mix":
-        for sp in getattr(cfg, "const_mix", {}):
+    if cfg.ini_mix == "const_mix":
+        for sp in cfg.const_mix:
             if sp not in species:
                 errors.append(
                     f"const_mix key {sp!r} is not a species of the loaded "
@@ -304,30 +317,26 @@ def validate_runtime_config(cfg) -> None:
     errors.extend(_validate_condensation(cfg))
 
     required_paths = [
-        ("network", getattr(cfg, "network", None)),
-        ("com_file", getattr(cfg, "com_file", None)),
-        ("atm_file", getattr(cfg, "atm_file", None)),
+        ("network", cfg.network),
+        ("com_file", cfg.com_file),
+        ("atm_file", cfg.atm_file),
     ]
-    if bool(getattr(cfg, "use_photo", False)):
+    if bool(cfg.use_photo):
         required_paths.extend(
             [
-                ("cross_folder", getattr(cfg, "cross_folder", None)),
-                ("sflux_file", getattr(cfg, "sflux_file", None)),
+                ("cross_folder", cfg.cross_folder),
+                ("sflux_file", cfg.sflux_file),
             ]
         )
-    if bool(getattr(cfg, "use_topflux", False)):
-        required_paths.append(
-            ("top_BC_flux_file", getattr(cfg, "top_BC_flux_file", None))
-        )
-    if bool(getattr(cfg, "use_botflux", False)):
-        required_paths.append(
-            ("bot_BC_flux_file", getattr(cfg, "bot_BC_flux_file", None))
-        )
-    if getattr(cfg, "ini_mix", None) == "EQ":
+    if bool(cfg.use_topflux):
+        required_paths.append(("top_BC_flux_file", cfg.top_BC_flux_file))
+    if bool(cfg.use_botflux):
+        required_paths.append(("bot_BC_flux_file", cfg.bot_BC_flux_file))
+    if cfg.ini_mix == "EQ":
         required_paths.append(
             (
                 "fastchem_solar_abundance_file",
-                getattr(cfg, "fastchem_solar_abundance_file", None),
+                cfg.fastchem_solar_abundance_file,
             )
         )
 
@@ -336,31 +345,23 @@ def validate_runtime_config(cfg) -> None:
             errors.append(f"{label} is unset.")
             continue
         if not resolve_data_path(rel_path).exists():
-            errors.append(
-                f"{label}={rel_path!r} does not exist in the current directory "
-                "or the package data."
-            )
+            errors.append(f"{label}={rel_path!r} does not exist in the current directory or the package data.")
 
     errors.extend(_validate_network_assets(cfg))
     errors.extend(_validate_abundance_preset(cfg))
     errors.extend(_validate_numerical_bounds(cfg))
 
     # Plots run after the solve; refuse a plot request that would fail there.
-    if getattr(cfg, "use_plot_end", False) or getattr(cfg, "use_plot_evo", False):
+    if cfg.use_plot_end or cfg.use_plot_evo:
         if importlib.util.find_spec("matplotlib") is None:
-            errors.append("use_plot_end / use_plot_evo need matplotlib: "
-                          "pip install 'vulcan3[plot]'.")
-        plot_spec = list(getattr(cfg, "plot_spec", []))
+            errors.append("use_plot_end / use_plot_evo need matplotlib: pip install 'vulcan3[plot]'.")
+        plot_spec = list(cfg.plot_spec)
         missing = [sp for sp in plot_spec if sp not in species]
         if not plot_spec or missing:
-            errors.append(f"plot_spec {plot_spec} must list species of the "
-                          f"network; not in it: {missing}.")
+            errors.append(f"plot_spec {plot_spec} must list species of the network; not in it: {missing}.")
 
     if errors:
-        raise RuntimeError(
-            "Unsupported or invalid VULCAN3 runtime configuration:\n- "
-            + "\n- ".join(errors)
-        )
+        raise RuntimeConfigError("Unsupported or invalid VULCAN3 runtime configuration:\n- " + "\n- ".join(errors))
 
 
 def rate_temp_range_exposure(net, Tco) -> dict:

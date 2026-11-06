@@ -38,6 +38,17 @@ notes (the NAS `analysis/` tree no longer exists).
   `tests/data` is an x86-64 rebuild with C25-C29 (HD209 1206 steps); `--verify` fails
   there by design (restore the tracked manifest after a rebuild).
 
+## Cleanup proofs
+
+Baseline hashes at `01ce3b8` under `scratch/cleanup_baseline/` (gitignored). Lowered-program hashes (HLO) are stable across
+processes and hash seeds [M], on HD189, HD189_vulcan3, a condensation column, the same with `fix_species`, and `ffi` with the
+grouped RHS. The setup state differs at the last bit between 4 and 6 CPUs in the process's affinity [M], so a bitwise
+comparison needs the same CPU count on both sides. Swapping the operands of a comparison moves HLO, which is why the Yoda rule
+stays off [M]. Ruff's unnecessary-lambda fix would have removed fresh-trace closures (`ini_abun._seed_controls`, some tests).
+
+Baseline counts [M], daw, CPU: VUL steps HD189 1495, HD209 1206, W39b 1084 on the 2025 file, HD189_vulcan3 4057 (reason 3).
+Normal tier at 16 CPUs 324 passed, 66 skipped, 5:32, no oracle set. vulcan-forward's normal tier 90 passed, 8 skipped, 2:37.
+
 ## Efficiency program
 
 GH200 rows are the v2 production shape (W39b SNCHO, nz 62, ni 89); other rows name
@@ -324,7 +335,7 @@ A. Upstream errors corrected in the port
 | C30 | no rate may exceed collision rates: a rate fit extrapolated far from its range (the reverse of CH + M -> C + H + M is ~6e-5 cm3/s at 300 K, 1 bar) | `rates_jax.build_rate_array` | `apply_collision_limit`: each thermal pair scaled by c = min(1, 1e-9 cm3/s / q), q the larger direction's bimolecular-equivalent rate (k M^three-body M^(molecules - 2), two or more molecules); both directions scaled, so K_eq and the equilibrium are kept; `tests/test_collision_limit.py` | acts in NCHO on the CH + M and C2H + M reverses (CH below ~560-650 K, C2H below ~900 K at 1 bar, ~1830 K at 100 bar), NH + M (<= 4x, <= 351 K), and the forward fits of NCO + NH2 (<= 2x, >= 1880 K) and CN + C2H6 (<= 1.2x, >= 2890 K); SNCHO adds SH + O2 and S + CS + M, TiSNCHO C + SH and Ti + CN; the limit 1e-9 is a regularization ceiling, not a measured rate | no |
 | C31 | `C2H + C -> C3H + H` does not balance hydrogen (SNCHO_photo_network_C3 only) | `thermo/SNCHO_photo_network_C3.txt` row 861 | written `C2H + C -> C3 + H` (Hickson et al. 2016, the row's reference) | the file had no consumer that checks balance | no |
 | C32 | HNO3 NASA-9 file holds three sets (below 200 K, 200-1000 K, 1000-6000 K); the readers take the first two as the T < 1000 / T >= 1000 K fits | `thermo/NASA9/HNO3.txt` | the below-200 K set dropped; `hno3_thermo`, declared | Cp/R at 500 K 19.8 -> 8.67; HNO3 K_eq against FastChem +7.6 dex at 999 K, -0.42 at 3000 K before, within 0.03 dex after (maxichem's end-to-end tests, 2026-11-05); NCHO_full_photo and SNCHO_DMS only; no column rerun | no (the three pinned clones carry the same file) |
-| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_aggregate_delta_fn` masks where the old and the pre-clip trial ymix are both < mtol; `_clip_prologue` keeps values < nega_cut (step rejected); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`; a non-finite gas sum stays non-finite in the condensing clip; `steady_state_grad._clip_dead_mask` matches; `tests/test_step_control_c29.py`; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes); step-count gates not re-baselined yet (todo 4) | no |
+| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_aggregate_delta_fn` masks where the old and the pre-clip trial ymix are both < mtol; `_clip_prologue` keeps values < nega_cut (step rejected); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`; a non-finite gas sum stays non-finite in the condensing clip; `steady_state_grad._clip_dead_mask` matches; `tests/test_step_control.py`; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes); step-count gates not re-baselined yet (todo 4) | no |
 | L1 | `diffdf_settling_vm` drops the `vm` drift at the bottom interface | `op.py:1845-1848` | consistent; `test_diffusion`; silent | one cell, `use_settling` only | no |
 | L2 | vm_branch setup `vm` rolls a 2-D array without `axis=0` | `vulcan3_vm_branch/build_atm.py:803` | `axis=0`; silent | 5e-10 at step 2 | no |
 | P18 | `sflux-GJ1214.txt` pads 133.75-181.55 nm with 464 zero rows | `atm/stellar_flux/sflux-GJ1214.txt` | upstream's regenerated file, `gj1214_upstream_regenerated`; declared | 0 shipped; regeneration lowers every flux 1.392x | bb9255b1 |
@@ -749,16 +760,16 @@ were not obtained).
 - `high_temp_cut` is a host-side re-grid (raises `P_b`), not a T-clip.
 - Setup never writes config knobs (`state._cfg_overlay` drops the write): the
   `use_sat_surfaceH2O` bottom pin is built in `OuterLoop._build_statics` from `sat_mix`.
-- Codegen cache `__pycache__/chem_rhs_codegen_<hash>.py`: key = network content +
-  `inspect.getsource` of both emitters; temp file + `os.replace`; never pruned.
+- The codegen RHS source is emitted in every process and held in a per-process memo keyed on network content +
+  `inspect.getsource` of both emitters; emit 2.7 to 3.6 ms on 86 to 93 species [M]. No file is written.
 - `parse_network` raises on within-section duplicates (`duplicates_ok=True`
   warns) and on any non-comment row that fails to parse; `composition.py` raises
   on a species with no `all_compose.txt` row and on disagreeing duplicates except
   `_PARITY_DUPLICATES` (P11).
 - `fast` vs `ffi`: `solve` is `lax.custom_linear_solve(matvec, b, solve,
   transpose_solve)` because a hand-written `custom_jvp` cannot be transposed (jax
-  0.6.2 `_scan_transpose` asserts); `transpose_solve` is, for both backends, the
-  `jax.vjp` of the reference sweep on the backend's own factors. The `ffi` CPU
+  0.6.2 `_scan_transpose` asserts); `transpose_solve` is the
+  `jax.vjp` of the reference sweep on the factors, under `fast`; `ffi` leaves it out, which refuses reverse mode. The `ffi` CPU
   kernel is the CUDA kernel's reference, not a fast CPU solver. Each built library
   embeds the sha256 of its sources; a stale one is refused.
 
@@ -882,13 +893,9 @@ network drops) is not ported: the seed is ExoGibbs over the network's elements.
   dedupe pin indices.
 - `analytical_TP_H14`'s `expn` is slow on arrays mixing arguments below and above
   1 (nz 50 `load_TPK` 4:14 on one core); no shipped config uses it.
-- A BC-flux row naming a species outside the network is skipped silently
-  (`atm_setup.read_bc_flux`); upstream raises (`build_atm.py:759,768`).
 - `tools/bench_table1.sh` writes under the system temp dir unless `BENCH_OUT` is set.
-- Undecided maintainer calls from the bloat audit: whether `steady_state_grad`
-  stays as a research route, `HD189.yaml`, `VULCAN3_SOLVER=reference`. Left for a
-  pass with a test run: script-style `main()` bodies in 10 test files.
-- Reverse mode under `VULCAN3_SOLVER=ffi` is documented unsupported but not refused.
+- Script-style `main()` bodies in 10 test files stay for oracle runs in a subprocess. `steady_state_grad`,
+  `HD189.yaml` and `VULCAN3_SOLVER=reference` stay.
 - Per-step costs left (daw, HD189, one core): block solve 17.5 of a 24.9 ms step, mostly
   the factor's explicit inverse (no bitwise-equal cheaper form [I]); photolysis ~17 ms a
   call x 115; `compute_diff_grav` 0.17 ms a step; a 3.1 MB photo-array copy an iteration.
@@ -913,13 +920,10 @@ network drops) is not ported: the seed is ExoGibbs over the network's elements.
 - `solver_map="bare"` and its W39b adjoint gate: removed `d966010`.
 - Route B (opt-in smooth rainout: one-sided C1-hinge S8 sink, deep sulfur supply,
   flux ledger, implicit derivative): NO-GO at B0C (no steady state in 15000 cold
-  steps; closure_frac 0.264; unrolled jvp off FD by 6-9 orders). Code in
-  `~/VULCAN_Project/.backup/git_tags_2026-09-26/VULCAN-JAX-smooth-rainout-b0c-no-go-2026-07-14.bundle`
-  (tag a092d9e deleted); Route A (exact-endpoint pin, ~1-1.5 weeks [E]) not asked for.
+  steps; closure_frac 0.264; unrolled jvp off FD by 6-9 orders). The code survives only in a local backup bundle (tag a092d9e deleted); Route A (exact-endpoint pin, ~1-1.5 weeks [E]) not asked for.
 - `ffi_twisted` (two-ended block-Thomas): built, not merged (maintainer: no large
   architecture-specific code; net 649 lines; daw 1.9-2.0x up to 71 lanes,
-  1.00-1.02x once the GPU is full). Patches in
-  `~/VULCAN_Project/.backup/speed_studies_2026-09/gpu_ideas/twisted/`.
+  1.00-1.02x once the GPU is full). The patches survive only in a local backup.
 
 ## Ideas not adopted
 
@@ -977,7 +981,7 @@ Linear solver and precision
 - Parallel-in-layer block solvers (BCR 89 ms vs 39 ms at 396 lanes, OOM at 1188); explicit-inverse solves (forward error ~600x); a 4-rung compaction ladder (not bitwise; rungs 66 and 33 replay at 1.03x of a v5 batch, vulcan-retrieval notes "Pipeline speed").
 - Other cures for the per-tick y-ring copy: the pre-write lookback alone (bitwise; one copy of 15 gone, tick unchanged), `--xla_gpu_memory_limit_slop_factor=200` (remats 6066 -> 3430; copies and time unchanged), `CONDITIONAL` in the command-buffer list (no change). A sequential `lax.scan` for the two-stream sweeps is not faster than the associative scan on GH200.
 - Float32 in the step: float32 factors (forward error 1-4e2 at dt 1e2, refinement diverges), float32 tangent solves with float64 refinement (diverge at dt >= 1e11), the whole step (non-finite); float32 Jacobian terms with float64 sums are accurate but touch ~12% of GPU kernel time.
-- AMF or block-Jacobi preconditioned GMRES/Richardson on the stage system: 14-81 iterations at the run's dt, > 300 at 1e6, cells O(1) off (`~/VULCAN_Project/.backup/speed_studies_2026-09/amf_tests/`).
+- AMF or block-Jacobi preconditioned GMRES/Richardson on the stage system: 14-81 iterations at the run's dt, > 300 at 1e6, cells O(1) off.
 - Kernel restructurings (one-barrier owner-warp LU 0.89-1.03x, batched rank-1 update 0.90-1.04x, register-resident inverse at 253 registers, DMMA not bitwise, TMA): the factor gains only from more lanes per SM.
 - Summing the gather-table Jacobian with a `reduce`: XLA orders a reduce per program, so batch and queue disagreed by one accepted step (122 vs 121).
 - Fusing the step's two sign reductions into one `jnp.min`: a NaN plus a negative reclassifies a rejected step.

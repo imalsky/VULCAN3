@@ -43,8 +43,12 @@ INTENTIONAL_JAX_DELTAS = {
 # upstream's own later fixes 39f1906 / a68d715. Removing rows renumbers the id
 # column, so files carrying these are compared row by row (ids ignored).
 _LOW_T_REVERSE_ROWS = (
-    "NH3 + CH -> NH2 + CH2", "NCO + HCN -> HNCO + CN", "CN + HNCO -> HCN + NCO",
-    "S + CN -> N + CS", "N + CS -> S + CN", "HNCO + M -> H + NCO",
+    "NH3 + CH -> NH2 + CH2",
+    "NCO + HCN -> HNCO + CN",
+    "CN + HNCO -> HCN + NCO",
+    "S + CN -> N + CS",
+    "N + CS -> S + CN",
+    "HNCO + M -> H + NCO",
 )
 # Composition rows whose mass disagrees with the file's own atomic masses
 # (sulfur_compose_masses): CS, CS2, COS, HCS ("CS " also matches "HCS ").
@@ -52,9 +56,9 @@ KNOWN_THERMO_DIVERGENCES: dict[str, tuple[str, ...]] = {
     # Upstream lists NH3 condensate as 16.023 g/mol; the corrected value is
     # 17.031 g/mol. Only that species row may differ in all_compose.txt.
     "all_compose.txt": ("NH3_l_s", "CS ", "CS2 ", "COS "),
-    "SNCHO_photo_network.txt": ("CH2CN + H + M -> CH3CN + M",) + _LOW_T_REVERSE_ROWS,
-    "SNCHO_photo_network_C3.txt": ("CH2CN + H + M -> CH3CN + M",) + _LOW_T_REVERSE_ROWS,
-    "SNCHO_DMS_photo_network_Tsai2024.txt": ("CH2CN + H + M -> CH3CN + M",) + _LOW_T_REVERSE_ROWS,
+    "SNCHO_photo_network.txt": ("CH2CN + H + M -> CH3CN + M", *_LOW_T_REVERSE_ROWS),
+    "SNCHO_photo_network_C3.txt": ("CH2CN + H + M -> CH3CN + M", *_LOW_T_REVERSE_ROWS),
+    "SNCHO_DMS_photo_network_Tsai2024.txt": ("CH2CN + H + M -> CH3CN + M", *_LOW_T_REVERSE_ROWS),
     "NCHO_photo_network.txt": _LOW_T_REVERSE_ROWS,
 }
 
@@ -69,9 +73,15 @@ KNOWN_SFLUX_RESCALES: dict[str, float] = {
 }
 
 UI_OUTPUT_KEYS = {
-    "output_dir", "out_name", "save_evolution", "save_evo_frq",
-    "print_prog_num", "use_plot_end", "use_plot_evo",
-    "plot_dir", "plot_spec",
+    "output_dir",
+    "out_name",
+    "save_evolution",
+    "save_evo_frq",
+    "print_prog_num",
+    "use_plot_end",
+    "use_plot_evo",
+    "plot_dir",
+    "plot_spec",
 }
 
 IGNORED_RUNTIME_FILENAMES = {".DS_Store"}
@@ -87,11 +97,7 @@ def _is_data_value(value: Any) -> bool:
 def _load_cfg(path: Path) -> dict[str, Any]:
     """Execute a VULCAN cfg and return its public literal data attributes."""
     raw = runpy.run_path(str(path))
-    return {
-        key: value
-        for key, value in raw.items()
-        if not key.startswith("_") and _is_data_value(value)
-    }
+    return {key: value for key, value in raw.items() if not key.startswith("_") and _is_data_value(value)}
 
 
 def _same_value(lhs: Any, rhs: Any) -> bool:
@@ -134,11 +140,7 @@ def _compare_cfgs(master_cfg: Path) -> list[str]:
     errors: list[str] = []
     master = _load_cfg(master_cfg)
     jax_cfg = load_config("HD189")
-    jax = {
-        key: value
-        for key, value in vars(jax_cfg).items()
-        if not key.startswith("_") and _is_data_value(value)
-    }
+    jax = {key: value for key, value in vars(jax_cfg).items() if not key.startswith("_") and _is_data_value(value)}
     ignored = UI_OUTPUT_KEYS | INTENTIONAL_JAX_DELTAS
 
     # Shared keys (physics + numerics) must match, except UI and the documented
@@ -147,9 +149,7 @@ def _compare_cfgs(master_cfg: Path) -> list[str]:
         if key in ignored:
             continue
         if not _same_value(master[key], jax[key]):
-            errors.append(
-                f"cfg mismatch {key}: master={master[key]!r}, jax={jax[key]!r}"
-            )
+            errors.append(f"cfg mismatch {key}: master={master[key]!r}, jax={jax[key]!r}")
 
     # JAX derives gs from Mp/Rp; verify it reproduces master's explicit gs
     # (it lands 1 ULP from 2140, hence a relative tolerance).
@@ -160,41 +160,29 @@ def _compare_cfgs(master_cfg: Path) -> list[str]:
             errors.append(f"JAX surface_gravity(HD189) failed: {exc!r}")
         else:
             if not math.isclose(float(master["gs"]), jax_gs, rel_tol=_GRAVITY_RTOL):
-                errors.append(
-                    f"gravity mismatch: master gs={master['gs']!r}, "
-                    f"jax G*Mp/Rp^2={jax_gs!r}"
-                )
+                errors.append(f"gravity mismatch: master gs={master['gs']!r}, jax G*Mp/Rp^2={jax_gs!r}")
 
     # Master keys absent in JAX are drift, except config._REMOVED_KEYS (gs
     # among them: JAX derives it from Mp/Rp) and the display-only keys JAX
     # drops (config._IGNORED_KEYS).
     from vulcan3.config import _IGNORED_KEYS, _REMOVED_KEYS
 
-    missing_in_jax = sorted(
-        set(master) - set(jax) - UI_OUTPUT_KEYS - set(_REMOVED_KEYS)
-        - _IGNORED_KEYS
-    )
+    missing_in_jax = sorted(set(master) - set(jax) - UI_OUTPUT_KEYS - set(_REMOVED_KEYS) - _IGNORED_KEYS)
     if missing_in_jax:
         errors.append(f"JAX cfg missing master keys: {missing_in_jax}")
     return errors
 
 
-def _paired_lines(
-    master_path: Path, jax_path: Path
-) -> tuple[list[str], list[tuple[int, tuple[str, str]]]]:
+def _paired_lines(master_path: Path, jax_path: Path) -> tuple[list[str], list[tuple[int, tuple[str, str]]]]:
     """Return the line-count error, or no error and the numbered line pairs."""
     master_lines = master_path.read_text().splitlines()
     jax_lines = jax_path.read_text().splitlines()
     if len(master_lines) != len(jax_lines):
-        return [
-            f"line-count drift ({len(master_lines)} master vs {len(jax_lines)} jax)"
-        ], []
-    return [], list(enumerate(zip(master_lines, jax_lines), start=1))
+        return [f"line-count drift ({len(master_lines)} master vs {len(jax_lines)} jax)"], []
+    return [], list(enumerate(zip(master_lines, jax_lines, strict=False), start=1))
 
 
-def _known_divergence_only(
-    master_path: Path, jax_path: Path, reactions: tuple[str, ...]
-) -> list[str]:
+def _known_divergence_only(master_path: Path, jax_path: Path, reactions: tuple[str, ...]) -> list[str]:
     """Return errors for any line drift NOT covered by the allowlisted reactions.
 
     A vendored network file may intentionally diverge from master on a known set
@@ -209,9 +197,7 @@ def _known_divergence_only(
             continue
         if any(rx in m_line or rx in j_line for rx in reactions):
             continue  # known, documented divergence
-        errors.append(
-            f"unexpected drift at line {lineno}: master={m_line!r}, jax={j_line!r}"
-        )
+        errors.append(f"unexpected drift at line {lineno}: master={m_line!r}, jax={j_line!r}")
     return errors
 
 
@@ -219,8 +205,10 @@ _ROW = re.compile(r"^\s*(\d+)?\s*\[(.*?)\](.*)$")
 
 
 def _items(path: Path) -> list[tuple[str, ...]]:
-    """The file as a sequence of ("row", equation, rest) and ("text", line) items, in file order, with ids and the
-    equation's spacing normalised; VULCAN-JAX history lines dropped."""
+    """Return the file as a sequence of ("row", equation, rest) and ("text", line) items, in file order.
+
+    With ids and the equation's spacing normalised. VULCAN-JAX history lines dropped.
+    """
     items = []
     for line in path.read_text().splitlines():
         m = None if line.lstrip().startswith("#") else _ROW.match(line)
@@ -231,21 +219,19 @@ def _items(path: Path) -> list[tuple[str, ...]]:
     return items
 
 
-def _known_row_divergence_only(
-    master_path: Path, jax_path: Path, reactions: tuple[str, ...]
-) -> list[str]:
-    """Outside the allowlisted reactions, every row and every other line must agree, in the same order (so a moved
-    section heading is caught). The allowlisted rows themselves are not compared here: their exact text is guarded
-    by the file's sha256 pin in tests/science_sources.yaml."""
+def _known_row_divergence_only(master_path: Path, jax_path: Path, reactions: tuple[str, ...]) -> list[str]:
+    """Outside the allowlisted reactions, every row and every other line must agree.
+
+    In the same order (so a moved section heading is caught). The allowlisted rows themselves are not compared here:
+    their exact text is guarded by the file's sha256 pin in tests/science_sources.yaml.
+    """
     keep = lambda items: [i for i in items if not (i[0] == "row" and any(rx in i[1] for rx in reactions))]  # noqa: E731
     if keep(_items(master_path)) != keep(_items(jax_path)):
         return ["rows or lines differ outside the known divergences"]
     return []
 
 
-def _known_sflux_rescale_only(
-    master_path: Path, jax_path: Path, factor: float
-) -> list[str]:
+def _known_sflux_rescale_only(master_path: Path, jax_path: Path, factor: float) -> list[str]:
     """Return errors unless jax differs from master by exactly the flux rescale.
 
     Wavelength fields must be byte-identical; every flux ratio jax/master must
@@ -265,14 +251,13 @@ def _known_sflux_rescale_only(
         m_flux, j_flux = float(m_parts[1]), float(j_parts[1])
         if m_flux <= 0 or abs(j_flux / m_flux - factor) > _SFLUX_RATIO_RTOL * factor:
             errors.append(
-                f"flux drift at line {lineno}: ratio {j_flux / m_flux:.6g} "
-                f"vs documented rescale {factor:.6g}"
+                f"flux drift at line {lineno}: ratio {j_flux / m_flux:.6g} vs documented rescale {factor:.6g}"
             )
     return errors
 
 
 def _load_supported_inputs() -> dict:
-    """The curated file list from tests/science_sources.yaml (required)."""
+    """Return the curated file list from tests/science_sources.yaml (required)."""
     import yaml
 
     p = Path(__file__).resolve().parent.parent / "tests" / "science_sources.yaml"
@@ -294,7 +279,8 @@ def _check_supported_inputs(jax_root: Path) -> list[str]:
                 f"{rel}: sha256 {got[:16]}... does not match the manifest's "
                 f"{want[:16]}... -- a vendored scientific input changed. If "
                 "that was deliberate, update tests/science_sources.yaml and "
-                "re-measure anything that depends on it.")
+                "re-measure anything that depends on it."
+            )
     return errors
 
 
@@ -324,7 +310,8 @@ def _compare_runtime_data(master_root: Path, jax_root: Path) -> list[str]:
                 f"{rel_dir}: the oracle does not carry supported input(s) "
                 f"{sorted(str(p) for p in missing_from_oracle)} -- this "
                 "port claims to carry them faithfully, so parity cannot be "
-                "confirmed against this revision")
+                "confirmed against this revision"
+            )
         for rel_path in sorted(master_keys & jax_keys):
             if master_files[rel_path] == jax_files[rel_path]:
                 continue
@@ -411,7 +398,7 @@ def audit(master_root: Path, jax_root: Path) -> list[str]:
 
     master_cfg = master_root / "cfg_examples" / "vulcan_cfg_HD189.py"
     if not master_cfg.exists():
-        return errors + [f"missing master HD189 cfg: {master_cfg}"]
+        return [*errors, f"missing master HD189 cfg: {master_cfg}"]
 
     errors.extend(_compare_cfgs(master_cfg))
     errors.extend(_compare_runtime_data(master_root, jax_root))
@@ -430,8 +417,7 @@ def main(argv: list[str] | None = None) -> int:
         "--master",
         type=Path,
         default=None,
-        help="Path to the VULCAN checkout to audit against; falls back to "
-        "$VULCAN_MASTER_DIR (a clean pinned clone).",
+        help="Path to the VULCAN checkout to audit against; falls back to $VULCAN_MASTER_DIR (a clean pinned clone).",
     )
     parser.add_argument(
         "--jax-root",

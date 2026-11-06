@@ -9,989 +9,100 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Any, Mapping
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
 import jax.scipy.special as jsp_special
 import numpy as np
 
-from .config import default_config
-from .phy_const import ATM_BAR, ATM_CGS, BAR_CGS, G_grav, Navo, au, kb, r_sun
 from ._paths import resolve_data_path
 from .atm_refresh import hydrostatic_step, recompute_vm_jax
+from .config import default_config
+from .phy_const import ATM_BAR, ATM_CGS, BAR_CGS, G_grav, Navo, au, kb, r_sun
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+from ._saturation import (
+    _CMHG_TO_BAR,
+    _GIBBS_T_MAX_K,
+    _GIBBS_T_MIN_K,
+    _H2S_ICE_LIQUID_K,
+    _S_ALLOTROPE_BREAK_K,
+    _SUPPORTED_CONDENSABLES,
+    compute_sat_p,
+    sat_p_jax,
+)
+from ._stellar_flux import (
+    _parse_bc_file,
+    read_bc_flux,
+    read_sflux_binned,
+)
+from ._tp_kzz import (
+    _interp_descending_or_ascending,
+    _read_atm_table,
+    analytical_TP_H14,
+    compute_pico,
+    high_temp_cut_regrid,
+    kzz_profile_jax,
+    load_TPK,
+    surface_gravity,
+)
+from ._transport_setup import (
+    _VISCOSITY_TABLE,
+    VISCOSITY_TABLE,
+    _alpha_array_for_base,
+    _Dzz_gen_for_base,
+    _scan_down_mu_dz_g,
+    _scan_up_mu_dz_g,
+    compute_mean_mass,
+    compute_mol_diff,
+    compute_mu_dz_g,
+    compute_settling_velocity,
+    mol_diff_jax,
+    mu_dz_g_jax,
+    settling_coeff_array,
+    settling_velocity_jax,
+)
+
+__all__ = [
+    "VISCOSITY_TABLE",
+    "Atm",
+    "analytical_TP_H14",
+    "compute_mean_mass",
+    "compute_mol_diff",
+    "compute_mu_dz_g",
+    "compute_pico",
+    "compute_sat_p",
+    "compute_settling_velocity",
+    "high_temp_cut_regrid",
+    "kzz_profile_jax",
+    "load_TPK",
+    "mol_diff_jax",
+    "mu_dz_g_jax",
+    "read_bc_flux",
+    "read_sflux_binned",
+    "sat_p_jax",
+    "settling_coeff_array",
+    "settling_velocity_jax",
+    "surface_gravity",
+]
 
 logger = logging.getLogger(__name__)
 
 _CFG = default_config()
 
 
-def compute_pico(pco: jnp.ndarray) -> jnp.ndarray:
-    """Pressure grid at cell interfaces from cell centres. Returns shape (nz+1,).
-
-    Interior interfaces are the geometric mean of adjacent cells; outer
-    boundaries are log-extrapolated from the nearest pair.
-    """
-    pco = jnp.asarray(pco)
-    pco_up1 = jnp.roll(pco, 1)
-    interior = jnp.sqrt(pco * pco_up1)
-    bottom = pco[0] ** 1.5 * pco[1] ** -0.5
-    top = pco[-1] ** 1.5 * pco[-2] ** -0.5
-    return jnp.concatenate(
-        [
-            jnp.array([bottom]),
-            interior[1:],
-            jnp.array([top]),
-        ]
-    )
-
-
-def surface_gravity(cfg) -> float:
-    """Surface gravity at the reference level (cm/s^2): ``g = G*Mp/Rp**2``.
-
-    Single source of gravity (upstream vm_branch); there is no ``gs`` knob.
-    Callers supply ``Mp`` (planet mass, g) and ``Rp`` (planet radius, cm).
-    """
-    Mp = getattr(cfg, "Mp", None)
-    Rp = getattr(cfg, "Rp", None)
-    if Mp is None or Rp is None or float(Mp) <= 0.0 or float(Rp) <= 0.0:
-        raise RuntimeError(
-            "Surface gravity is undetermined: set `Mp` (planet mass, g) and "
-            f"`Rp` (planet radius, cm), both > 0. Got Mp={Mp!r}, Rp={Rp!r}."
-        )
-    return G_grav * float(Mp) / float(Rp) ** 2
-
-
-def high_temp_cut_regrid(
-    pco, Tco, *, T_max: float, P_min: float, P_t: float, nz: int
-) -> np.ndarray | None:
-    """Re-gridded pressure column for the high-temperature bottom cut.
-
-    ``pco[0]`` is the deepest (highest-pressure) level. If any layer at
-    ``P >= P_min`` is hotter than ``T_max``, the bottom pressure is lowered to
-    the first deep level that is cool enough (floored at ``P_min``) and the
-    column is re-gridded onto ``nz`` logspaced levels down to ``P_t``.
-    Returns ``None`` when no cut is needed. NumPy port of vm_branch
-    ``build_atm.apply_high_temp_cut``; host-side setup only.
-    """
-    pco = np.asarray(pco, dtype=np.float64)
-    Tco = np.asarray(Tco, dtype=np.float64)
-    deep = pco >= P_min
-    if not np.any(deep) or np.all(Tco[deep] <= T_max):
-        return None
-    ok_deep = np.where(deep & (Tco <= T_max))[0]
-    if ok_deep.size == 0:
-        new_P_b = float(P_min)
-    else:
-        new_P_b = max(float(pco[ok_deep[0]]), float(P_min))
-    if new_P_b >= pco[0]:
-        return None
-    return np.logspace(np.log10(new_P_b), np.log10(P_t), int(nz))
-
-
-def analytical_TP_H14(pco: jnp.ndarray, params, *, gs: float, Pb: float) -> jnp.ndarray:
-    """Heng et al. 2014 analytical T(P) profile.
-
-    `params` is the 6-tuple `(T_int, T_irr, ka_0, ka_s, beta_s, beta_l)`.
-    Vectorised over `pco`.
-    """
-    T_int, T_irr, ka_0, ka_s, beta_s, beta_l = params
-    pco = jnp.asarray(pco)
-
-    albedo = (1.0 - beta_s) / (1.0 + beta_s)
-    T_irr_eff = T_irr * (1.0 - albedo) ** 0.25
-    eps_L = 3.0 / 8.0
-    eps_L3 = 1.0 / 3.0
-    ka_CIA = 0.0
-    m = pco / gs
-    m_0 = Pb / gs
-    ka_l = ka_0 + ka_CIA * m / m_0
-    term1 = (
-        T_int**4
-        / 4.0
-        * (1.0 / eps_L + m / (eps_L3 * beta_l**2) * (ka_0 + ka_CIA * m / (2.0 * m_0)))
-    )
-    arg = ka_s * m / beta_s
-    expn2 = jsp_special.expn(2, arg)
-    expn4 = jsp_special.expn(4, arg)
-    term2 = 1.0 / (2.0 * eps_L) + expn2 * (
-        ka_s / (ka_l * beta_s) - ka_CIA * m * beta_s / (eps_L3 * ka_s * m_0 * beta_l**2)
-    )
-    term3 = ka_0 * beta_s / (eps_L3 * ka_s * beta_l**2) * (1.0 / 3.0 - expn4)
-    term4 = 0.0
-    T = (term1 + T_irr_eff**4 / 8.0 * (term2 + term3 + term4)) ** 0.25
-    return T
-
-
-def kzz_profile_jax(
-    kzz_prof: str,
-    pico_int: jnp.ndarray,
-    *,
-    K_deep: float = 0.0,
-    K_max: float = 0.0,
-    K_p_lev: float = 0.0,
-    const_Kzz: float = 0.0,
-) -> jnp.ndarray:
-    """Analytic eddy-diffusion profile Kzz(P) at interior interfaces (cm^2/s).
-
-    `pico_int` is ``pico[1:-1]`` (interface pressures, shape ``(nz-1,)``,
-    dyne/cm^2). Single source for the ``const``/``JM16``/``Pfunc`` branches of
-    :func:`load_TPK`, in ``jnp`` so the profile is differentiable w.r.t. its
-    parameters and the grid (the ``file`` profile has no closed form and lives
-    in :func:`load_TPK`). Each branch reads only its own parameter; a missing
-    required knob must fail loud at the call site, not be defaulted here.
-    """
-    # jnp.asarray (not float()) keeps the parameters tracer-safe for AD;
-    # bit-identical for the production Python-float call path.
-    pico_int = jnp.asarray(pico_int, dtype=jnp.float64)
-    K_deep = jnp.asarray(K_deep, dtype=jnp.float64)
-    K_max = jnp.asarray(K_max, dtype=jnp.float64)
-    K_p_lev = jnp.asarray(K_p_lev, dtype=jnp.float64)
-    const_Kzz = jnp.asarray(const_Kzz, dtype=jnp.float64)
-    if kzz_prof == "const":
-        return jnp.zeros_like(pico_int) + const_Kzz
-    if kzz_prof == "JM16":
-        # Moses+2016 fit, build_atm.py:414 (1e-3 converts dyne/cm^2 to mbar).
-        return jnp.maximum(K_deep, 1e5 * (300.0 / (pico_int * 1e-3)) ** 0.5)
-    if kzz_prof == "Pfunc":
-        # Tsai+2020 fit, build_atm.py:417.
-        return jnp.maximum(K_max, K_max * (K_p_lev * BAR_CGS / pico_int) ** 0.4)
-    raise IOError(
-        f'\n"Kzz_prof"={kzz_prof!r} cannot be recognized.\n'
-        f'Assign it as "file", "const", "JM16" or "Pfunc" in the config.'
-    )
-
-
 # Load TPK (T, Kzz, vz from cfg / file) -- host-side I/O
 
 
-def _interp_descending_or_ascending(
-    x_query: np.ndarray,
-    xp_raw: np.ndarray,
-    fp_raw: np.ndarray,
-    fill_left: float,
-    fill_right: float,
-) -> np.ndarray:
-    """`scipy.interp1d(bounds_error=False, fill_value=(left, right))` via `jnp.interp`.
-
-    Sorts `xp` ascending on the host so `jnp.interp` is happy.
-    """
-    xp_raw = np.asarray(xp_raw, dtype=np.float64)
-    fp_raw = np.asarray(fp_raw, dtype=np.float64)
-    order = np.argsort(xp_raw)
-    xp_sorted = xp_raw[order]
-    fp_sorted = fp_raw[order]
-    return np.asarray(
-        jnp.interp(
-            jnp.asarray(x_query, dtype=jnp.float64),
-            jnp.asarray(xp_sorted),
-            jnp.asarray(fp_sorted),
-            left=float(fill_left),
-            right=float(fill_right),
-        )
-    )
-
-
-def _read_atm_table(atm_file: str) -> dict[str, np.ndarray]:
-    """Read an atm/atm_*.txt file. Returns dict with `Pressure`/`Temp` and
-    optional `Kzz`/`vz` columns."""
-    table = np.genfromtxt(
-        resolve_data_path(atm_file), names=True, dtype=None, skip_header=1
-    )
-    out: dict[str, np.ndarray] = {
-        "Pressure": np.asarray(table["Pressure"], dtype=np.float64),
-        "Temp": np.asarray(table["Temp"], dtype=np.float64),
-    }
-    if "Kzz" in table.dtype.names:
-        out["Kzz"] = np.asarray(table["Kzz"], dtype=np.float64)
-    if "vz" in table.dtype.names:
-        out["vz"] = np.asarray(table["vz"], dtype=np.float64)
-    nrow = out["Pressure"].size
-    if out["Pressure"].ndim != 1 or nrow < 2:
-        raise ValueError(f"atmosphere table {atm_file}: need at least two rows")
-    if any(values.ndim != 1 or values.size != nrow for values in out.values()):
-        raise ValueError(f"atmosphere table {atm_file}: columns have inconsistent lengths")
-    if any(not np.all(np.isfinite(values)) for values in out.values()):
-        raise ValueError(f"atmosphere table {atm_file}: all values must be finite")
-    # Upstream (build_atm.load_TPK, interp1d with assume_sorted=False) sorts
-    # the pressure column and accepts Kzz = 0; only sign/finiteness are refused.
-    if np.any(out["Pressure"] <= 0.0) or np.any(out["Temp"] <= 0.0):
-        raise ValueError(
-            f"atmosphere table {atm_file}: Pressure and Temp must be positive "
-            f"(min Pressure {out['Pressure'].min():g}, min Temp {out['Temp'].min():g})"
-        )
-    if "Kzz" in out and np.any(out["Kzz"] < 0.0):
-        raise ValueError(
-            f"atmosphere table {atm_file}: Kzz must be >= 0 (min {out['Kzz'].min():g})"
-        )
-    return out
-
-
-def load_TPK(cfg, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, jnp.ndarray]:
-    """Build (Tco, Kzz, vz, M, n_0) for the configured atm/Kzz/vz modes.
-
-    `pco` and `pico` are inputs because the `table` mode
-    overwrites `pco` from a saved file.
-    """
-    nz = int(pco.shape[0])
-    atm_type = cfg.atm_type
-    Kzz_prof = cfg.Kzz_prof
-    vz_prof = cfg.vz_prof
-    use_Kzz = bool(cfg.use_Kzz)
-    use_vz = bool(cfg.use_vz)
-
-    out: dict[str, np.ndarray] = {}
-    table_for_vz: dict[str, np.ndarray] | None = None
-
-    if atm_type == "isothermal":
-        Tco = np.full(nz, float(cfg.Tiso), dtype=np.float64)
-    elif atm_type == "analytical":
-        Tco = np.asarray(
-            analytical_TP_H14(
-                jnp.asarray(pco),
-                cfg.para_anaTP,
-                gs=surface_gravity(cfg),
-                # pco[0] (deepest level) keeps the profile self-consistent
-                # after a high_temp_cut re-grid lowers the bottom pressure.
-                Pb=float(np.asarray(pco)[0]),
-            )
-        )
-    elif atm_type == "file":
-        table = _read_atm_table(cfg.atm_file)
-        table_for_vz = table
-        p_file = table["Pressure"]
-        T_file = table["Temp"]
-        if max(p_file) < pco[0] or min(p_file) > pco[-1]:
-            logger.warning(
-                "P_b and P_t assigned in the config are out of range "
-                "of the input. Constant extension is used."
-            )
-        Tco = _interp_descending_or_ascending(
-            pco,
-            p_file,
-            T_file,
-            fill_left=float(T_file[np.argmin(p_file)]),
-            fill_right=float(T_file[np.argmax(p_file)]),
-        )
-        if use_Kzz and Kzz_prof == "file":
-            Kzz_file = table["Kzz"]
-            out["Kzz"] = _interp_descending_or_ascending(
-                pico[1:-1],
-                p_file,
-                Kzz_file,
-                fill_left=float(Kzz_file[np.argmin(p_file)]),
-                fill_right=float(Kzz_file[np.argmax(p_file)]),
-            )
-    elif atm_type == "vulcan_ini":
-        import pickle
-
-        logger.info(f"Initializing PT from the previous run {cfg.vul_ini}")
-        with open(resolve_data_path(cfg.vul_ini), "rb") as handle:
-            vul_data = pickle.load(handle)
-        Tco = np.asarray(vul_data["atm"]["Tco"], dtype=np.float64)
-    elif atm_type == "table":
-        logger.info(f"Initializing PT from the previous run {cfg.vul_ini}")
-        table = np.genfromtxt(
-            resolve_data_path(cfg.vul_ini), names=True, dtype=None, skip_header=1
-        )
-        if not nz == len(table["Pressure"]):
-            raise IOError(
-                "Initial profile has different layers than the current setting"
-            )
-        out["pco"] = np.asarray(table["Pressure"], dtype=np.float64)
-        Tco = np.asarray(table["Temp"], dtype=np.float64)
-    else:
-        raise IOError(
-            f'\n"atm_type"={atm_type!r} cannot be recognized.\n'
-            f"Please reassign it in the config."
-        )
-    out["Tco"] = Tco
-
-    # Read each profile's knob directly so a missing one raises, as in master.
-    if Kzz_prof == "const":
-        out["Kzz"] = np.asarray(
-            kzz_profile_jax("const", pico[1:-1], const_Kzz=cfg.const_Kzz),
-            dtype=np.float64,
-        )
-    elif Kzz_prof == "JM16":
-        out["Kzz"] = np.asarray(
-            kzz_profile_jax("JM16", pico[1:-1], K_deep=cfg.K_deep),
-            dtype=np.float64,
-        )
-    elif Kzz_prof == "Pfunc":
-        out["Kzz"] = np.asarray(
-            kzz_profile_jax("Pfunc", pico[1:-1], K_max=cfg.K_max, K_p_lev=cfg.K_p_lev),
-            dtype=np.float64,
-        )
-    elif Kzz_prof == "file":
-        if "Kzz" not in out:
-            raise IOError('Kzz_prof="file" requires atm_type="file" with a Kzz column.')
-    else:
-        raise IOError(
-            f'\n"Kzz_prof"={Kzz_prof!r} cannot be recognized.\n'
-            f'Assign it as "file", "const", "JM16" or "Pfunc" in the config.'
-        )
-
-    if vz_prof == "const":
-        out["vz"] = np.full(nz - 1, float(cfg.const_vz), dtype=np.float64)
-    elif vz_prof == "file":
-        if table_for_vz is None or "vz" not in table_for_vz:
-            raise IOError('vz_prof="file" requires atm_type="file" with a vz column.')
-        p_file = table_for_vz["Pressure"]
-        vz_file = table_for_vz["vz"]
-        out["vz"] = _interp_descending_or_ascending(
-            pico[1:-1],
-            p_file,
-            vz_file,
-            fill_left=0.0,
-            fill_right=0.0,
-        )
-    else:
-        raise IOError(
-            f'\n"vz_prof"={vz_prof!r} cannot be recognized.\n'
-            f'Assign it as "file" or "const" in the config.'
-        )
-
-    # Force-zero when the corresponding `use_*` switch is off, regardless of cfg.
-    if not use_Kzz:
-        out["Kzz"] = np.zeros(nz - 1, dtype=np.float64)
-    if not use_vz:
-        out["vz"] = np.zeros(nz - 1, dtype=np.float64)
-
-    pco_for_M = out.get("pco", pco)
-    M = jnp.asarray(pco_for_M, dtype=jnp.float64) / (
-        kb * jnp.asarray(out["Tco"], dtype=jnp.float64)
-    )
-    out["M"] = np.asarray(M)
-    out["n_0"] = np.asarray(M)
-
-    return {k: np.asarray(v, dtype=np.float64) for k, v in out.items()}
-
-
-def compute_mean_mass(ymix: jnp.ndarray, ms_arr: jnp.ndarray) -> jnp.ndarray:
-    """Mean molecular weight (g/mol) per layer. ymix (nz, ni), ms_arr (ni,) -> (nz,)."""
-    return jnp.einsum("zi,i->z", jnp.asarray(ymix), jnp.asarray(ms_arr))
-
-
-def _scan_up_mu_dz_g(
-    pref_indx: int,
-    gs: float,
-    Rp: float,
-    Tco: jnp.ndarray,
-    mu: jnp.ndarray,
-    pico: jnp.ndarray,
-    nz: int,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Sequential upward height integration from `pref_indx` to the top."""
-    Tco_up = Tco[pref_indx:nz]
-    mu_up = mu[pref_indx:nz]
-    pico_up_lo = pico[pref_indx:nz]
-    pico_up_hi = pico[pref_indx + 1 : nz + 1]
-
-    def body(carry, scan_in):
-        z_prev, _gz_prev, _Hp_prev = carry
-        i, T_i, mu_i, p_lo, p_hi = scan_in
-        is_first = i == 0
-        gz_i = jnp.where(is_first, gs, gs * (Rp / (Rp + z_prev)) ** 2)
-        Hp_i, dz_i = hydrostatic_step(T_i, mu_i, gz_i, p_lo, p_hi, kb, Navo)
-        z_next = z_prev + dz_i
-        return (z_next, gz_i, Hp_i), (gz_i, Hp_i, dz_i, z_next)
-
-    # jnp.asarray (not jnp.float64) keeps the carry tracer-safe for a traced
-    # `gs`.
-    init = (jnp.float64(0.0), jnp.asarray(gs, dtype=jnp.float64), jnp.float64(0.0))
-    n_up = nz - pref_indx
-    idx = jnp.arange(n_up)
-    _, (gz_seq, Hp_seq, dz_seq, z_after_seq) = jax.lax.scan(
-        body, init, (idx, Tco_up, mu_up, pico_up_lo, pico_up_hi)
-    )
-    return gz_seq, Hp_seq, dz_seq, z_after_seq
-
-
-def _scan_down_mu_dz_g(
-    pref_indx: int,
-    gs: float,
-    Rp: float,
-    Tco: jnp.ndarray,
-    mu: jnp.ndarray,
-    pico: jnp.ndarray,
-    z_at_pref: float,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Sequential downward height integration from `pref_indx-1` to 0.
-
-    Requires `pref_indx >= 1`. Returns arrays in low-to-high index order.
-    """
-    Tco_dn_rev = Tco[:pref_indx][::-1]
-    mu_dn_rev = mu[:pref_indx][::-1]
-    pico_lo_rev = pico[:pref_indx][::-1]
-    pico_hi_rev = pico[1 : pref_indx + 1][::-1]
-
-    def body(carry, scan_in):
-        z_above = carry
-        T_i, mu_i, p_lo, p_hi = scan_in
-        gz_i = gs * (Rp / (Rp + z_above)) ** 2
-        Hp_i, dz_i = hydrostatic_step(T_i, mu_i, gz_i, p_lo, p_hi, kb, Navo)
-        z_here = z_above - dz_i
-        return z_here, (gz_i, Hp_i, dz_i, z_here)
-
-    init = jnp.float64(z_at_pref)
-    _, (gz_rev, Hp_rev, dz_rev, z_rev) = jax.lax.scan(
-        body, init, (Tco_dn_rev, mu_dn_rev, pico_lo_rev, pico_hi_rev)
-    )
-    return gz_rev[::-1], Hp_rev[::-1], dz_rev[::-1], z_rev[::-1]
-
-
-def mu_dz_g_jax(pref_indx: int, gs, Rp, Tco, mu, pico, nz: int):
-    """Hydrostatic height integration on the JAX graph, anchored at `pref_indx`.
-
-    The host setup path (:func:`compute_mu_dz_g`) runs it on the graph too, so
-    a traced caller gets the same float64 bits. `pref_indx` is a discrete
-    host-side choice and is passed in.
-
-    Returns (g, Hp, dz, zco, zmco, dzi, Ti, Hpi) as jnp arrays.
-    """
-    gz_up, Hp_up, dz_up, z_after_up = _scan_up_mu_dz_g(
-        pref_indx, gs, Rp, Tco, mu, pico, nz
-    )
-    gz = jnp.zeros(nz, dtype=jnp.float64).at[pref_indx:nz].set(gz_up)
-    Hp = jnp.zeros(nz, dtype=jnp.float64).at[pref_indx:nz].set(Hp_up)
-    dz = jnp.zeros(nz, dtype=jnp.float64).at[pref_indx:nz].set(dz_up)
-    # zco[pref_indx] = 0 by definition.
-    zco = (
-        jnp.zeros(nz + 1, dtype=jnp.float64).at[pref_indx + 1 : nz + 1].set(z_after_up)
-    )
-
-    if pref_indx > 0:
-        gz_dn, Hp_dn, dz_dn, z_dn = _scan_down_mu_dz_g(
-            pref_indx, gs, Rp, Tco, mu, pico, z_at_pref=0.0
-        )
-        gz = gz.at[:pref_indx].set(gz_dn)
-        Hp = Hp.at[:pref_indx].set(Hp_dn)
-        dz = dz.at[:pref_indx].set(dz_dn)
-        zco = zco.at[:pref_indx].set(z_dn)
-
-    zmco = 0.5 * (zco[:-1] + jnp.roll(zco, -1)[:-1])
-    dzi = 0.5 * (dz[1:] + jnp.roll(dz, 1)[1:])
-    Ti = 0.5 * (Tco[:-1] + jnp.roll(Tco, -1)[:-1])
-    Hpi = 0.5 * (Hp[:-1] + jnp.roll(Hp, -1)[:-1])
-    return gz, Hp, dz, zco, zmco, dzi, Ti, Hpi
-
-
-def compute_mu_dz_g(
-    cfg,
-    ymix: np.ndarray,
-    ms_arr: np.ndarray,
-    pico: np.ndarray,
-    Tco: np.ndarray,
-) -> dict[str, np.ndarray | int]:
-    """Build (mu, g, gs, Hp, dz, dzi, zco, zmco, pref_indx, [Ti, Hpi]).
-
-    Host wrapper over :func:`mu_dz_g_jax`: it picks the discrete `pref_indx`
-    and freezes the result to NumPy.
-    """
-    nz = int(Tco.shape[0])
-    pico_j = jnp.asarray(pico, dtype=jnp.float64)
-    Tco_j = jnp.asarray(Tco, dtype=jnp.float64)
-    mu_j = compute_mean_mass(
-        jnp.asarray(ymix, dtype=jnp.float64), jnp.asarray(ms_arr, dtype=jnp.float64)
-    )
-
-    gs = surface_gravity(cfg)
-
-    # `pref_indx` anchors g(z)=gs: gas giants with P_b >= 1 bar anchor at the
-    # layer nearest 1 bar; rocky planets at index 0 (build_atm.py:533-535).
-    pico_host = np.asarray(pico_j)
-    if (not bool(cfg.rocky)) and float(cfg.P_b) >= BAR_CGS:
-        pref_indx = int(
-            min(range(nz + 1),
-                key=lambda i: abs(np.log10(pico_host[i]) - np.log10(BAR_CGS)))
-        )
-    else:
-        pref_indx = 0
-
-    gz, Hp, dz, zco, zmco, dzi, Ti, Hpi = mu_dz_g_jax(
-        pref_indx, gs, float(cfg.Rp), Tco_j, mu_j, pico_j, nz
-    )
-
-    out: dict[str, np.ndarray | int] = {
-        "mu": np.asarray(mu_j),
-        "g": np.asarray(gz),
-        "gs": gs,
-        "Hp": np.asarray(Hp),
-        "dz": np.asarray(dz),
-        "dzi": np.asarray(dzi),
-        "zco": np.asarray(zco),
-        "zmco": np.asarray(zmco),
-        "pref_indx": pref_indx,
-    }
-    if bool(cfg.use_moldiff):
-        out["Ti"] = np.asarray(Ti)
-        out["Hpi"] = np.asarray(Hpi)
-    return out
-
-
-# Cloutman dynamic-viscosity polynomial (na, a, b) per atm_base
-# (build_atm.py:589-599). CO2 is not tabulated; falls back to N2.
-_VISCOSITY_TABLE: Mapping[str, tuple[float, float, float]] = {
-    "N2": (1.52, 1.186e-5, 86.54),
-    "H2": (1.67, 1.936e-6, 2.187),
-    "CO2": (1.52, 1.186e-5, 86.54),
-    "H2O": (1.5, 1.6e-5, 0.0),
-    "O2": (1.46, 2.294e-5, 164.4),
-}
-
-
-def settling_velocity_jax(
-    na: float,
-    a: float,
-    b: float,
-    Tco: jnp.ndarray,
-    g: jnp.ndarray,
-    settle_coeff: jnp.ndarray,
-) -> jnp.ndarray:
-    """JAX core of the Stokes-regime settling velocity. Returns (nz-1, ni), cm/s.
-
-    `settle_coeff` is the per-species ``rho_p * r_p**2`` (g/cm, zero for gas
-    species); `(na, a, b)` is the Cloutman dynamic-viscosity polynomial for
-    the background gas. Single source for :func:`compute_settling_velocity`,
-    in ``jnp`` so the fall speed is differentiable w.r.t. temperature, gravity
-    and particle size/density.
-    """
-    Tco = jnp.asarray(Tco, dtype=jnp.float64)
-    g = jnp.asarray(g, dtype=jnp.float64)
-    dmu = a * Tco**na / (b + Tco)  # dynamic viscosity, (nz,) g/(cm s)
-    gi = 0.5 * (g[:-1] + g[1:])  # (nz-1,)
-    factor = -(2.0 / 9.0) * gi / dmu[1:]  # (nz-1,)
-    return factor[:, None] * jnp.asarray(settle_coeff, dtype=jnp.float64)[None, :]
-
-
-def compute_settling_velocity(
-    cfg,
-    Tco: np.ndarray,
-    g: np.ndarray,
-    species_list: list[str],
-    rho_p: Mapping[str, float],
-    r_p: Mapping[str, float],
-) -> np.ndarray:
-    """Per-species terminal-fall velocity (Stokes regime). Returns (nz-1, ni);
-    only `non_gas_sp` entries are non-zero."""
-    nz = int(Tco.shape[0])
-    ni = len(species_list)
-    if not bool(cfg.use_settling):
-        return np.zeros((nz - 1, ni), dtype=np.float64)
-    atm_base = cfg.atm_base
-    if atm_base == "CO2":
-        warnings.warn("NO CO2 viscosity yet! (using N2 instead)", stacklevel=2)
-    if atm_base not in _VISCOSITY_TABLE:
-        raise IOError(f"No viscosity polynomial for atm_base={atm_base!r}")
-    na, a, b = _VISCOSITY_TABLE[atm_base]
-    settle_coeff = settling_coeff_array(cfg, species_list, rho_p, r_p)
-    vs = settling_velocity_jax(
-        na, a, b, jnp.asarray(Tco), jnp.asarray(g), jnp.asarray(settle_coeff)
-    )
-    return np.asarray(vs, dtype=np.float64)
-
-
-def settling_coeff_array(
-    cfg,
-    species_list: list[str],
-    rho_p: Mapping[str, float],
-    r_p: Mapping[str, float],
-) -> np.ndarray:
-    """Per-species ``rho_p * r_p**2`` (g/cm), zero for gas species. (ni,).
-
-    The static, host-side half of the settling velocity: it validates that
-    every condensible in ``non_gas_sp`` has a prescribed size and density.
-    Split out so the differentiable builder can reuse it without re-running
-    the validation each step.
-    """
-    ni = len(species_list)
-    settle_coeff = np.zeros(ni, dtype=np.float64)
-    for sp in cfg.non_gas_sp:
-        if sp not in species_list:
-            continue
-        if sp not in rho_p or sp not in r_p:
-            raise IOError(f"{sp} has not been prescribed size and density!")
-        settle_coeff[species_list.index(sp)] = float(rho_p[sp]) * float(r_p[sp]) ** 2
-    return settle_coeff
-
-
-def _Dzz_gen_for_base(atm_base: str):
-    """Return a JAX lambda `(T, n_tot, mi) -> Dzz` for an atm_base.
-
-    Coefficients are species-pair fits from Moses 2000a (H2 base) and the
-    analogous N2/O2/CO2 forms.
-    """
-    if atm_base == "H2":
-        return lambda T, n_tot, mi: (
-            2.2965e17 * T**0.765 / n_tot * (16.04 / mi * (mi + 2.016) / 18.059) ** 0.5
-        )
-    if atm_base == "N2":
-        return lambda T, n_tot, mi: (
-            7.34e16 * T**0.75 / n_tot * (16.04 / mi * (mi + 28.014) / 44.054) ** 0.5
-        )
-    if atm_base == "O2":
-        return lambda T, n_tot, mi: (
-            7.51e16 * T**0.759 / n_tot * (16.04 / mi * (mi + 32.0) / 48.04) ** 0.5
-        )
-    if atm_base == "CO2":
-        return lambda T, n_tot, mi: (
-            2.15e17 * T**0.750 / n_tot * (2.016 / mi * (mi + 44.001) / 46.017) ** 0.5
-        )
-    raise IOError(f"\n Unknown atm_base={atm_base!r}!")
-
-
-def _alpha_array_for_base(
-    atm_base: str, species_list: list[str], mol_mass
-) -> np.ndarray:
-    """Thermal-diffusion factor per species, atm_base-dependent. Returns (ni,).
-
-    Defaults to zero. H2 base: H = -0.1, He = 0.145, then every species over
-    4 amu (He included) gets 0.25, as master (build_atm.py:690-693). N2/O2/CO2
-    base: H/H2/He = -0.25, Ar = 0.17. Other atm_base raises.
-    """
-    ni = len(species_list)
-    alpha = np.zeros(ni, dtype=np.float64)
-    if atm_base == "H2":
-        if "H" in species_list:
-            alpha[species_list.index("H")] = -0.1
-        if "He" in species_list:
-            alpha[species_list.index("He")] = 0.145
-        for sp in species_list:
-            if mol_mass(sp) > 4.0:
-                alpha[species_list.index(sp)] = 0.25
-    elif atm_base in ("N2", "O2", "CO2"):
-        for sp in ("H", "H2", "He"):
-            if sp in species_list:
-                alpha[species_list.index(sp)] = -0.25
-        if "Ar" in species_list:
-            alpha[species_list.index("Ar")] = 0.17
-    else:
-        raise IOError(f"\n Unknown atm_base={atm_base!r}!")
-    return alpha
-
-
-def mol_diff_jax(atm_base: str, Tco, n_0, g, Hp, dz, ms, alpha, nongas_mask,
-                 *, use_vm_mol: bool):
-    """Molecular diffusion on the JAX graph: (Dzz, Dzz_cen, vm).
-
-    Shared by the host setup path (:func:`compute_mol_diff`) and the
-    on-graph `atm_jax._mol_diff`. Callers gate
-    `use_moldiff` themselves. `Dzz` is on the cell interfaces (nz-1, ni),
-    `Dzz_cen` the cell-centered companion kept for the `.vul` diagnostic
-    surface, `vm` the interface-centered advective (drift) component.
-    """
-    Dzz_gen = _Dzz_gen_for_base(atm_base)
-
-    # Interface values for the (nz-1, ni) Dzz array.
-    Tco_i = (Tco[1:] + Tco[:-1]) * 0.5
-    n0_i = (n_0[1:] + n_0[:-1]) * 0.5
-    Dzz = jax.vmap(lambda mi: Dzz_gen(Tco_i, n0_i, mi), out_axes=1)(ms)
-    Dzz_cen = jax.vmap(lambda mi: Dzz_gen(Tco, n_0, mi), out_axes=1)(ms)
-
-    # Non-gaseous species (e.g. H2O_l_s) get zero diffusion on the interfaces;
-    # because vm below reuses this interface Dzz, the zeroing carries straight
-    # into vm with no separate condensation gate.
-    Dzz = jnp.where(nongas_mask[None, :], 0.0, Dzz)
-
-    if not use_vm_mol:
-        return Dzz, Dzz_cen, jnp.zeros_like(Dzz)
-
-    # Interface-centered upwind drift velocity (vm_branch op.update_mu_dz):
-    # vm = -Dzz * (1/H_i - 1/Hp + thermal) on cell interfaces, using the same
-    # arithmetic means mu_dz_g_jax forms for Ti/Hpi/dzi. Shared with the
-    # in-loop refresh (atm_refresh.recompute_vm_jax) so both stay bit-identical.
-    Hpi = 0.5 * (Hp[:-1] + Hp[1:])  # (nz-1,)
-    dzi = 0.5 * (dz[1:] + dz[:-1])  # (nz-1,)
-    vm = recompute_vm_jax(g, Hpi, dzi, Dzz, ms, alpha, Tco, kb, Navo)
-    return Dzz, Dzz_cen, vm
-
-
-def compute_mol_diff(
-    cfg,
-    Tco: np.ndarray,
-    n_0: np.ndarray,
-    g: np.ndarray,
-    Hp: np.ndarray,
-    dz: np.ndarray,
-    ms_arr: np.ndarray,
-    alpha_arr: np.ndarray,
-    species_list: list[str],
-) -> dict[str, np.ndarray]:
-    """Build (Dzz, Dzz_cen, vm) for the cfg's `atm_base`.
-
-    Host wrapper over :func:`mol_diff_jax`; all three are zeros when
-    `use_moldiff` is off.
-    """
-    nz = int(Tco.shape[0])
-    ni = len(species_list)
-    if not bool(cfg.use_moldiff):
-        return {
-            "Dzz": np.zeros((nz - 1, ni), dtype=np.float64),
-            "Dzz_cen": np.zeros((nz, ni), dtype=np.float64),
-            "vm": np.zeros((nz - 1, ni), dtype=np.float64),
-        }
-
-    nongas = np.array([sp in set(cfg.non_gas_sp) for sp in species_list], dtype=bool)
-    Dzz, Dzz_cen, vm = mol_diff_jax(
-        cfg.atm_base,
-        jnp.asarray(Tco, dtype=jnp.float64),
-        jnp.asarray(n_0, dtype=jnp.float64),
-        jnp.asarray(g, dtype=jnp.float64),
-        jnp.asarray(Hp, dtype=jnp.float64),
-        jnp.asarray(dz, dtype=jnp.float64),
-        jnp.asarray(ms_arr, dtype=jnp.float64),
-        jnp.asarray(alpha_arr, dtype=jnp.float64),
-        jnp.asarray(nongas),
-        use_vm_mol=bool(cfg.use_vm_mol),
-    )
-    return {
-        "Dzz": np.asarray(Dzz),
-        "Dzz_cen": np.asarray(Dzz_cen),
-        "vm": np.asarray(vm),
-    }
-
-
-def read_sflux_binned(
-    cfg,
-    bins: np.ndarray,
-    sflux_raw: np.ndarray | None = None,
-) -> dict[str, Any]:
-    """Interpolate the stellar flux onto VULCAN's uniform photo bins grid.
-
-    Returns sflux_top and the dbin1 -> dbin2 transition index. `sflux_raw`
-    may be supplied for tests.
-    """
-    if sflux_raw is None:
-        sflux_raw = np.genfromtxt(
-            resolve_data_path(cfg.sflux_file),
-            dtype=float,
-            skip_header=1,
-            names=["lambda", "flux"],
-        )
-    bins_np = np.asarray(bins, dtype=np.float64)
-    dbin1 = float(cfg.dbin1)
-    dbin2 = float(cfg.dbin2)
-    dbin_12 = float(cfg.dbin_12trans)
-    raw_lambda = np.asarray(sflux_raw["lambda"], dtype=np.float64)
-    # Scale the surface flux to the planet's orbit by (R_star / r_orbit)^2.
-    geom = (float(cfg.r_star) * r_sun / (au * float(cfg.orbit_radius))) ** 2
-    raw_flux = np.asarray(sflux_raw["flux"], dtype=np.float64) * geom
-    # np.interp needs non-decreasing wavelengths; duplicates are allowed
-    # (sflux-epseri.txt has 20).
-    # bin_min comes from wavelength[0], as upstream (op.py:575).
-    if (raw_lambda.ndim != 1 or raw_lambda.shape != raw_flux.shape
-            or raw_lambda.size < 2
-            or not (np.all(np.isfinite(raw_lambda)) and np.all(np.isfinite(raw_flux)))):
-        raise ValueError(
-            f"stellar flux {cfg.sflux_file}: need equal-length finite 1-D wavelength/flux "
-            f"columns with >= 2 rows (got shapes {raw_lambda.shape}, {raw_flux.shape})"
-        )
-    if np.any(raw_lambda <= 0.0) or np.any(np.diff(raw_lambda) < 0.0) or np.any(raw_flux < 0.0):
-        raise ValueError(
-            f"stellar flux {cfg.sflux_file}: wavelength must be positive and "
-            f"non-decreasing and flux non-negative (min lambda {raw_lambda.min():g}, "
-            f"min diff {np.diff(raw_lambda).min():g}, min flux {raw_flux.min():g})"
-        )
-
-    # Bins and the star file are independent; warn when bins outside the file
-    # are zero-filled.
-    if bins_np[0] < raw_lambda[0] or bins_np[-1] > raw_lambda[-1]:
-        warnings.warn(
-            f"stellar flux {cfg.sflux_file} spans "
-            f"[{raw_lambda[0]:g}, {raw_lambda[-1]:g}] nm but the photolysis bins "
-            f"span [{bins_np[0]:g}, {bins_np[-1]:g}] nm; bins outside the file are "
-            "zero-filled, so photolysis is switched off there.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-
-    sflux_top = np.asarray(
-        jnp.interp(
-            jnp.asarray(bins_np),
-            jnp.asarray(raw_lambda),
-            jnp.asarray(raw_flux),
-            left=0.0,
-            right=0.0,
-        ),
-        dtype=np.float64,
-    )
-
-    # Upstream (build_atm.py:635, :652) leaves sflux_din12_indx = -1 when the node is
-    # absent and compute_J then integrates bins[:-1] at dbin1 (dropping the
-    # last bin); refused here instead.
-    transition = np.flatnonzero(bins_np == dbin_12)
-    if transition.size != 1 or transition[0] == 0 or transition[0] == bins_np.size - 1:
-        raise ValueError(
-            f"photolysis grid must contain one internal dbin_12trans={dbin_12:g} nm node "
-            f"(grid [{bins_np[0]:g}, {bins_np[-1]:g}] nm, {transition.size} matches)")
-    sflux_din12_indx = int(transition[0])
-
-    # Energy-conservation diagnostic: raw trapezoidal integral vs. binned sum.
-    raw_left_indx = int(np.searchsorted(raw_lambda, bins_np[0], side="right"))
-    raw_right_indx = int(np.searchsorted(raw_lambda, bins_np[-1], side="right")) - 1
-    sum_orgin = 0.0
-    for n in range(raw_left_indx, raw_right_indx):
-        sum_orgin += (
-            0.5 * (raw_flux[n] + raw_flux[n + 1]) * (raw_lambda[n + 1] - raw_lambda[n])
-        )
-    sum_orgin += (
-        0.5
-        * (float(np.interp(bins_np[0], raw_lambda, raw_flux)) + raw_flux[raw_left_indx])
-        * (raw_lambda[raw_left_indx] - bins_np[0])
-    )
-    sum_orgin += (
-        0.5
-        * (
-            float(np.interp(bins_np[-1], raw_lambda, raw_flux))
-            + raw_flux[raw_right_indx]
-        )
-        * (bins_np[-1] - raw_lambda[raw_right_indx])
-    )
-
-    sum_bin = dbin1 * np.sum(sflux_top[:sflux_din12_indx])
-    sum_bin -= dbin1 * 0.5 * (sflux_top[0] + sflux_top[sflux_din12_indx - 1])
-    sum_bin += dbin2 * np.sum(sflux_top[sflux_din12_indx:])
-    sum_bin -= dbin2 * 0.5 * (sflux_top[sflux_din12_indx] + sflux_top[-1])
-
-    logger.info(
-        "The stellar flux is interpolated onto uniform grid of "
-        f"{dbin1} (<{dbin_12} nm) and {dbin2} (>={dbin_12} nm)"
-        f" and conserving {100 * sum_bin / sum_orgin:.2f} % energy."
-    )
-    return {
-        "sflux_top": sflux_top,
-        "sflux_din12_indx": sflux_din12_indx,
-    }
-
-
-def _parse_bc_file(path: str) -> list[list[str]]:
-    """Read a BC text file into token rows; skip comments and blank lines."""
-    rows: list[list[str]] = []
-    with open(resolve_data_path(path)) as f:
-        for line in f.readlines():
-            if not line.startswith("#") and line.strip():
-                rows.append(line.split())
-    return rows
-
-
-def read_bc_flux(cfg, species_list: list[str]) -> dict[str, np.ndarray]:
-    """Build (top_flux, bot_flux, bot_vdep, bot_fix_sp).
-
-    use_topflux and use_botflux each fill their section from a file. bot_fix_sp
-    stays zero: OuterLoop pins the `use_fix_sp_bot` dict entries itself.
-    """
-    ni = len(species_list)
-    out = {
-        "top_flux": np.zeros(ni, dtype=np.float64),
-        "bot_flux": np.zeros(ni, dtype=np.float64),
-        "bot_vdep": np.zeros(ni, dtype=np.float64),
-        "bot_fix_sp": np.zeros(ni, dtype=np.float64),
-    }
-    if bool(cfg.use_topflux):
-        logger.info("Using the prescribed constant top flux.")
-        for tokens in _parse_bc_file(cfg.top_BC_flux_file):
-            sp = tokens[0]
-            if sp in species_list:
-                out["top_flux"][species_list.index(sp)] = float(tokens[1])
-    if bool(cfg.use_botflux):
-        logger.info("Using the prescribed constant bottom flux.")
-        for tokens in _parse_bc_file(cfg.bot_BC_flux_file):
-            sp = tokens[0]
-            if sp in species_list:
-                out["bot_flux"][species_list.index(sp)] = float(tokens[1])
-                out["bot_vdep"][species_list.index(sp)] = float(tokens[2])
-    return out
-
-
-# Phase breaks in the saturation fits (build_atm.py:829, :840, :856).
-_S_ALLOTROPE_BREAK_K = 413.0  # S2 and S8
-_H2S_ICE_LIQUID_K = 187.6
-# bar per cmHg. Upstream's 0.001333 (build_atm.py:857) is mmHg.
-_CMHG_TO_BAR = 0.01333
-# Valid temperature range of the NASA-9 Gibbs fits (build_atm.py:618).
-_GIBBS_T_MIN_K = 200.0
-_GIBBS_T_MAX_K = 6000.0
-
-_SUPPORTED_CONDENSABLES: tuple[str, ...] = (
-    "H2O",
-    "NH3",
-    "H2SO4",
-    "S2",
-    "S4",
-    "S8",
-    "C",
-    "H2S",
-)
-
-
-def sat_p_jax(sp: str, T: jnp.ndarray) -> jnp.ndarray:
-    """JAX core of one condensable's saturation vapour pressure (dyne/cm^2).
-
-    Single source of truth for :func:`compute_sat_p`, expressed in ``jnp`` so
-    the saturation curve is differentiable w.r.t. temperature. The only
-    non-smooth points are the phase-boundary jumps (ice/liquid for H2O, the
-    413 K break for S2/S8, the 187.6 K break for H2S). Fits and coefficients
-    from build_atm.py:804-857.
-    """
-    T = jnp.asarray(T, dtype=jnp.float64)
-    if sp == "H2O":
-        T_C = T - 273.0
-        c0, c1, c2, c3 = 6111.5, 23.036, -333.7, 279.82  # ice constants
-        w0, w1, w2, w3 = 6112.1, 18.729, -227.3, 257.87  # liquid constants
-        # Ackerman & Marley (2001): ice for T < 0 C, liquid water for T >= 0 C.
-        # Upstream's (T<0)*ice + (T>0)*water is 0 at 273 K; one `where` has
-        # no zero there (the two fits still differ by 0.6 dyne/cm^2 at 0 C).
-        ice = c0 * jnp.exp((c1 * T_C + T_C**2 / c2) / (T_C + c3))
-        liquid = w0 * jnp.exp((w1 * T_C + T_C**2 / w2) / (T_C + w3))
-        return jnp.where(T_C < 0, ice, liquid)
-    if sp == "NH3":
-        c0, c1, c2 = 10.53, -2161.0, -86596.0
-        return jnp.exp(c0 + c1 / T + c2 / T**2) * BAR_CGS
-    if sp == "H2SO4":
-        return jnp.exp(-10156.0 / T + 16.259) * ATM_BAR * BAR_CGS
-    if sp == "S2":
-        return jnp.where(
-            T < _S_ALLOTROPE_BREAK_K,
-            jnp.exp(27.0 - 18500.0 / T) * BAR_CGS,
-            jnp.exp(16.1 - 14000.0 / T) * BAR_CGS,
-        )
-    if sp == "S4":
-        return 10 ** (6.0028 - 6047.5 / T) * ATM_CGS
-    if sp == "S8":
-        return jnp.where(
-            T < _S_ALLOTROPE_BREAK_K,
-            jnp.exp(20.0 - 11800.0 / T) * BAR_CGS,
-            jnp.exp(9.6 - 7510.0 / T) * BAR_CGS,
-        )
-    if sp == "C":
-        a, b, c = 3.27860e1, -8.65139e4, 4.80395e-1
-        return jnp.exp(a + b / (T + c))
-    if sp == "H2S":
-        # Giauque & Blue (1936) Antoine fits; output is in cmHg.
-        ice_log10 = -1329.0 / T + 9.28588 - 0.0051263 * T
-        l_log10 = -1145.0 / T + 7.94746 - 0.00322 * T
-        sat_p = 10 ** jnp.where(T <= _H2S_ICE_LIQUID_K, ice_log10, l_log10)
-        # Check: the H2S boiling point, 212.8 K -> 76.1 cmHg = 1.015 bar.
-        return sat_p * _CMHG_TO_BAR * BAR_CGS
-    raise IOError(
-        f"No saturation vapor data for {sp}. Check `sat_p_jax` in atm_setup.py"
-    )
-
-
-def compute_sat_p(condense_sp: list[str], Tco: np.ndarray) -> dict[str, np.ndarray]:
-    """Saturation vapour pressure (dyne/cm^2) per condensable species."""
-    Tco_j = jnp.asarray(Tco, dtype=jnp.float64)
-    out: dict[str, np.ndarray] = {}
-    for sp in condense_sp:
-        out[sp] = np.asarray(sat_p_jax(sp, Tco_j), dtype=np.float64)
-    return out
-
-
 class Atm:
-    """Thin mutable facade: routes `make_atm.X(data_atm)` calls into the
-    JAX-native pure functions above and writes results back to the legacy
-    `data_atm` / `data_var` containers.
+    """Thin mutable facade over the pure functions above.
+
+    Routes `make_atm.X(data_atm)` calls into them and writes results back to the legacy `data_atm` / `data_var`
+    containers.
     """
 
     def f_pico(self, data_atm):
@@ -1000,8 +111,7 @@ class Atm:
         return data_atm
 
     def load_TPK(self, data_atm):
-        """Populate `Tco / Kzz / vz / M / n_0` per `atm_type` (isothermal,
-        analytical, file, vulcan_ini, or table)."""
+        """Populate `Tco / Kzz / vz / M / n_0` per `atm_type` (isothermal, analytical, file, vulcan_ini, or table)."""
         out = load_TPK(_CFG, np.asarray(data_atm.pco), pico=np.asarray(data_atm.pico))
         # `atm_type='table'` rewrites pco from a saved file.
         if "pco" in out:
@@ -1011,8 +121,9 @@ class Atm:
         return data_atm
 
     def apply_high_temp_cut(self, data_atm):
-        """Lower the bottom pressure so deep T does not exceed
-        ``high_temp_cut_K`` (vm_branch ``build_atm.apply_high_temp_cut``).
+        """Lower the bottom pressure so deep T does not exceed ``high_temp_cut_K``.
+
+        Matches vm_branch ``build_atm.apply_high_temp_cut``.
 
         Delegates grid selection to :func:`high_temp_cut_regrid`, then reloads
         T/Kzz on the re-gridded column. No-op when the deep column is already
@@ -1022,20 +133,15 @@ class Atm:
         P_min = float(_CFG.high_temp_cut_P)
         nz = int(_CFG.nz)
 
-        new_pco = high_temp_cut_regrid(
-            data_atm.pco, data_atm.Tco, T_max=T_max, P_min=P_min, P_t=_CFG.P_t, nz=nz
-        )
+        new_pco = high_temp_cut_regrid(data_atm.pco, data_atm.Tco, T_max=T_max, P_min=P_min, P_t=_CFG.P_t, nz=nz)
         if new_pco is None:
             return data_atm
 
         logger.warning(
-            "high_temp_cut: capping deep T at {:.0f} K (P >= {:.2e} bar) for "
-            "numerical stability.".format(T_max, P_min / BAR_CGS)
+            "high_temp_cut: capping deep T at %.0f K (P >= %.2e bar) for numerical stability.", T_max, P_min / BAR_CGS
         )
         logger.warning(
-            "  effective P_b {:.2e} -> {:.2e} bar (nz = {})".format(
-                float(_CFG.P_b) / BAR_CGS, float(new_pco[0]) / BAR_CGS, nz
-            )
+            "  effective P_b %.2e -> %.2e bar (nz = %s)", float(_CFG.P_b) / BAR_CGS, float(new_pco[0]) / BAR_CGS, nz
         )
 
         data_atm.pco = new_pco
@@ -1044,8 +150,8 @@ class Atm:
 
         if np.any(np.asarray(data_atm.Tco) > T_max):
             warnings.warn(
-                "After high_temp_cut: max Tco = {:.1f} K still > "
-                "{:.0f} K.".format(float(np.max(np.asarray(data_atm.Tco))), T_max),
+                f"After high_temp_cut: max Tco = {float(np.max(np.asarray(data_atm.Tco))):.1f} K still > "
+                f"{T_max:.0f} K.",
                 stacklevel=2,
             )
         return data_atm
@@ -1106,11 +212,8 @@ class Atm:
                 rho_p=getattr(data_atm, "rho_p", {}),
                 r_p=getattr(data_atm, "r_p", {}),
             )
-        if np.any(np.logical_or(data_atm.Tco < _GIBBS_T_MIN_K,
-                                data_atm.Tco > _GIBBS_T_MAX_K)):
-            warnings.warn(
-                "Temperatures exceed the valid range of Gibbs free energy.", stacklevel=2
-            )
+        if np.any(np.logical_or(data_atm.Tco < _GIBBS_T_MIN_K, data_atm.Tco > _GIBBS_T_MAX_K)):
+            warnings.warn("Temperatures exceed the valid range of Gibbs free energy.", stacklevel=2)
         return data_atm
 
     def mol_diff(self, atm):
@@ -1156,7 +259,7 @@ class Atm:
         for sp, sp_arr in out.items():
             atm.sat_p[sp] = sp_arr
 
-    def read_sflux(self, var, atm):
+    def read_sflux(self, var, atm):  # noqa: ARG002 (master's signature; legacy callers pass atm)
         """Read the stellar flux file, rebin onto `var.bins`, and write to var/atm."""
         out = read_sflux_binned(_CFG, np.asarray(var.bins))
         var.sflux_top = out["sflux_top"]

@@ -12,7 +12,6 @@ from __future__ import annotations
 import copy
 
 import numpy as np
-
 from _helpers import relerr
 from oracle import assert_below, enter_master, leave_master, run_oracle_subprocess
 
@@ -33,9 +32,7 @@ def main() -> None:
     master_cfg.diff_esc = ["H"]
 
     leave_master()
-    import vulcan3.op_jax as op_jax
-    import vulcan3.outer_loop as outer_loop
-    from vulcan3 import atm_refresh
+    from vulcan3 import atm_refresh, op_jax, outer_loop
     from vulcan3.atm_setup import Atm
     from vulcan3.state import RunState, legacy_view, runstate_from_store
 
@@ -72,38 +69,33 @@ def main() -> None:
     # exercises update_mu_dz_jax + update_phi_esc_jax wiring without
     # depending on the photo branch / chem step.
     init_state = integ._pack_state_from_runstate(
-        runstate_from_store(data_var, data_atm, data_para)._replace(
-            photo_static=rs.photo_static
-        )
+        runstate_from_store(data_var, data_atm, data_para)._replace(photo_static=rs.photo_static)
     )
     st = integ._refresh_static
-    mu_B, g_B, Hp_B, dz_B, zco_B, dzi_B, Hpi_B = atm_refresh.update_mu_dz_jax(
-        init_state.ymix, st
-    )
-    top_flux_B = atm_refresh.update_phi_esc_jax(
-        init_state.y, g_B, Hp_B, init_state.top_flux, st
-    )
+    mu_B, g_B, Hp_B, dz_B, zco_B, dzi_B, Hpi_B = atm_refresh.update_mu_dz_jax(init_state.ymix, st)
+    top_flux_B = atm_refresh.update_phi_esc_jax(init_state.y, g_B, Hp_B, init_state.top_flux, st)
 
     from vulcan3.phy_const import UNDERFLOW_DENOM
 
-    assert_below({
-        label: (relerr(B, A, floor=UNDERFLOW_DENOM), rtol)
-        for label, A, B, rtol in (
-            ("mu", atm_A.mu, mu_B, EXACT_RTOL),
-            ("g", atm_A.g, g_B, REFRESH_RTOL),
-            ("Hp", atm_A.Hp, Hp_B, REFRESH_RTOL),
-            ("dz", atm_A.dz, dz_B, REFRESH_RTOL),
-            ("dzi", atm_A.dzi, dzi_B, REFRESH_RTOL),
-            ("Hpi", atm_A.Hpi, Hpi_B, REFRESH_RTOL),
-            ("zco", atm_A.zco, zco_B, REFRESH_RTOL),
-            ("top_flux", atm_A.top_flux, top_flux_B, REFRESH_RTOL),
-        )
-    })
+    assert_below(
+        {
+            label: (relerr(B, A, floor=UNDERFLOW_DENOM), rtol)
+            for label, A, B, rtol in (
+                ("mu", atm_A.mu, mu_B, EXACT_RTOL),
+                ("g", atm_A.g, g_B, REFRESH_RTOL),
+                ("Hp", atm_A.Hp, Hp_B, REFRESH_RTOL),
+                ("dz", atm_A.dz, dz_B, REFRESH_RTOL),
+                ("dzi", atm_A.dzi, dzi_B, REFRESH_RTOL),
+                ("Hpi", atm_A.Hpi, Hpi_B, REFRESH_RTOL),
+                ("zco", atm_A.zco, zco_B, REFRESH_RTOL),
+                ("top_flux", atm_A.top_flux, top_flux_B, REFRESH_RTOL),
+            )
+        }
+    )
 
 
 def test_main():
-    run_oracle_subprocess(__file__, "vulcan2_ncho",
-                          "cfg_examples/vulcan_cfg_HD189.py")
+    run_oracle_subprocess(__file__, "vulcan2_ncho", "cfg_examples/vulcan_cfg_HD189.py")
 
 
 if __name__ == "__main__":

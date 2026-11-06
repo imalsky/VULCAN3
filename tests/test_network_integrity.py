@@ -1,24 +1,22 @@
-"""Network-file integrity: no silent duplicates, positional photo indices,
-pinned T-range exposure.
+"""Network-file integrity: no silent duplicates, positional photo indices, pinned T-range exposure."""
 
-The parser is positional and appends every reaction row, so a reaction
-duplicated within one section is double-counted in both directions with no
-error. The vendored TiSNCHO network ships three such duplicates (an upstream
-data bug; no shipped config selects it): `parse_network` must REFUSE them
-(warn under `duplicates_ok=True`), and the networks the shipped configs DO
-select must stay clean.
-
-Photolysis rates are indexed by parser position, never by the id column.
-VULCAN's `make_chem_funs.py` renumbers a network file in place the first time
-it runs, but a fetched, hand-edited or never-run file keeps stale ids, and
-keying photolysis by them puts a rate in the wrong k_arr slot or out of range.
-
-The trailing `Temp` annotation column documents each thermal rate's fitted
-range. Nothing enforces it at runtime (matching VULCAN-master);
-jwst-transit-authority reports the exposure through
-`runtime_validation.rate_temp_range_exposure`. The pinned counts are for the
-shipped atm-file profiles and move only with the network files or the parser.
-"""
+# The parser is positional and appends every reaction row, so a reaction
+# duplicated within one section is double-counted in both directions with no
+# error. The vendored TiSNCHO network ships three such duplicates (an upstream
+# data bug; no shipped config selects it): `parse_network` must REFUSE them
+# (warn under `duplicates_ok=True`), and the networks the shipped configs DO
+# select must stay clean.
+#
+# Photolysis rates are indexed by parser position, never by the id column.
+# VULCAN's `make_chem_funs.py` renumbers a network file in place the first time
+# it runs, but a fetched, hand-edited or never-run file keeps stale ids, and
+# keying photolysis by them puts a rate in the wrong k_arr slot or out of range.
+#
+# The trailing `Temp` annotation column documents each thermal rate's fitted
+# range. Nothing enforces it at runtime (matching VULCAN-master);
+# jwst-transit-authority reports the exposure through
+# `runtime_validation.rate_temp_range_exposure`. The pinned counts are for the
+# shipped atm-file profiles and move only with the network files or the parser.
 
 from __future__ import annotations
 
@@ -54,9 +52,11 @@ def _configured_networks() -> list[str]:
 
 @pytest.mark.parametrize("net_rel", _configured_networks(), ids=os.path.basename)
 def test_configured_networks_have_no_duplicate_reactions(net_rel):
-    """No network a shipped config selects may contain a double-counted row
-    or a stale photo/ion id column. Stale ids do not change the parse, but a
-    cfg.remove_list entry read off the file would select the wrong reaction."""
+    """No network a shipped config selects may contain a double-counted row or a stale photo/ion id column.
+
+    Stale ids do not change the parse, but a cfg.remove_list entry read off the file would select the wrong
+    reaction.
+    """
     net, dup_msgs = _parse_quietly(net_rel)
     assert not dup_msgs, dup_msgs
     assert not net.stale_ids, net.stale_ids
@@ -74,9 +74,7 @@ def test_no_reaction_row_is_dropped(net_path):
     reverse slot.
     """
     with open(net_path) as fh:
-        rows = sum(
-            1 for ln in fh if ln.strip() and not ln.lstrip().startswith("#") and "[" in ln
-        )
+        rows = sum(1 for ln in fh if ln.strip() and not ln.lstrip().startswith("#") and "[" in ln)
     net, _ = _parse_quietly(net_path)
     assert net.nr == 2 * rows, f"{net.nr // 2} rows parsed, {rows} in the file"
 
@@ -115,8 +113,9 @@ def _file_ids_by_position(path: str) -> list[tuple[int, int, str]]:
 
 @pytest.mark.parametrize("net_path", _SHIPPED_NETWORKS, ids=os.path.basename)
 def test_photo_rate_index_is_positional_and_in_range(net_path):
-    """The photo/ion indices must be exactly the parser positions of the
-    photo/ion rows, each an in-range odd (forward) slot of k_arr.
+    """The photo/ion indices must be exactly the parser positions of the photo/ion rows.
+
+    Each an in-range odd (forward) slot of k_arr.
 
     `k_arr` has `nr + 1` rows with row 0 unused, so a valid forward slot is
     odd and `<= nr`.
@@ -137,11 +136,7 @@ def test_photo_rate_index_is_positional_and_in_range(net_path):
             "names a REVERSE slot; photolysis has no reverse"
         )
 
-    positions = sorted(
-        pos
-        for pos, _fid, sec in _file_ids_by_position(net_path)
-        if sec in ("photo", "ion")
-    )
+    positions = sorted(pos for pos, _fid, sec in _file_ids_by_position(net_path) if sec in ("photo", "ion"))
     assert sorted(indices) == positions, (
         f"{os.path.basename(net_path)}: photo/ion indices are not parser positions. "
         "They must come from the position, not the file's id column."
@@ -184,7 +179,7 @@ def test_duplicate_reactions_refuse_naming_the_equations():
 
 
 @pytest.mark.parametrize(
-    "annotation, expected",
+    ("annotation", "expected"),
     [
         ("1992OLD/LOG8426-8430 250-2580", ((250.0, 2580.0),)),
         ("Estimate 300-2.50E4", ((300.0, 25000.0),)),  # sci-notation upper bound
@@ -241,8 +236,11 @@ def test_network_species_without_composition_row_refuse():
         "from vulcan3 import composition"
     )
     proc = subprocess.run(
-        [sys.executable, "-c", child], capture_output=True, text=True,
-        timeout=600, check=False,
+        [sys.executable, "-c", child],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
     )
     assert proc.returncode != 0, "C3 network loaded despite having no C3 composition row"
     assert "C3" in proc.stderr, proc.stderr

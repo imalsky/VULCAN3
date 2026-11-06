@@ -19,13 +19,13 @@ from vulcan3.steady_state_grad import BodyTerms, steady_state_input_sensitivity
 
 
 def _cfg(**overrides):
-    base = dict(
-        use_condense=True,
-        use_moldiff=True,
-        condense_sp=["H2O"],
-        start_conden_time=0.0,
-        stop_conden_time=1.0e5,
-    )
+    base = {
+        "use_condense": True,
+        "use_moldiff": True,
+        "condense_sp": ["H2O"],
+        "start_conden_time": 0.0,
+        "stop_conden_time": 1.0e5,
+    }
     base.update(overrides)
     return SimpleNamespace(**base)
 
@@ -33,15 +33,18 @@ def _cfg(**overrides):
 # --- forward-config hardening -----------------------------------------------
 
 
-@pytest.mark.parametrize("overrides,expect", [
-    (dict(_off=True), None),                       # conden off -> no errors
-    (dict(), None),                                # valid config -> no errors
-    (dict(use_moldiff=False), "use_moldiff"),
-    (dict(condense_sp=[]), "empty condense_sp"),
-    (dict(start_conden_time=100.0, stop_conden_time=10.0), "would never open"),
-    (dict(condense_sp=["NOPE"]), "not a supported condensate"),
-], ids=["off_noop", "valid", "needs_moldiff", "empty_sp", "inverted_window",
-        "unsupported_species"])
+@pytest.mark.parametrize(
+    ("overrides", "expect"),
+    [
+        ({"_off": True}, None),  # conden off -> no errors
+        ({}, None),  # valid config -> no errors
+        ({"use_moldiff": False}, "use_moldiff"),
+        ({"condense_sp": []}, "empty condense_sp"),
+        ({"start_conden_time": 100.0, "stop_conden_time": 10.0}, "would never open"),
+        ({"condense_sp": ["NOPE"]}, "not a supported condensate"),
+    ],
+    ids=["off_noop", "valid", "needs_moldiff", "empty_sp", "inverted_window", "unsupported_species"],
+)
 def test_validate_condensation(overrides, expect):
     if overrides.pop("_off", False):
         errs = _validate_condensation(SimpleNamespace(use_condense=False))
@@ -75,11 +78,12 @@ def _dummy_input_sensitivity(body_terms, **kw):
 
 
 def test_input_sensitivity_refuses_condensation_active_states():
-    """Refused both post-pin (fix_mask set) and in-window (conden_static);
-    without condensation the guard passes and failure comes later from the
-    dummy arguments, never with the conden message."""
-    bt = BodyTerms(fix_mask=jnp.ones((2, 3), dtype=bool),
-                   fix_y=jnp.zeros((2, 3)))
+    """Refused both post-pin (fix_mask set) and in-window (conden_static).
+
+    Without condensation the guard passes and failure comes later from the dummy arguments, never with the conden
+    message.
+    """
+    bt = BodyTerms(fix_mask=jnp.ones((2, 3), dtype=bool), fix_y=jnp.zeros((2, 3)))
     with pytest.raises(ValueError, match="reliably differentiable"):
         _dummy_input_sensitivity(bt)
     with pytest.raises(ValueError, match="reliably differentiable"):

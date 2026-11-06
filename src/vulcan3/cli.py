@@ -1,54 +1,33 @@
-#!/usr/bin/env python
-"""VULCAN3 driver: build RunState, integrate, pickle .vul."""
-
-import os
-
-# One OpenMP thread. The package `__init__` has already loaded NumPy and
-# JAX, so this takes effect only in the `_relaunch_for_frozen_knobs` re-exec:
-# the hot path is one XLA program and BLAS threads only oversubscribe.
-os.environ["OMP_NUM_THREADS"] = "1"
-
-import time
-
-import jax as _jax
-
-# Persistent XLA compile cache: the codegen RHS and the whole-loop while_loop
-# take seconds to compile cold and are reused verbatim across runs. JAX's
-# default thresholds apply, so compiles faster than 1 s are not cached.
-_jax.config.update(
-    "jax_compilation_cache_dir",
-    os.environ.get(
-        "JAX_COMPILATION_CACHE_DIR",
-        os.path.expanduser("~/.cache/vulcan3"),
-    ),
-)
+"""VULCAN3 driver: build RunState, integrate, pickle .vul. Public name: `cli_main`."""
 
 import argparse
+import contextlib
 import logging
+import os
 import sys
+import time
+from pathlib import Path
 
-from . import legacy_io as op
+import jax
+
+from . import _settings, legacy_io, op_jax, outer_loop
 from .config import _FROZEN_ENV, dump_config, load_config
-from . import op_jax
-from . import outer_loop
 from .state import RunState, _frozen_mismatch
 
-# Set on the re-executed process by `_relaunch_for_frozen_knobs` so a relaunch
-# that fails to resolve the mismatch raises instead of looping.
-_RELAUNCH_GUARD = "VULCAN3_CLI_RELAUNCHED"
+__all__ = ["cli_main"]
+
+_RELAUNCH_GUARD = _settings.RELAUNCH_GUARD
 
 
 def _frozen_knob_mismatch(cfg):
-    """Import-frozen knobs `cfg` disagrees with (`state._frozen_mismatch`), as
-    ``{env var: cfg's value}``.
+    """Import-frozen knobs `cfg` disagrees with (`state._frozen_mismatch`), as ``{env var: cfg's value}``.
 
     `load_config` folds ``$VULCAN3_*`` over the YAML before returning, so a
     knob the caller overrode explicitly matches the frozen value and never
     appears here.
     """
     return {
-        _FROZEN_ENV[knob]: (",".join(str(a) for a in cfg.atom_list)
-                            if knob == "atom_list" else str(getattr(cfg, knob)))
+        _FROZEN_ENV[knob]: (",".join(str(a) for a in cfg.atom_list) if knob == "atom_list" else str(getattr(cfg, knob)))
         for knob in _frozen_mismatch(cfg)
     }
 
@@ -69,7 +48,7 @@ def _relaunch_for_frozen_knobs(cfg, config_ref):
     if not mismatch:
         return
     assignments = " ".join(f"{k}={v}" for k, v in sorted(mismatch.items()))
-    if os.environ.get(_RELAUNCH_GUARD):
+    if _settings.relaunched():
         raise RuntimeError(
             f"config {config_ref!r} still disagrees with the import-frozen "
             f"network settings after a relaunch with {assignments}. This should "
@@ -79,6 +58,9 @@ def _relaunch_for_frozen_knobs(cfg, config_ref):
     env = dict(os.environ)
     env.update(mismatch)
     env[_RELAUNCH_GUARD] = "1"
+    # One OpenMP thread, read when the new process loads NumPy: the hot path is one XLA program and BLAS threads only
+    # oversubscribe.
+    env["OMP_NUM_THREADS"] = "1"
     print(
         f"Config {config_ref!r} needs import-frozen settings that differ from the "
         f"defaults; relaunching with {assignments}"
@@ -109,6 +91,12 @@ def cli_main(argv=None):
     ``$VULCAN3_*`` variables set (see `_relaunch_for_frozen_knobs`).
     """
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
+    # Persistent XLA compile cache: the codegen RHS and the whole-loop while_loop take seconds to compile cold and are
+    # reused verbatim across runs. JAX's default thresholds apply, so compiles faster than 1 s are not cached.
+    jax.config.update(
+        "jax_compilation_cache_dir",
+        os.environ.get("JAX_COMPILATION_CACHE_DIR", str(Path("~/.cache/vulcan3").expanduser())),
+    )
     parser = argparse.ArgumentParser(prog="vulcan3")
     parser.add_argument(
         "--config",
@@ -125,15 +113,13 @@ def cli_main(argv=None):
     # Validates cfg before any setup work.
     runstate = RunState.with_pre_loop_setup(cfg)
 
-    dname = os.path.abspath(os.getcwd())
-    output = op.Output(cfg=cfg)
+    dname = str(Path.cwd())
+    output = legacy_io.Output(cfg=cfg)
     output.save_cfg(dname)
 
     # Save the fully-resolved config as YAML so the run is reproducible.
-    resolved_path = os.path.join(
-        os.path.abspath(cfg.output_dir), f"{cfg.out_name}.config.yaml"
-    )
-    os.makedirs(os.path.dirname(resolved_path), exist_ok=True)
+    resolved_path = Path(cfg.output_dir).absolute() / f"{cfg.out_name}.config.yaml"
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
     dump_config(cfg, resolved_path)
     print(f"Resolved config written to {resolved_path}")
 
@@ -152,14 +138,9 @@ def cli_main(argv=None):
                 f"(step {int(runstate.params.count)}, t={float(runstate.step.t):.3e} s)."
             )
         else:
-            print("\nInterrupted before the first chunk finished; `runstate` "
-                  "is the initial state.")
-        print("`output.save_out(runstate, dname)` writes it as a .vul; "
-              "Ctrl-D quits.")
-        _drop_into_repl(
-            dict(cfg=cfg, runstate=runstate, integ=integ, output=output,
-                 dname=dname)
-        )
+            print("\nInterrupted before the first chunk finished; `runstate` is the initial state.")
+        print("`output.save_out(runstate, dname)` writes it as a .vul; Ctrl-D quits.")
+        _drop_into_repl({"cfg": cfg, "runstate": runstate, "integ": integ, "output": output, "dname": dname})
         # An interrupted run is not a success, also for a job wrapper whose
         # stdin is not a terminal (the shell then exits on EOF at once).
         sys.exit(130)
@@ -181,10 +162,8 @@ def _drop_into_repl(namespace):
     except ImportError:
         import code
 
-        try:
-            import readline  # noqa: F401  (arrow keys and history in `code`)
-        except ImportError:
-            pass
+        with contextlib.suppress(ImportError):
+            import readline  # noqa: F401 (arrow keys and history in `code`)
         code.interact(local=namespace)
     else:
         embed(user_ns=namespace, colors="neutral")

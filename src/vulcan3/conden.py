@@ -1,30 +1,33 @@
 """Pure-JAX condensation kernels and the on-graph condensation-profile builder.
 
-`update_conden_rates` recomputes the condensation/evaporation rate for
-each conden reaction:
+`make_conden_spec` runs on the host, once per config; `build_conden_profile` rebuilds the arrays that depend on T and
+structure, for a caller with a live T(P). `update_conden_rates`, `apply_h2o_relax_jax` and `apply_nh3_relax_jax` are the
+per-step kernels. Equations: docs/method.md.
 
-    rate[r, z] = Dg[r, z] * (m / (rho_p * r_p^2))[r] * (y[z, sp[r]] - sat_n[r, z])
-
-`apply_h2o_relax_jax` / `apply_nh3_relax_jax` run an implicit-Euler
-cold-trap relaxation toward saturation. NH3 additionally clamps the
-condensation region to layers at or below the `conden_top` index.
-
-Static/dynamic split: `make_conden_spec` (host, once per config) extracts
-the T-independent metadata (`CondenSpec`); `build_conden_profile` (pure JAX,
-jit/vmap/jvp) rebuilds every T/structure-dependent array (`CondenProfile`) per T-P realization, so an
-on-graph caller with a live T(P) can regenerate the frozen `ProfileVars
-c_*` quantities and splice them into the runner carry.
-`OuterLoop._build_conden_static` delegates here, so the host and
-on-graph paths share one implementation.
+Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, length in cm, time in s.
 """
 
 from __future__ import annotations
 
-from typing import NamedTuple, Tuple
+from typing import NamedTuple
 
 import jax.numpy as jnp
 
 from .phy_const import UNDERFLOW_DENOM, Navo, kb
+
+__all__ = [
+    "GAS_MASS_G_PER_MOL",
+    "GAS_TO_CONDENSATE",
+    "SUPPORTED_CONDEN_KINETICS",
+    "CondenProfile",
+    "CondenSpec",
+    "CondenStatic",
+    "apply_h2o_relax_jax",
+    "apply_nh3_relax_jax",
+    "build_conden_profile",
+    "make_conden_spec",
+    "update_conden_rates",
+]
 
 # Molar masses (g/mol) from op.conden (op.py:1109-1290). S2/S8 are 2x/8x
 # atomic S; upstream's 45.019/360.152 (op.py:1203, :1249) is a copy-paste
@@ -64,10 +67,10 @@ class CondenSpec(NamedTuple):
     `build_conden_profile` for every T-P realization.
     """
 
-    gas_names: Tuple[str, ...]  # active conden reactions' gas species
-    conden_re_idx: Tuple[int, ...]  # k_arr row of each forward reaction
-    conden_sp_idx: Tuple[int, ...]  # species column of each gas species
-    coeff_per_re: Tuple[float, ...]  # m/(rho_p r_p^2); 0.0 for relax rows
+    gas_names: tuple[str, ...]  # active conden reactions' gas species
+    conden_re_idx: tuple[int, ...]  # k_arr row of each forward reaction
+    conden_sp_idx: tuple[int, ...]  # species column of each gas species
+    coeff_per_re: tuple[float, ...]  # m/(rho_p r_p^2); 0.0 for relax rows
     humidity: float  # relative humidity (H2O saturation only)
 
     h2o_active: bool  # H2O relax kernel enabled (H2O in use_relax)
@@ -83,8 +86,8 @@ class CondenSpec(NamedTuple):
     # cfg.fix_species names, in config order; species with saturation data
     # (members of `sat_names`) get a live sat-mix row, others a zero row,
     # mirroring `_Statics.fix_species_sat_mix`'s `sp in atm.sat_mix` gate.
-    fix_names: Tuple[str, ...]
-    sat_names: Tuple[str, ...]  # cfg.condense_sp (species with sat data)
+    fix_names: tuple[str, ...]
+    sat_names: tuple[str, ...]  # cfg.condense_sp (species with sat data)
 
 
 class CondenProfile(NamedTuple):
@@ -109,9 +112,7 @@ class CondenProfile(NamedTuple):
 def _m_over_rho_r2(atm, gas_sp: str) -> float:
     """`m / (rho_p * r_p**2)` for `gas_sp` and its condensate, in cgs."""
     c = GAS_TO_CONDENSATE[gas_sp]
-    return (GAS_MASS_G_PER_MOL[gas_sp] / Navo) / (
-        float(atm.rho_p[c]) * float(atm.r_p[c]) ** 2
-    )
+    return (GAS_MASS_G_PER_MOL[gas_sp] / Navo) / (float(atm.rho_p[c]) * float(atm.r_p[c]) ** 2)
 
 
 def make_conden_spec(cfg, var, atm, species_idx) -> CondenSpec:
@@ -182,6 +183,7 @@ def make_conden_spec(cfg, var, atm, species_idx) -> CondenSpec:
     )
 
 
+# size-limit-ok: one on-graph profile; its order is the program
 def build_conden_profile(
     spec: CondenSpec,
     Tco: jnp.ndarray,
@@ -200,9 +202,9 @@ def build_conden_profile(
     (integer-valued, carries no tangent).
 
     Formulas match op.conden / `_apply_condense`:
-      sat_n   = sat_p(T)/kB/T          (× humidity for H2O)
+      sat_n   = sat_p(T)/kB/T          (x humidity for H2O)
       Dg      = Dzz[:, sp] with the bottom interface value repeated
-      sat_mix = min(1, sat_p(T)/p)     (× humidity for H2O, after the clip)
+      sat_mix = min(1, sat_p(T)/p)     (x humidity for H2O, after the clip)
       NH3 cold trap = argmin(sat_n_NH3 / n_0)
     """
     # Imported here, not at module top: atm_setup reads default_config() and
@@ -216,9 +218,7 @@ def build_conden_profile(
     Dzz = jnp.asarray(Dzz, dtype=jnp.float64)
     nz = Tco.shape[0]
     if Dzz.ndim != 2 or Dzz.shape[0] != nz - 1:
-        raise ValueError(
-            f"Dzz shape {Dzz.shape} inconsistent with nz={nz}: expected (nz-1, ni)"
-        )
+        raise ValueError(f"Dzz shape {Dzz.shape} inconsistent with nz={nz}: expected (nz-1, ni)")
 
     def _Dg_col(sp_col: int) -> jnp.ndarray:
         # Dg = atm.Dzz[:, sp] with [0] reused at the bottom (op.py:1135).
@@ -316,12 +316,11 @@ class CondenStatic(NamedTuple):
     gas_indx_mask: jnp.ndarray  # (ni,)  bool, gas-only species mask
 
 
-def update_conden_rates(
-    k_arr: jnp.ndarray, y: jnp.ndarray, st: CondenStatic
-) -> jnp.ndarray:
-    """Recompute condensation/evaporation rates and overwrite the conden rows
-    of `k_arr`. Conden goes to `re`, evap to `re+1`; rows for use_relax
-    species are zeroed."""
+def update_conden_rates(k_arr: jnp.ndarray, y: jnp.ndarray, st: CondenStatic) -> jnp.ndarray:
+    """Recompute condensation/evaporation rates and overwrite the conden rows of `k_arr`.
+
+    Conden goes to `re`, evap to `re+1`; rows for use_relax species are zeroed.
+    """
     y_at_sp = y[:, st.conden_sp_idx].T  # (n_conden_re, nz)
     rate = st.Dg_per_re * st.coeff_per_re[:, None] * (y_at_sp - st.sat_n_per_re)
 
@@ -385,9 +384,8 @@ def _relax(y, ymix, dt, st, idx, l_s, Dg, sat, m_over, conden_top=None):
 
 def apply_h2o_relax_jax(
     y: jnp.ndarray, ymix: jnp.ndarray, dt: jnp.ndarray, st: CondenStatic
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    """Implicit-Euler H2O cold-trap relaxation into / out of `H2O_l_s`;
-    no-op when `h2o_active=False`."""
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Implicit-Euler H2O cold-trap relaxation into / out of `H2O_l_s`; no-op when `h2o_active=False`."""
     if not st.h2o_active:
         return y, ymix
     return _relax(
@@ -405,7 +403,7 @@ def apply_h2o_relax_jax(
 
 def apply_nh3_relax_jax(
     y: jnp.ndarray, ymix: jnp.ndarray, dt: jnp.ndarray, st: CondenStatic
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Implicit-Euler NH3 cold-trap relaxation.
 
     Differences from H2O: no humidity factor, and condensation is clamped

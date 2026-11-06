@@ -1,5 +1,7 @@
-"""A layer with ysum = 0 or disabled molecular diffusion (diffusion coefficients),
-or mu = 0 (atm refresh), must give finite outputs."""
+"""A layer with ysum = 0 or disabled molecular diffusion (diffusion coefficients), or mu = 0 (atm refresh).
+
+Must give finite outputs.
+"""
 
 from __future__ import annotations
 
@@ -11,8 +13,10 @@ jax.config.update("jax_enable_x64", True)
 
 
 def test_diffusion_ysum_zero_layer():
-    """Diffusion terms must be finite when a layer has ysum=0 and when
-    molecular diffusion is off (Dzz=0, Hpi=0), where 0 * inf would give NaN."""
+    """Diffusion terms must be finite when a layer has ysum=0 and when molecular diffusion is off (Dzz=0, Hpi=0).
+
+    Where 0 * inf would give NaN.
+    """
     from vulcan3.jax_step import AtmStatic, _build_diff_coeffs_jax, compute_diff_grav
 
     nz, ni = 8, 4
@@ -95,7 +99,7 @@ def test_atm_refresh_mu_zero_layer():
         nz=nz,
     )
 
-    mu, g, Hp, dz, zco, dzi, Hpi = update_mu_dz_jax(ymix, st)
+    mu, _g, Hp, dz, zco, _dzi, _Hpi = update_mu_dz_jax(ymix, st)
 
     assert jnp.all(jnp.isfinite(mu)), "mu contains NaN/Inf"
     assert jnp.all(jnp.isfinite(Hp)), "Hp contains NaN/Inf"

@@ -7,33 +7,34 @@ version on the same state and compares element-wise.
 from __future__ import annotations
 
 import numpy as np
-
 from _helpers import relerr
-from oracle import (assert_below, enter_master, leave_master,
-                    run_oracle_subprocess, upstream_preloop)
+from oracle import assert_below, enter_master, leave_master, run_oracle_subprocess, upstream_preloop
 
 
+# size-limit-ok: one oracle script, run in a subprocess on a copy of master
 def main() -> None:
     enter_master()
     import jax.numpy as jnp
+
     from vulcan3.config import default_config
 
     vulcan_cfg = default_config()
+    import op
+
+    import vulcan3.photo as photo_mod
     from vulcan3.atm_setup import Atm
     from vulcan3.ini_abun import InitialAbun
-    import op
-    import vulcan3.photo as photo_mod
 
     # Private containers on purpose: master's pipeline must mutate a shared
     # (var, atm) that the JAX side then reads (var.cross[sp] etc.).
-    from vulcan3.state import _Variables, _AtmData
+    from vulcan3.state import _AtmData, _Variables
 
     # === Set up state with photochemistry ===
     make_atm = Atm()
     rate = op.ReadRate()
     data_var, data_atm = upstream_preloop(
-        vulcan_cfg, _Variables(), _AtmData(), make_atm, rate, InitialAbun(),
-        op.Output())
+        vulcan_cfg, _Variables(), _AtmData(), make_atm, rate, InitialAbun(), op.Output()
+    )
 
     # Photochem setup
     if vulcan_cfg.use_photo:
@@ -47,24 +48,20 @@ def main() -> None:
 
     # === Pack photo data and run JAX version ===
     leave_master()
-    import vulcan3.chem_funs as chem_funs
+    from vulcan3 import chem_funs
 
     species_list = chem_funs.spec_list
 
     # Build the dense `PhotoStaticInputs` and derive the runtime
     # `PhotoData` from it; master's `make_bins_read_cross` above already
     # populated the dicts master's compute_tau needs.
-    import vulcan3.photo_setup as photo_setup
+    from vulcan3 import photo_setup
 
     static = photo_setup._build_photo_static_dense(data_var, data_atm)
     static = static.with_din12_indx(int(data_var.sflux_din12_indx))
     photo_data = photo_mod.photo_data_from_static(static, species_list)
 
-    tau_jax = np.asarray(
-        photo_mod.compute_tau_jax(
-            jnp.asarray(data_var.y), jnp.asarray(data_atm.dz), photo_data
-        )
-    )
+    tau_jax = np.asarray(photo_mod.compute_tau_jax(jnp.asarray(data_var.y), jnp.asarray(data_atm.dz), photo_data))
     assert tau_jax.shape == tau_ref.shape, (tau_jax.shape, tau_ref.shape)
 
     # === compute_flux validation ===
@@ -88,11 +85,9 @@ def main() -> None:
         jnp.asarray(data_var.bins),
         float(np.cos(op.vulcan_cfg.sl_angle)),
         float(op.vulcan_cfg.edd),
-        float(0.0),  # ag0=0 in phy_const
+        0.0,  # ag0=0 in phy_const
         float(hc),
-        jnp.zeros_like(
-            jnp.asarray(data_var.dflux_u)
-        ),  # dflux_u_prev = zeros (first-call match)
+        jnp.zeros_like(jnp.asarray(data_var.dflux_u)),  # dflux_u_prev = zeros (first-call match)
         ag0_is_zero=True,
     )
     aflux_jax = np.asarray(aflux_jax)
@@ -112,16 +107,17 @@ def main() -> None:
     print(f"compute_J compared over {len(branches)} branches")
     J_err = float(np.max([relerr(J_jax[k], J_ref[k]) for k in branches], initial=0.0))
 
-    assert_below({
-        "compute_tau": (relerr(tau_jax, tau_ref), 1e-10),
-        "compute_flux (nontrivial entries)": (flux_err, 1e-6),
-        "compute_J": (J_err, 1e-6),
-    })
+    assert_below(
+        {
+            "compute_tau": (relerr(tau_jax, tau_ref), 1e-10),
+            "compute_flux (nontrivial entries)": (flux_err, 1e-6),
+            "compute_J": (J_err, 1e-6),
+        }
+    )
 
 
 def test_main():
-    run_oracle_subprocess(__file__, "vulcan2_ncho",
-                          "cfg_examples/vulcan_cfg_HD189.py")
+    run_oracle_subprocess(__file__, "vulcan2_ncho", "cfg_examples/vulcan_cfg_HD189.py")
 
 
 if __name__ == "__main__":

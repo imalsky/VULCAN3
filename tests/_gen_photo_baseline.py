@@ -24,11 +24,13 @@ FIXTURE_DIR = ROOT / "tests" / "data"
 
 
 def build_state_through_read_rate():
-    """Return (var, atm) after the pre-photo setup and ReadRate, in the legacy
-    containers: `photo_setup._build_photo_static_dense` reads dict attrs that
-    `legacy_io.ReadRate.read_rate` writes onto `var`."""
-    import vulcan3.legacy_io as op
+    """Return (var, atm) after the pre-photo setup and ReadRate, in the legacy containers.
+
+    `photo_setup._build_photo_static_dense` reads dict attrs that `legacy_io.ReadRate.read_rate` writes onto `var`.
+    """
     from _helpers import load_tpk_state
+
+    import vulcan3.legacy_io as op
 
     var, atm, _ = load_tpk_state()
     return op.ReadRate().read_rate(var, atm), atm
@@ -58,15 +60,13 @@ def _static_to_npz_dict(static) -> dict:
 
 
 def main() -> int:
-    import vulcan3.photo_setup as photo_setup
+    from vulcan3 import photo_setup
     from vulcan3.config import default_config
 
     vulcan_cfg = default_config()
 
     if not bool(getattr(vulcan_cfg, "use_photo", False)):
-        raise SystemExit(
-            "use_photo=False in vulcan_cfg; the fixtures need the photo path on."
-        )
+        raise SystemExit("use_photo=False in vulcan_cfg; the fixtures need the photo path on.")
 
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
 

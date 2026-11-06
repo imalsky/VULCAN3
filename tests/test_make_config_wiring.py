@@ -1,6 +1,7 @@
-"""make_config() overrides reach setup, the runner and the output writer
-without leaking onto the global config; import-locked overrides fail fast.
-Also covers RunState reuse and the clip on a degenerate layer."""
+"""make_config() overrides reach setup, the runner and the output writer without leaking onto the global config.
+
+Import-locked overrides fail fast. Also covers RunState reuse and the clip on a degenerate layer.
+"""
 
 from __future__ import annotations
 
@@ -13,13 +14,12 @@ def test_grid_and_runner_overrides_reach_setup_and_runner_without_leakage():
 
     import vulcan3
     import vulcan3.legacy_io as op
-    import vulcan3.op_jax as op_jax
-    from vulcan3 import outer_loop
-    from vulcan3.state import RunState, legacy_view
+    from vulcan3 import op_jax, outer_loop
 
     # The process default config is what state._cfg_overlay identity-compares
     # against for its no-op fast path.
     from vulcan3.config import default_config
+    from vulcan3.state import RunState, legacy_view
 
     vulcan_cfg = default_config()
 
@@ -27,10 +27,7 @@ def test_grid_and_runner_overrides_reach_setup_and_runner_without_leakage():
     global_pb_before = vulcan_cfg.P_b
     global_cmax_before = int(vulcan_cfg.count_max)
 
-
-    cfg = vulcan3.make_config(
-        nz=12, P_b=1e5, P_t=1e-2, count_max=37, use_photo=False
-    )
+    cfg = vulcan3.make_config(nz=12, P_b=1e5, P_t=1e-2, count_max=37, use_photo=False)
     assert cfg is not vulcan_cfg
 
     rs = RunState.with_pre_loop_setup(cfg)
@@ -46,9 +43,7 @@ def test_grid_and_runner_overrides_reach_setup_and_runner_without_leakage():
     integ = outer_loop.OuterLoop(op_jax.Ros2JAX(), op.Output(), cfg=cfg)
     assert integ._cfg is cfg
     statics = integ._build_statics(var, atm)
-    assert int(statics.count_max) == 37, (
-        f"count_max override did not reach the runner: {int(statics.count_max)}"
-    )
+    assert int(statics.count_max) == 37, f"count_max override did not reach the runner: {int(statics.count_max)}"
 
     # (3) zero leakage: the global module is exactly as it was before the call.
     assert vulcan_cfg.nz == global_nz_before, "nz leaked onto the global module"
@@ -63,11 +58,12 @@ def test_grid_and_runner_overrides_reach_setup_and_runner_without_leakage():
 
 
 def test_one_outer_loop_runs_fresh_runstates_each_on_its_own_atoms():
-    """`integ(rs)` rebuilds the certificate ring, the element budget and the
-    hybrid phase from zero, none of which a RunState carries, so handing it
-    an integrated RunState must fail instead of resuming on a blank history.
-    A second fresh RunState is fine, and its result reports its own atoms,
-    not those of the profile the runner was first built for."""
+    """`integ(rs)` rebuilds the certificate ring, the element budget and the hybrid phase from zero.
+
+    None of which a RunState carries, so handing it an integrated RunState must fail instead of resuming on a blank
+    history. A second fresh RunState is fine, and its result reports its own atoms, not those of the profile the
+    runner was first built for.
+    """
     import numpy as np
 
     import vulcan3
@@ -76,8 +72,13 @@ def test_one_outer_loop_runs_fresh_runstates_each_on_its_own_atoms():
     from vulcan3.state import RunState
 
     cfg = vulcan3.make_config(
-        nz=12, P_b=1e5, P_t=1e-2, count_max=5, use_photo=False,
-        use_print_prog=False, ini_mix="const_mix",
+        nz=12,
+        P_b=1e5,
+        P_t=1e-2,
+        count_max=5,
+        use_photo=False,
+        use_print_prog=False,
+        ini_mix="const_mix",
         const_mix={"H2": 0.9, "He": 0.09, "H2O": 5e-3, "CO": 5e-3},
     )
     integ = outer_loop.OuterLoop(op_jax.Ros2JAX(), op.Output(cfg=cfg), cfg=cfg)
@@ -104,9 +105,10 @@ def test_one_outer_loop_runs_fresh_runstates_each_on_its_own_atoms():
 # equal species and nr counts are not sufficient.
 def _reordered_network(tmp_path):
     import re
+
     from vulcan3._paths import PACKAGE_ROOT
-    src = (PACKAGE_ROOT / "thermo"
-           / "NCHO_photo_network.txt").read_text().splitlines()
+
+    src = (PACKAGE_ROOT / "thermo" / "NCHO_photo_network.txt").read_text().splitlines()
     rxn = [i for i, ln in enumerate(src) if re.match(r"^\s*\d+\s*\[", ln)]
     src[rxn[0]], src[rxn[1]] = src[rxn[1]], src[rxn[0]]
     net = tmp_path / "NCHO_reordered.txt"
@@ -116,7 +118,9 @@ def _reordered_network(tmp_path):
 
 def _renamed_species_network(tmp_path):
     import re
+
     from vulcan3._paths import PACKAGE_ROOT
+
     text = (PACKAGE_ROOT / "thermo" / "NCHO_photo_network.txt").read_text()
     renamed = re.sub(r"(?<![A-Za-z0-9_])H(?![A-Za-z0-9_])", "X", text)
     net = tmp_path / "NCHO_H_renamed.txt"
@@ -125,17 +129,17 @@ def _renamed_species_network(tmp_path):
 
 
 @pytest.mark.strict_isolation
-@pytest.mark.parametrize("overrides, pattern", [
-    pytest.param(dict(network="thermo/SNCHO_photo_network.txt"), "import-locked",
-                 id="alternate"),
-    pytest.param(dict(network="thermo/NCHO_thermo_network.txt"), "import-locked",
-                 id="same_species_fewer_nr"),
-    pytest.param(_reordered_network, "topology|import-locked", id="reordered"),
-    pytest.param(_renamed_species_network, "import-locked", id="renamed_species"),
-    pytest.param(dict(atom_list=["H", "O", "C"]), "atom_list", id="atom_list"),
-    pytest.param(dict(com_file="thermo/DOES_NOT_EXIST.txt"), "com_file",
-                 id="com_file"),
-])
+@pytest.mark.parametrize(
+    ("overrides", "pattern"),
+    [
+        pytest.param({"network": "thermo/SNCHO_photo_network.txt"}, "import-locked", id="alternate"),
+        pytest.param({"network": "thermo/NCHO_thermo_network.txt"}, "import-locked", id="same_species_fewer_nr"),
+        pytest.param(_reordered_network, "topology|import-locked", id="reordered"),
+        pytest.param(_renamed_species_network, "import-locked", id="renamed_species"),
+        pytest.param({"atom_list": ["H", "O", "C"]}, "atom_list", id="atom_list"),
+        pytest.param({"com_file": "thermo/DOES_NOT_EXIST.txt"}, "com_file", id="com_file"),
+    ],
+)
 def test_import_locked_overrides_fail_fast(overrides, pattern, tmp_path):
     import re
 
@@ -143,19 +147,20 @@ def test_import_locked_overrides_fail_fast(overrides, pattern, tmp_path):
     from vulcan3.state import RunState
 
     if callable(overrides):
-        overrides = dict(network=str(overrides(tmp_path)))
+        overrides = {"network": str(overrides(tmp_path))}
     cfg = vulcan3.make_config(**overrides)
     with pytest.raises(ValueError) as excinfo:
         RunState.with_pre_loop_setup(cfg)
     msg = str(excinfo.value)
     assert re.search(pattern, msg), msg
-    assert "k_arr" not in msg      # never the cryptic downstream symptom
+    assert "k_arr" not in msg  # never the cryptic downstream symptom
 
 
 def test_save_cfg_serializes_active_cfg(tmp_path, monkeypatch):
-    """Output(cfg=cfg).save_cfg writes the ACTIVE cfg's values (so make_config
-    runs are reproducible), not a copy of the packaged vulcan_cfg.py, and it
-    writes under dname even when the cwd is somewhere else."""
+    """Output(cfg=cfg).save_cfg writes the ACTIVE cfg's values (so make_config runs are reproducible).
+
+    Not a copy of the packaged vulcan_cfg.py, and it writes under dname even when the cwd is somewhere else.
+    """
     import vulcan3
     from vulcan3 import legacy_io
 
@@ -172,8 +177,10 @@ def test_save_cfg_serializes_active_cfg(tmp_path, monkeypatch):
 
 
 def test_clip_fn_degenerate_layer_stays_finite():
-    """An all-zero (or all-negative) gas layer must not produce NaN/inf ymix in
-    either the gas-mask or no-mask clip branch."""
+    """An all-zero (or all-negative) gas layer must not produce NaN/inf ymix.
+
+    In either the gas-mask or no-mask clip branch.
+    """
     import jax.numpy as jnp
 
     from vulcan3.outer_loop import _make_clip_fn
@@ -190,9 +197,7 @@ def test_clip_fn_degenerate_layer_stays_finite():
     # Every value here is within [nega_cut, pos_cut), so all clip to 0
     # (a value below nega_cut would stay negative: see _clip_prologue).
     for non_gas_present in (False, True):
-        clip = _make_clip_fn(
-            non_gas_present, gas_mask, pos_cut=1e-20, nega_cut=-1e-20
-        )
+        clip = _make_clip_fn(non_gas_present, gas_mask, pos_cut=1e-20, nega_cut=-1e-20)
         _y_clip, ymix_new, _s, _n = clip(y)
         assert bool(jnp.all(jnp.isfinite(ymix_new))), (
             f"clip produced non-finite ymix (non_gas_present={non_gas_present})"

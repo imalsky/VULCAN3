@@ -21,8 +21,8 @@ import pytest
 
 @pytest.mark.strict_isolation
 def test_cli_main_produces_vul():
+    from vulcan3 import cli
     from vulcan3.config import dump_config, load_config
-    import vulcan3.cli as cli
 
     overrides = {
         "count_max": 3,
@@ -52,10 +52,12 @@ def test_cli_main_produces_vul():
             with out.open("rb") as handle:
                 data = pickle.load(handle)
             # Public .vul schema: three top-level dicts.
-            assert set(("variable", "atm", "parameter")).issubset(data.keys())
-            assert "y" in data["variable"] and "ymix" in data["variable"]
+            assert {"variable", "atm", "parameter"}.issubset(data.keys())
+            assert "y" in data["variable"]
+            assert "ymix" in data["variable"]
             assert data["variable"]["y"].shape == data["variable"]["ymix"].shape
-            assert "Tco" in data["atm"] and "pco" in data["atm"]
+            assert "Tco" in data["atm"]
+            assert "pco" in data["atm"]
             assert "count" in data["parameter"]
         finally:
             os.chdir(cwd0)
@@ -67,8 +69,8 @@ def test_frozen_knob_mismatch_flags_only_non_default_networks():
     A false negative silently runs a config against the wrong network; a false
     positive sends the CLI into a relaunch it cannot resolve.
     """
+    from vulcan3 import cli
     from vulcan3.config import load_config
-    import vulcan3.cli as cli
 
     # Same NCHO network as the import-frozen default -> no relaunch.
     for name in ("default", "HD189", "HD209"):
@@ -87,8 +89,8 @@ def test_frozen_knob_mismatch_flags_only_non_default_networks():
 
 def test_relaunch_sets_env_and_refuses_to_loop(monkeypatch):
     """The relaunch passes the mismatch through the env and re-runs the config."""
+    from vulcan3 import cli
     from vulcan3.config import load_config
-    import vulcan3.cli as cli
 
     captured = {}
 

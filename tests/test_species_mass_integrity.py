@@ -1,22 +1,21 @@
-"""Verify every species' molecular mass is consistent with its atom counts.
+"""Verify every species' molecular mass is consistent with its atom counts."""
 
-`thermo/all_compose.txt` lists, per species, the per-element atom counts and a
-molecular `mass`. A transcription error in the `mass` column (a whole-atom
-slip such as NH2's 16.023 for NH3_l_s) silently corrupts the mean
-molecular weight, settling velocity, and molecular diffusion for that species.
-
-This test recomputes each molecular mass from the atom counts and standard
-atomic weights and asserts agreement, and separately checks that every
-condensate (`*_l_s` / `*_s`) has the same mass as its gas-phase counterpart.
-
-Duplicate rows are a second silent hazard: production resolves a species via
-`list.index`, i.e. the FIRST row wins, so a duplicate with a different mass is
-file-order-dependent. The vendored upstream table ships exactly six duplicated
-species (three disagreeing in mass); that state is pinned below so any new
-duplicate, or any change to which value wins, fails loudly.
-
-Pure data check: no EQ seed, no VULCAN-master, no integration.
-"""
+# `thermo/all_compose.txt` lists, per species, the per-element atom counts and a
+# molecular `mass`. A transcription error in the `mass` column (a whole-atom
+# slip such as NH2's 16.023 for NH3_l_s) silently corrupts the mean
+# molecular weight, settling velocity, and molecular diffusion for that species.
+#
+# This test recomputes each molecular mass from the atom counts and standard
+# atomic weights and asserts agreement, and separately checks that every
+# condensate (`*_l_s` / `*_s`) has the same mass as its gas-phase counterpart.
+#
+# Duplicate rows are a second silent hazard: production resolves a species via
+# `list.index`, i.e. the FIRST row wins, so a duplicate with a different mass is
+# file-order-dependent. The vendored upstream table ships exactly six duplicated
+# species (three disagreeing in mass); that state is pinned below so any new
+# duplicate, or any change to which value wins, fails loudly.
+#
+# Pure data check: no EQ seed, no VULCAN-master, no integration.
 
 from __future__ import annotations
 
@@ -60,15 +59,11 @@ def test_species_masses_match_atom_counts():
     from vulcan3._paths import resolve_data_path
     from vulcan3.config import default_config
 
-    compo = np.genfromtxt(
-        resolve_data_path(default_config().com_file), names=True, dtype=None, encoding=None
-    )
+    compo = np.genfromtxt(resolve_data_path(default_config().com_file), names=True, dtype=None, encoding=None)
     elems = [c for c in compo.dtype.names if c not in ("species", "mass")]
     species = [str(s) for s in compo["species"]]
     listed = np.asarray(compo["mass"], dtype=np.float64)
-    counts = np.array(
-        [[float(compo[e][i]) for e in elems] for i in range(len(species))]
-    )
+    counts = np.array([[float(compo[e][i]) for e in elems] for i in range(len(species))])
     expected = counts @ np.array([_ATOMIC_MASS[e] for e in elems])
 
     bad = [
@@ -80,7 +75,7 @@ def test_species_masses_match_atom_counts():
 
     # Duplicate rows: mirror production (`list.index` -> FIRST row wins).
     mass_by_sp: dict[str, float] = {}
-    for sp, m in zip(species, listed):
+    for sp, m in zip(species, listed, strict=False):
         mass_by_sp.setdefault(sp, float(m))
 
     dup_names = {sp for sp in mass_by_sp if species.count(sp) > 1}
@@ -109,7 +104,6 @@ def test_species_masses_match_atom_counts():
                 gas = sp[: -len(suffix)]
                 if gas in mass_by_sp:
                     assert abs(mass_by_sp[sp] - mass_by_sp[gas]) <= 1e-6, (
-                        f"condensate {sp} mass {mass_by_sp[sp]} != gas {gas} "
-                        f"mass {mass_by_sp[gas]}"
+                        f"condensate {sp} mass {mass_by_sp[sp]} != gas {gas} mass {mass_by_sp[gas]}"
                     )
                 break

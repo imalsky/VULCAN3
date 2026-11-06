@@ -22,11 +22,9 @@ NEWTON_MAX_ITER, NEWTON_TOL = 50, 1e-12
 
 
 def test_const_mix_matches_reference():
-    """`y[:, i] = const_mix[sp] * gas_tot` for every species in the dict;
-    zeros elsewhere.
-    """
+    """`y[:, i] = const_mix[sp] * gas_tot` for every species in the dict; zeros elsewhere."""
+    from vulcan3 import composition
     from vulcan3.ini_abun import InitialAbun
-    import vulcan3.composition as composition
 
     data_var, data_atm, _ = load_tpk_state()
     # Earth-style mixing dict (species that exist in HD189's network).
@@ -56,8 +54,8 @@ def test_const_mix_matches_reference():
 
 def test_vulcan_ini_roundtrip(tmp_path):
     """`vulcan_ini` mode restores each species column from the `.vul` exactly."""
+    from vulcan3 import composition
     from vulcan3.ini_abun import InitialAbun
-    import vulcan3.composition as composition
 
     data_var, data_atm, _ = load_tpk_state()
     prev_species = list(composition.species)
@@ -74,12 +72,13 @@ def test_vulcan_ini_roundtrip(tmp_path):
 
 
 def test_table_roundtrip(tmp_path):
-    """`table` mode yields `y[:, sp] == n_0 * table[sp]`. The file MUST
-    contain a column per species (master indexes `table[sp]` for every
-    species); a sparse table does not work.
+    """`table` mode yields `y[:, sp] == n_0 * table[sp]`.
+
+    The file MUST contain a column per species (master indexes `table[sp]` for every species); a sparse table does
+    not work.
     """
+    from vulcan3 import composition
     from vulcan3.ini_abun import InitialAbun
-    import vulcan3.composition as composition
 
     data_var, data_atm, _ = load_tpk_state()
     nz_ = len(data_atm.pco)
@@ -116,16 +115,14 @@ def test_table_roundtrip(tmp_path):
         )
 
     other_idx = [i for i, sp in enumerate(species_list) if sp not in populated]
-    assert np.all(y[:, other_idx] == 0.0), (
-        "table mode left non-zero residue in unspecified species"
-    )
+    assert np.all(y[:, other_idx] == 0.0), "table mode left non-zero residue in unspecified species"
 
 
 # const_lowT mode: JAX Newton vs scipy.fsolve.
 
 
 @pytest.mark.parametrize(
-    "O_H,C_H,He_H,N_H",
+    ("O_H", "C_H", "He_H", "N_H"),
     [
         (5.37e-4, 2.95e-4, 0.0838, 7.08e-5),  # HD189 solar
         (1.0e-3, 5.0e-4, 0.10, 1.0e-4),
@@ -133,10 +130,10 @@ def test_table_roundtrip(tmp_path):
     ],
 )
 def test_const_lowT_matches_scipy(O_H, C_H, He_H, N_H):
-    """JAX Newton on the 5-mol H2/H2O/CH4/He/NH3 system matches scipy
-    fsolve to 1e-13."""
+    """JAX Newton on the 5-mol H2/H2O/CH4/He/NH3 system matches scipy fsolve to 1e-13."""
     import jax.numpy as jnp
     from scipy.optimize import fsolve
+
     from vulcan3.ini_abun import _abun_lowT_residual, _jax_newton
 
     def master_res(x, *args):
@@ -180,23 +177,18 @@ def test_column_atoms_uses_the_operator_invariant():
     dz = rng.uniform(1e5, 9e5, nz)
     w = np.asarray(operator_column_weights(dz))
     flux = rng.uniform(-1e12, 1e12, (nz - 1, ni))
-    y1 = y0 + (
-        np.vstack([np.zeros((1, ni)), flux]) - np.vstack([flux, np.zeros((1, ni))])
-    ) / w[:, None]
+    y1 = y0 + (np.vstack([np.zeros((1, ni)), flux]) - np.vstack([flux, np.zeros((1, ni))])) / w[:, None]
     np.testing.assert_allclose(column_change(y1, y0, dz), 0.0, atol=COLUMN_TOL)
     dz_drift = np.einsum("z,zi,ia->a", dz, y1 - y0, compo)
     dz_ref = np.einsum("z,zi,ia->a", dz, y0, compo)
     assert np.max(np.abs(dz_drift / dz_ref)) > 1e-6, (
-        "plain-dz weighting should NOT be conserved on a nonuniform grid; "
-        "if it is, this test's flux is degenerate"
+        "plain-dz weighting should NOT be conserved on a nonuniform grid; if it is, this test's flux is degenerate"
     )
 
     # Uniform grid: identical to the unweighted relative change.
     dz_u = np.full(nz, 3.7e5)
     y2 = y0 * rng.uniform(0.9, 1.1, (nz, ni))
-    unweighted = (
-        np.einsum("zi,ia->a", y2, compo) - np.einsum("zi,ia->a", y0, compo)
-    ) / np.einsum("zi,ia->a", y0, compo)
+    unweighted = (np.einsum("zi,ia->a", y2, compo) - np.einsum("zi,ia->a", y0, compo)) / np.einsum(
+        "zi,ia->a", y0, compo
+    )
     np.testing.assert_allclose(column_change(y2, y0, dz_u), unweighted, rtol=COLUMN_TOL)
-
-

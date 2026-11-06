@@ -179,17 +179,15 @@ def _run(cfg_kw, state_kw, terms, photo_recompute_k):
 
 
 @pytest.mark.parametrize(
-    "cfg_kw,state_kw,terms,photo_k,expected",
+    ("cfg_kw", "state_kw", "terms", "photo_k", "expected"),
     [c[1:] for c in CASES],
     ids=[c[0] for c in CASES],
 )
-def test_scope_findings_match_expected_severities(
-    cfg_kw, state_kw, terms, photo_k, expected
-):
-    """Each configuration emits the expected codes at the expected severity,
-    no more and no fewer, and no code twice: an extra "error" blocks a valid
-    gradient, a missing one ships a wrong gradient, and a duplicate code makes
-    a downstream `dict(findings)` silently drop one."""
+def test_scope_findings_match_expected_severities(cfg_kw, state_kw, terms, photo_k, expected):
+    """Each configuration emits the expected codes at the expected severity, no more and no fewer.
+
+    And no code twice: an extra "error" blocks a valid gradient, a missing one ships a wrong gradient, and a
+    duplicate code makes a downstream `dict(findings)` silently drop one.
+    """
     got = sorted((f["code"], f["severity"]) for f in _run(cfg_kw, state_kw, terms, photo_k))
     assert got == sorted({ALWAYS, *expected})
-

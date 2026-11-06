@@ -1,13 +1,14 @@
-"""Compare two converged VULCAN outputs (.vul pickles): per species, the worst
-|dlog10 VMR| over the cells where both are above a floor, and the pressure it sits
-at. The end-to-end check of a solver path (the CUDA kernel, the grouped RHS, a GPU)
-against VULCAN 2 on matched inputs, or against another vulcan3 path; the CPU port's
-own agreement with VULCAN 2 on the same case is the envelope to read it against.
+"""Compare two converged VULCAN outputs (.vul pickles): per species.
+
+The worst |dlog10 VMR| over the cells where both are above a floor, and the pressure it sits at. The end-to-end check of
+a solver path (the CUDA kernel, the grouped RHS, a GPU) against VULCAN 2 on matched inputs, or against another vulcan3
+path; the CPU port's own agreement with VULCAN 2 on the same case is the envelope to read it against.
 
     python tools/compare_vul.py REF.vul TEST.vul [--species H2O,CO,CO2,CH4,SO2,H2S] [--floor 1e-12]
 
 Both files must share the pressure grid. Exit 1 when any species exceeds --max-dex.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -20,11 +21,11 @@ import numpy as np
 def _load(path):
     with open(path, "rb") as f:
         d = pickle.load(f)
-    return (np.asarray(d["atm"]["pco"]) / 1e6, list(d["variable"]["species"]),
-            np.asarray(d["variable"]["ymix"]))
+    return (np.asarray(d["atm"]["pco"]) / 1e6, list(d["variable"]["species"]), np.asarray(d["variable"]["ymix"]))
 
 
 def main(argv=None) -> int:
+    """Run the comparison; return 1 when a species exceeds --max-dex."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("ref")
     ap.add_argument("test")

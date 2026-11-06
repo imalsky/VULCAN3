@@ -6,13 +6,13 @@ update_frq 100 and 1 certify the same column. Subprocess:
 import-frozen network.
 """
 
-
-CADENCE_TOL = 1e-2   # measured 3.1e-3 at geom_conv_tol 1e-3; 1.56 without the term
+CADENCE_TOL = 1e-2  # measured 3.1e-3 at geom_conv_tol 1e-3; 1.56 without the term
 
 
 def _run(update_frq):
     import jax.numpy as jnp
     import numpy as np
+
     from vulcan3 import atm_refresh
     from vulcan3.config import load_config
     from vulcan3.legacy_io import Output
@@ -20,14 +20,13 @@ def _run(update_frq):
     from vulcan3.outer_loop import OuterLoop
     from vulcan3.state import RunState
 
-    cfg = load_config("HD209", use_photo=False, use_print_prog=False,
-                      count_max=6000, update_frq=update_frq)
+    cfg = load_config("HD209", use_photo=False, use_print_prog=False, count_max=6000, update_frq=update_frq)
     integ = OuterLoop(Ros2JAX(), Output(cfg=cfg), cfg=cfg)
     state, atm_static = integ.prepare_runstate(RunState.with_pre_loop_setup(cfg))
     final = integ._runner(state, atm_static)
     assert int(final.termination_reason) == 1, int(final.termination_reason)
     fresh = atm_refresh.update_mu_dz_jax(final.ymix, integ._refresh_static)
-    for name, new in zip(("mu", "g", "Hp", "dz", "zco", "dzi", "Hpi"), fresh):
+    for name, new in zip(("mu", "g", "Hp", "dz", "zco", "dzi", "Hpi"), fresh, strict=False):
         if name not in ("dz", "zco"):
             rel = float(jnp.max(jnp.abs(new - getattr(final, name)) / jnp.abs(new)))
             assert rel < float(integ._statics.geom_conv_tol), (name, rel)
@@ -37,6 +36,7 @@ def _run(update_frq):
 def _check():
     import jax
     import numpy as np
+
     jax.config.update("jax_enable_x64", True)
     y100, y1 = _run(100), _run(1)
     m = (y100 > 1e-8) & (y1 > 1e-8)
@@ -48,8 +48,7 @@ def _check():
 def test_certified_column_is_geometry_cadence_independent(tmp_path):
     from _helpers import run_self
 
-    run_self(__file__, network="thermo/NCHO_photo_network.txt",
-             atom_list="H,O,C,N", cwd=tmp_path)
+    run_self(__file__, network="thermo/NCHO_photo_network.txt", atom_list="H,O,C,N", cwd=tmp_path)
 
 
 if __name__ == "__main__":

@@ -1,22 +1,22 @@
 """Rate-coefficient build: `T -> k_arr`, on the AD graph.
 
-The single rate build: setup and gradients run the same code. Covers the forward
-forms (modified Arrhenius, Lindemann falloff with k_inf, bare 3-body, and the
-one hardcoded Troe expression for `OH + CH3 + M -> CH3OH + M`), the Moses+2005
-low-T caps, and the NASA-9 Gibbs reverse-rate path. Photo / conden
-/ ion slots are zero here and filled at runtime; the 3-body [M] factor is
-applied in the chemistry RHS (it depends on the time-evolving sum(y)).
+Setup and gradients run the same code: the forward forms (modified Arrhenius, Lindemann falloff with k_inf, bare 3-body,
+and the one hardcoded Troe expression for `OH + CH3 + M -> CH3OH + M`), the Moses+2005 low-T caps, and the NASA-9 Gibbs
+reverse-rate path. Photo, conden and ion slots are zero here and filled at runtime; the 3-body [M] factor is applied in
+the chemistry RHS (it depends on the time-evolving sum(y)).
 
 Output is `k[nr+1, nz]` with 1-based reaction indexing (row 0 unused).
 :func:`setup_var_k` freezes it to NumPy on `var.k_arr`; a gradient calls
 :func:`build_rate_array` directly, where the Arrhenius coefficients
 (`rate_coeffs=`) and the NASA-9 table are differentiable inputs.
+
+Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, length in cm, time in s.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import numpy as np
@@ -24,6 +24,24 @@ import numpy as np
 from ._paths import resolve_data_path
 from .gibbs import _NASA9_BRANCH_T, CORR, load_nasa9
 from .network import Network, parse_network
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+__all__ = [
+    "K_COLL",
+    "K_eq_array",
+    "apply_collision_limit",
+    "apply_lowT_caps",
+    "apply_photo_remove",
+    "apply_remove_list",
+    "build_rate_array",
+    "compute_forward_k",
+    "fill_reverse_k",
+    "gibbs_sp_vector",
+    "setup_var_k",
+    "thermo_dir",
+]
 
 _SPECIAL_OH_CH3 = "OH + CH3 + M -> CH3OH + M"
 
@@ -46,12 +64,17 @@ _LOWT_CAP_CONST = (  # (rxn, T_max, k_cap)
 
 
 def _thermo_dir(network_file) -> Path:
-    """`thermo/` beside the network file, else the packaged one: the rate
-    build and the equilibrium seed read one NASA-9 table from one place."""
+    """`thermo/` beside the network file, else the packaged one.
+
+    The rate build and the equilibrium seed read one NASA-9 table from one place.
+    """
     beside = resolve_data_path(network_file).parent
     if (beside / "NASA9").exists():
         return beside
     return Path(__file__).resolve().parent / "thermo"
+
+
+thermo_dir = _thermo_dir  # the public name; `_thermo_dir` is deprecated (docs/api.md)
 
 
 def _arrhenius(a, n, E, T):
@@ -59,18 +82,14 @@ def _arrhenius(a, n, E, T):
 
 
 def _troe_OH_CH3(T, M):
-    """Hardcoded Troe form for OH + CH3 + M -> CH3OH + M: Visscher & Moses 2011
-    eqs 13-14 (log10 width; upstream op.py:204-205 uses ln) with the eq 24-26
-    fits of Jasper et al. 2007."""
-    k0 = 1.932e3 * T**-9.88 * jnp.exp(-7544.0 / T) + 5.109e-11 * T**-6.25 * jnp.exp(
-        -1433.0 / T
-    )
+    """Hardcoded Troe form for OH + CH3 + M -> CH3OH + M.
+
+    Visscher & Moses 2011 eqs 13-14 (log10 width; upstream op.py:204-205 uses ln) with the eq 24-26 fits of Jasper
+    et al. 2007.
+    """
+    k0 = 1.932e3 * T**-9.88 * jnp.exp(-7544.0 / T) + 5.109e-11 * T**-6.25 * jnp.exp(-1433.0 / T)
     kinf = 1.031e-10 * T**-0.018 * jnp.exp(16.74 / T)
-    Fc = (
-        0.1855 * jnp.exp(-T / 155.8)
-        + 0.8145 * jnp.exp(-T / 1675.0)
-        + jnp.exp(-4531.0 / T)
-    )
+    Fc = 0.1855 * jnp.exp(-T / 155.8) + 0.8145 * jnp.exp(-T / 1675.0) + jnp.exp(-4531.0 / T)
     nn = 0.75 - 1.27 * jnp.log10(Fc)
     ff = Fc ** (1.0 / (1.0 + (jnp.log10(k0 * M / kinf) / nn) ** 2))
     return k0 / (1.0 + k0 * M / kinf) * ff
@@ -145,21 +164,15 @@ def compute_forward_k(
     k = jnp.where(is_special, special_val, general)
 
     # Keep only thermal forward slots; zero photo/ion/conden/non-forward.
-    thermal_fwd = (
-        net.is_forward
-        & ~net.is_photo
-        & ~net.is_ion
-        & ~net.is_conden
-    )
+    thermal_fwd = net.is_forward & ~net.is_photo & ~net.is_ion & ~net.is_conden
     keep = jnp.asarray(np.asarray(thermal_fwd, dtype=bool))[:, None]
     return jnp.where(keep, k, 0.0)
 
 
-def apply_lowT_caps(
-    net: Network, k_fwd: jnp.ndarray, T: jnp.ndarray, M: jnp.ndarray
-) -> jnp.ndarray:
-    """Apply the three Moses+2005 low-T recombination caps. Callers gate on
-    `cfg.use_lowT_limit_rates`, used for cool-atmosphere networks.
+def apply_lowT_caps(net: Network, k_fwd: jnp.ndarray, T: jnp.ndarray, M: jnp.ndarray) -> jnp.ndarray:
+    """Apply the three Moses+2005 low-T recombination caps.
+
+    Callers gate on `cfg.use_lowT_limit_rates`, used for cool-atmosphere networks.
 
     Caps the three forward rows when present in `net`, gated by a temperature
     threshold via `jnp.where`. The cap branch is a T-independent constant for
@@ -248,13 +261,7 @@ def K_eq_array(net: Network, gibbs_sp: jnp.ndarray, T: jnp.ndarray) -> jnp.ndarr
     # Valid forward slots get a real K; everything else stays 1 (sentinel).
     nr = net.nr
     idx = np.arange(nr + 1)
-    valid = (
-        net.is_forward
-        & (idx + 1 < net.stop_rev_indx)
-        & ~net.is_photo
-        & ~net.is_ion
-        & ~net.is_conden
-    )
+    valid = net.is_forward & (idx + 1 < net.stop_rev_indx) & ~net.is_photo & ~net.is_ion & ~net.is_conden
     valid_m = jnp.asarray(np.asarray(valid, dtype=bool))[:, None]
     return jnp.where(valid_m, K_raw, 1.0)
 
@@ -275,17 +282,15 @@ def fill_reverse_k(net: Network, k_fwd: jnp.ndarray, K_eq: jnp.ndarray) -> jnp.n
 
     k_partner = k_fwd[partner_j]  # (nr+1, nz)
     K_partner = K_eq[partner_j]
-    k_rev = jnp.where(
-        K_partner > 0, k_partner / jnp.where(K_partner > 0, K_partner, 1.0), 0.0
-    )
+    k_rev = jnp.where(K_partner > 0, k_partner / jnp.where(K_partner > 0, K_partner, 1.0), 0.0)
     return jnp.where(even_rev_m, k_rev, k_fwd)
 
 
-K_COLL = 1e-9  # cm3 s^-1: the collision limit of apply_collision_limit (parity ledger C30)
+K_COLL = 1e-9  # cm3 s^-1: the collision limit of apply_collision_limit (notes "Parity ledger")
 
 
 def apply_collision_limit(net: Network, k: jnp.ndarray, M: jnp.ndarray) -> jnp.ndarray:
-    """Scale each thermal forward / reverse pair by c = min(1, K_COLL / q) (parity ledger C30; not in master).
+    """Scale each thermal forward / reverse pair by c = min(1, K_COLL / q) (notes "Parity ledger"; not in master).
 
     q is the larger of the two directions' bimolecular-equivalent rates, k M^(three-body) M^(m - 2) with m the slot's
     reactant molecules (stoichiometry, M excluded); a direction with m < 2 does not count. Both directions take the same
@@ -293,22 +298,23 @@ def apply_collision_limit(net: Network, k: jnp.ndarray, M: jnp.ndarray) -> jnp.n
     range exceeds collision rates (the reverse of CH + M -> C + H + M and C2H + M -> C2 + H + M at low T).
     """
     m = np.asarray(net.reactant_stoich).sum(axis=1)
-    expo = np.asarray(net.is_three_body, float) + m - 2.0                  # power of M in q
+    expo = np.asarray(net.is_three_body, float) + m - 2.0  # power of M in q
     idx = np.arange(net.nr + 1)
-    fwd = (idx % 2 == 1) & (idx + 1 < net.stop_rev_indx)                    # forward slots with a thermal reverse
+    fwd = (idx % 2 == 1) & (idx + 1 < net.stop_rev_indx)  # forward slots with a thermal reverse
     elig = jnp.asarray(m >= 2)[:, None]
     q = k * M[None, :] ** jnp.asarray(expo)[:, None]
     r = jnp.where(elig, q / K_COLL, 0.0)
     fi = np.flatnonzero(fwd)
-    rp = jnp.maximum(r[fi], r[fi + 1])                                      # the pair's larger ratio
+    rp = jnp.maximum(r[fi], r[fi + 1])  # the pair's larger ratio
     c = 1.0 / jnp.maximum(rp, 1.0)
     scale = jnp.ones_like(k).at[fi].set(c).at[fi + 1].set(c)
     return k * scale
 
 
 def apply_remove_list(net: Network, k, remove_list: Iterable[int] | None):
-    """Zero the rows in `remove_list`. No auto-pairing: passing a lone forward
-    leaves its reverse intact.
+    """Zero the rows in `remove_list`.
+
+    No auto-pairing: passing a lone forward leaves its reverse intact.
 
     Accepts a NumPy or a JAX `k` and returns the same kind, so the on-graph
     build and the host post-photolysis pass share one implementation.
@@ -420,8 +426,8 @@ def setup_var_k(cfg, var, atm) -> Network:
 
 
 def apply_photo_remove(cfg, var, network: Network) -> None:
-    """Re-apply `cfg.remove_list` after `compute_J`/`compute_Jion` has
-    overwritten the photolysis rows of `var.k_arr`."""
-    var.k_arr = np.array(
-        apply_remove_list(network, var.k_arr, cfg.remove_list), dtype=np.float64
-    )
+    """Re-apply `cfg.remove_list` after the photolysis rows of `var.k_arr` were overwritten.
+
+    `compute_J` and `compute_Jion` write those rows.
+    """
+    var.k_arr = np.array(apply_remove_list(network, var.k_arr, cfg.remove_list), dtype=np.float64)

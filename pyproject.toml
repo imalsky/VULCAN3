@@ -43,6 +43,7 @@ Repository = "https://github.com/imalsky/VULCAN3"
 dev = [
     "pytest>=7",
     "pytest-xdist>=3",
+    "pytest-cov>=5",
     "ruff>=0.11",
     "vulture>=2.11",
     "build>=1.2",
@@ -51,6 +52,16 @@ dev = [
 ]
 plot = [
     "matplotlib>=3.7",
+]
+
+[dependency-groups]
+test = [
+    "pytest>=8",
+    "pytest-xdist>=3",
+    "pytest-cov>=5",
+]
+dev = [
+    { include-group = "test" },
 ]
 
 [project.scripts]
@@ -83,17 +94,138 @@ vulcan3 = [
 [tool.setuptools.dynamic]
 version = { attr = "vulcan3._version.__version__" }
 
-[tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
+[tool.ruff]
+line-length = 120
+show-fixes = true
+# Markdown: README.md and CLAUDE.md are hand-written.
+extend-exclude = ["src/vulcan3/thermo", "src/vulcan3/atm", "*.md"]
 
-# These modules set sys.path / os.chdir / jax x64, or skip the module,
-# before their imports (E402).
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "D",      # pydocstyle
+    "N",      # pep8-naming
+    "C90",    # mccabe complexity
+    "ARG",    # flake8-unused-arguments
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "EXE",    # flake8-executable
+    "FURB",   # refurb
+    "G",      # flake8-logging-format
+    "ICN",    # flake8-import-conventions
+    "ISC",    # flake8-implicit-str-concat
+    "LOG",    # flake8-logging
+    "NPY",    # NumPy specific rules
+    "PERF",   # perflint
+    "PGH",    # pygrep-hooks
+    "PL",     # pylint
+    "PT",     # flake8-pytest-style
+    "PTH",    # flake8-use-pathlib
+    "PYI",    # flake8-pyi
+    "Q",      # flake8-quotes
+    "RET",    # flake8-return
+    "RSE",    # flake8-raise
+    "RUF",    # Ruff-specific
+    "SIM",    # flake8-simplify
+    "SLOT",   # flake8-slots
+    "T10",    # flake8-debugger
+    "T20",    # flake8-print
+    "TC",     # flake8-type-checking
+    "TRY",    # tryceratops
+    "UP",     # pyupgrade
+]
+ignore = [
+    "PLR09",    # too many <...>: tools/check_size_limits.py covers size
+    "PLR2004",  # magic value in comparison: noisy in numerical code
+    "TRY003",   # long message at the raise: the rules want messages that say what to fix
+    "PERF401",  # list.extend with a comprehension: a guarded append reads better for lists of refusals
+    "PERF203",  # try in a loop: no cost on Python 3.11 and later, and setup reads files
+    "SIM300",   # Yoda conditions: takes the math names T and G for constants, and swapping operands moves the program
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.pep8-naming]
+# VULCAN 2's names and published symbols, by family; docs/glossary.md maps each family.
+extend-ignore-names = [
+    "*Tco*", "*Kzz*", "*Dzz*", "*Dg*", "*Hp*", "*Hi*", "Hi_*", "Rp*", "Mp", "Pb", "Pr", "Tz", "Tg", "Tk", "Tj", "Ti", "Tiso",
+    "Tlow", "Thigh", "T", "T[0-9]", "T_*", "*_T", "*_T_*", "*_T[0-9]", "dT", "absT*", "cT[0-9]", "*TP*", "*TPK", "*lowT*",
+    "P", "P_*", "*_P_*", "*_Pb*", "*_Pmin*", "A", "B", "C", "A[0-9]*", "Ai*", "Bi*", "Ci*", "A_*", "B_*", "C_*", "*_A", "*_B",
+    "*_C", "*_A_*", "*_B_*", "*_C_*", "invA_*", "J", "J[0-9]", "JT[0-9]", "J_*", "Jion*", "Jrow", "Jblk*", "*_J", "*_J_*",
+    "*_Jion*", "M", "M_*", "*_M", "*_M_*", "Mz", "*_for_M", "G", "G_*", "K", "K_*", "*_K", "*_pK", "*_pT", "E", "E_*", "F", "Fc",
+    "L", "L0", "Q", "Q_*", "R", "S", "N", "V", "Y", "Navo", "PAD", "*_H", "He_H", "*H2He*", "BC_flux", "*_lowT",
+    "dLdlnk", "dL_*", "vjp_G*", "*_Ti", "H_cell", "eps_L", "eps_L3", "ka_CIA", "Rf_text", "r_Rp", "_troe_OH_CH3",
+]
+
 [tool.ruff.lint.per-file-ignores]
-"src/vulcan3/__init__.py" = ["E402"]
-"examples/grad_reverse_example.py" = ["E402"]
-"examples/grad_jvp_example.py" = ["E402"]
-"examples/quickstart.ipynb" = ["E402"]
-"tests/test_chem_rhs_codegen.py" = ["E402"]
-"tests/test_steady_state_reaction_sensitivity.py" = ["E402"]
-"tests/test_solver_fast.py" = ["E402"]
-"src/vulcan3/cli.py" = ["E402"]
+# Scripts and command-line tools may print.
+# Facades: a split module keeps its path and re-exports what moved, for consumers and tests.
+"src/vulcan3/outer_loop.py" = ["F401"]
+"src/vulcan3/atm_setup.py" = ["F401"]
+"src/vulcan3/state.py" = ["F401"]
+"src/vulcan3/steady_state_grad.py" = ["F401"]
+"src/vulcan3/cli.py" = ["T20", "PLC0415"]
+"src/vulcan3/solver_fast.py" = ["T20", "PLC0415"]  # `python -m vulcan3.solver_fast` builds the kernel and prints the library's path
+# Lazy imports stay lazy on purpose: `import vulcan3` must not load jax_step or solver_fast ($VULCAN3_SOLVER), module cycles
+# through state, and exogibbs and pandas are only for the EQ seed. tests/test_import_laziness.py pins the first.
+"src/vulcan3/*.py" = ["PLC0415"]
+# Tests: the frozen network and $VULCAN3_* must be set before a lazy import. Names follow the symbol under test and the
+# A and B profiles of a comparison. A test's name is its documentation.
+"tests/**" = ["T20", "PLC0415", "D103", "N802", "N803", "N806", "PLW0108", "PLW2901", "PTH", "PERF203", "N812"]  # PLW0108: a fresh lambda is a fresh trace
+"tools/**" = ["T20"]
+"examples/**" = ["T20"]
+
+[tool.codespell]
+ignore-words-list = "statics,nd,kinf,indx,radis,caf,optin"
+skip = "src/vulcan3/thermo,src/vulcan3/atm,tests/data"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = ["-ra", "--tb=short", "--strict-markers", "--strict-config"]
+xfail_strict = true
+log_level = "INFO"
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+markers = [
+    "slow: minutes or several GB; skipped unless VULCAN3_RUN_SLOW=1",
+    "gpu: needs a GPU; runs locally, never in CI",
+    "strict_isolation: restore the default config and clear JAX caches around the test",
+]
+
+[tool.coverage.run]
+source = ["vulcan3"]
+omit = []
+
+[tool.coverage.report]
+fail_under = 80
+exclude_also = [
+    '\.\.\.',
+    'if typing.TYPE_CHECKING:',
+    'if TYPE_CHECKING:',
+]
+
+[tool.mypy]
+files = ["src"]
+strict = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+warn_unreachable = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = "vulcan3.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true

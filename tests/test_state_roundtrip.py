@@ -12,11 +12,12 @@ import numpy as np
 
 
 def test_roundtrip_field_set_complete(hd189_state):
-    """The pytree must capture all fields needed for the runner. This
-    test enumerates the AtmData attribute names on the HD189 reference
-    state and asserts each runner-visible array attribute is present in
-    the AtmInputs slot."""
-    from vulcan3.state import pytree_from_store, AtmInputs
+    """The pytree must capture all fields needed for the runner.
+
+    This test enumerates the AtmData attribute names on the HD189 reference state and asserts each runner-visible
+    array attribute is present in the AtmInputs slot.
+    """
+    from vulcan3.state import AtmInputs, pytree_from_store
 
     pt = pytree_from_store(hd189_state.var, hd189_state.atm)
 
@@ -35,9 +36,7 @@ def test_roundtrip_field_set_complete(hd189_state):
     # Rate constants: densified (nr+1, nz) array, non-empty.
     k_arr = np.asarray(pt.rate.k)
     assert k_arr.ndim == 2, f"rate.k must be 2D, got {k_arr.shape}"
-    assert k_arr.shape[1] == hd189_state.atm.Tco.shape[0], (
-        f"rate.k second dim must be nz, got {k_arr.shape}"
-    )
+    assert k_arr.shape[1] == hd189_state.atm.Tco.shape[0], f"rate.k second dim must be nz, got {k_arr.shape}"
 
     # PhotoInputs: sflux_top is populated when use_photo=True.
     from vulcan3.config import default_config
@@ -46,14 +45,12 @@ def test_roundtrip_field_set_complete(hd189_state):
 
     if bool(getattr(vulcan_cfg, "use_photo", False)):
         sflux_arr = np.asarray(pt.photo.sflux_top)
-        assert sflux_arr.size > 0, (
-            "PhotoInputs.sflux_top empty even though use_photo=True"
-        )
+        assert sflux_arr.size > 0, "PhotoInputs.sflux_top empty even though use_photo=True"
 
 
 def test_runstate_output_parameter_schema(hd189_state):
     """RunState-backed `.vul` output exposes VULCAN-master parameter keys."""
-    import vulcan3.legacy_io as legacy_io
+    from vulcan3 import legacy_io
     from vulcan3.config import default_config
 
     vulcan_cfg = default_config()

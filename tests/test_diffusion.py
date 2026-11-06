@@ -1,5 +1,6 @@
-"""Validate the NumPy diffusion reference against op.diffdf, op.lhs_jac_tot
-and the vm / settling / settling_vm variants.
+"""Validate the NumPy diffusion reference against op.diffdf.
+
+Op.lhs_jac_tot and the vm / settling / settling_vm variants.
 
 The central operator and its Jacobian assembly are compared on master's own
 pre-loop state. The variants run on the port's pre-loop state with synthetic
@@ -9,10 +10,8 @@ vm/vs populated.
 from __future__ import annotations
 
 import numpy as np
-
 from _helpers import relerr
-from oracle import (assert_below, enter_master, leave_master,
-                    run_oracle_subprocess, upstream_preloop)
+from oracle import assert_below, enter_master, leave_master, run_oracle_subprocess, upstream_preloop
 
 # Bars: operator 1e-3 (He's net flux is a ~12-digit cancellation; worst
 # cell ~3e-4 at the roundoff floor). diag 2.0 is a sign check only (a flipped
@@ -25,6 +24,7 @@ OFFDIAG_RTOL = 1e-10
 FLOOR_FRAC = 1e-12  # variants: cancellation-residue floor, a fraction of the reference peak
 
 
+# size-limit-ok: one oracle script, run in a subprocess on a copy of master
 def main() -> None:
     # === Set up VULCAN-master state for reference ===
     enter_master()
@@ -35,8 +35,8 @@ def main() -> None:
     import vulcan_cfg as cfg_v
 
     data_var, data_atm = upstream_preloop(
-        cfg_v, st_v.Variables(), st_v.AtmData(), ba_v.Atm(), op_v.ReadRate(),
-        ba_v.InitialAbun(), op_v.Output())
+        cfg_v, st_v.Variables(), st_v.AtmData(), ba_v.Atm(), op_v.ReadRate(), ba_v.InitialAbun(), op_v.Output()
+    )
     data_var.dt = 1e-10  # arbitrary; affects c0 in lhs_jac_tot
 
     y = np.asarray(data_var.y, dtype=np.float64).copy()
@@ -55,6 +55,7 @@ def main() -> None:
     leave_master()
 
     import diffusion_numpy_ref as diff_mod
+
     from vulcan3.config import default_config
     from vulcan3.state import RunState, legacy_view
 
@@ -99,14 +100,11 @@ def main() -> None:
 
     def _err(ref, val):
         d = np.abs(ref - val)
-        return float(np.max(np.where(
-            d < jac_abs_tol, 0.0, d / np.maximum(np.abs(ref), jac_abs_tol))))
+        return float(np.max(np.where(d < jac_abs_tol, 0.0, d / np.maximum(np.abs(ref), jac_abs_tol))))
 
     scores["jac diag block"] = (_err(diff_jac_only[idx, idx], -diag_d), DIAG_RTOL)
-    scores["jac super block"] = (
-        _err(diff_jac_only[idx[:-1], idx[1:]], -sup_d), OFFDIAG_RTOL)
-    scores["jac sub block"] = (
-        _err(diff_jac_only[idx[1:], idx[:-1]], -sub_d), OFFDIAG_RTOL)
+    scores["jac super block"] = (_err(diff_jac_only[idx[:-1], idx[1:]], -sup_d), OFFDIAG_RTOL)
+    scores["jac sub block"] = (_err(diff_jac_only[idx[1:], idx[:-1]], -sub_d), OFFDIAG_RTOL)
 
     # === Variants (= op.diffdf_vm / diffdf_settling / diffdf_settling_vm) ===
     # Synthetic mixed-sign interface velocities (shape (nz-1, ni)) so the
@@ -127,14 +125,11 @@ def main() -> None:
     for mode, upstream, label, rows, bound in (
         ("vm", odes_p.diffdf_vm, "diffdf_vm", slice(None), 1e-3),
         ("settling", odes_p.diffdf_settling, "diffdf_settling", slice(None), 1e-5),
-        ("settling_vm", odes_p.diffdf_settling_vm, "diffdf_settling_vm (rows 1..)",
-         slice(1, None), 1e-5),
+        ("settling_vm", odes_p.diffdf_settling_vm, "diffdf_settling_vm (rows 1..)", slice(1, None), 1e-5),
     ):
         ref = np.asarray(upstream(yp, atm_p), dtype=np.float64)
-        got = diff_mod.apply_diffusion(
-            yp, diff_mod.build_diffusion_coeffs(yp, atm_p, cfg_jax, mode=mode))
-        scores[label] = (
-            relerr(got[rows], ref[rows], floor=FLOOR_FRAC * np.abs(ref).max()), bound)
+        got = diff_mod.apply_diffusion(yp, diff_mod.build_diffusion_coeffs(yp, atm_p, cfg_jax, mode=mode))
+        scores[label] = (relerr(got[rows], ref[rows], floor=FLOOR_FRAC * np.abs(ref).max()), bound)
 
     # The loop ended on settling_vm. Operator gap at j=0 = (vm upwind that JAX
     # keeps but master drops) applied to (y0, y1):
@@ -147,14 +142,14 @@ def main() -> None:
     j0_gap = got[0] - ref[0]
     scores["diffdf_settling_vm j=0 gap == omitted vm term"] = (
         relerr(j0_gap, expected_j0_gap, floor=1e-10 * np.abs(expected_j0_gap).max()),
-        1e-6)
+        1e-6,
+    )
 
     assert_below(scores)
 
 
 def test_main():
-    run_oracle_subprocess(__file__, "vulcan2_ncho",
-                          "cfg_examples/vulcan_cfg_HD189.py")
+    run_oracle_subprocess(__file__, "vulcan2_ncho", "cfg_examples/vulcan_cfg_HD189.py")
 
 
 if __name__ == "__main__":

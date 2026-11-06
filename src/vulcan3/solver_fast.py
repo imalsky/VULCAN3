@@ -1,33 +1,9 @@
 """Default block-Thomas path (`VULCAN3_SOLVER=fast|ffi`, import-frozen).
 
-Same call shape as `solver.py`: `factor(diag, sup_d, sub_d)` once, then
-`solve(factors, rhs)` for each Ros2 stage. Two things differ from the plain
-`solver.py` pair:
-
-1. `solve` is a `lax.custom_linear_solve`. Its tangent is `A dx = db - dA x`
-   on the primal factors, so both stages and every tangent direction share one
-   factorisation instead of differentiating through the pivoted LU. The
-   primal is the same code on the same inputs and is
-   bit-identical. Reverse mode transposes the primal sweep on the same
-   factors.
-2. With `VULCAN3_SOLVER=ffi` the raw factor and solve are one C++ call each
-   (`csrc/block_thomas_cpu.cc`, built by `python -m vulcan3.solver_fast`):
-   the CPU reference for the fused GPU kernel. `custom_linear_solve` makes
-   these calls, which have no AD rules, differentiable. Reverse mode runs the
-   JAX transpose sweep on the kernel's factors (`transpose_solve` below).
-
-On a CUDA device the `ffi` backend runs `csrc/block_thomas_cuda.cu`: one
-factor launch and two solve launches per Ros2 step, with the CPU kernel's
-factor format and its results to roundoff (not bitwise). It takes at most
-`CUDA_MAX_NI` = 96 species per layer: a wider network is refused while the step
-is traced. Its header gives the launch layouts and the solve's per-call one- or
-two-buffer choice, which `VULCAN3_BT_BUFFERS=1|2` forces (read once per
-process). It is built only by `python -m vulcan3.solver_fast --cuda` on a host
-with nvcc, for sm_80+; without the library nothing changes here and a device
-call under `ffi` fails loudly at dispatch.
-
-`jax_step` imports this module by default; `VULCAN3_SOLVER=reference`
-restores the plain `solver.py` pair for A/B, and `ffi` selects the C++ kernel.
+Same call shape as `solver.py`: `factor(diag, sup_d, sub_d)` once, then `solve(factors, rhs)` per Ros2 stage. `solve` is
+a `lax.custom_linear_solve`, so both stages and every tangent direction share one factorisation. `ffi` runs the C++
+kernel on the CPU and the CUDA kernel on a GPU; `python -m vulcan3.solver_fast [--cuda]` builds them. `reference` is
+handled in `jax_step`. Design: docs/method.md. Variables: docs/settings.md.
 """
 
 from __future__ import annotations
@@ -47,19 +23,20 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
-from . import solver as _ref
+from . import _settings, solver as _ref
 
-BACKEND = os.environ.get("VULCAN3_SOLVER", "fast")
-if BACKEND not in ("fast", "ffi"):
-    raise ValueError(
-        f"VULCAN3_SOLVER={BACKEND!r}: expected 'fast' (default), 'ffi', "
-        "or 'reference' (handled in jax_step)"
-    )
+__all__ = ["BACKEND", "CUDA_MAX_NI", "Factors", "build", "factor", "solve"]
+
+BACKEND = _settings.solver()
+if BACKEND == "reference":
+    raise ValueError("VULCAN3_SOLVER='reference' does not use this module: jax_step takes the plain solver.py pair")
 
 
 class Factors(NamedTuple):
-    """Primal LU factors and permutations (no tangent: computed on stop_gradient
-    inputs) plus the bands they factor (these carry the tangents)."""
+    """Primal LU factors and permutations, plus the bands they factor.
+
+    The factors have no tangent (computed on stop_gradient inputs); the bands carry the tangents.
+    """
 
     diag_lu: jnp.ndarray
     diag_perm: jnp.ndarray
@@ -84,22 +61,23 @@ def _raw_factor(diag, sup_d, sub_d):
 def _raw_solve(lu, perm, sup_d, sub_d, rhs):
     if BACKEND == "ffi":
         return _ffi_solve(lu, perm, sup_d, sub_d, rhs)
-    return _ref.solve_block_thomas_diag_offdiag(
-        _ref.BlockThomasDiagFactors(lu, perm, sup_d, sub_d), rhs
-    )
+    return _ref.solve_block_thomas_diag_offdiag(_ref.BlockThomasDiagFactors(lu, perm, sup_d, sub_d), rhs)
 
 
 def factor(diag, sup_d, sub_d) -> Factors:
+    """Factor the block-tridiagonal stage matrix on the selected backend."""
     sg = jax.lax.stop_gradient
     lu, perm = _raw_factor(sg(diag), sg(sup_d), sg(sub_d))
     return Factors(lu, perm, diag, sup_d, sub_d)
 
 
 def solve(factors: Factors, rhs, matvec=None):
-    """`matvec` is the operator as a function of x. The primal never runs it;
-    the AD rules do (the tangent's `dA x`, the transpose's cotangent). The
-    default is the dense bands in `factors`, whose tangent is the whole dense
-    `dA` per direction; `jax_step._ros2_stages` passes a matrix-free one."""
+    """`matvec` is the operator as a function of x.
+
+    The primal never runs it; the AD rules do (the tangent's `dA x`, the transpose's cotangent). The default is the
+    dense bands in `factors`, whose tangent is the whole dense `dA` per direction; `jax_step._ros2_stages` passes a
+    matrix-free one.
+    """
     lu, perm, diag, sup_d, sub_d = factors
     sg = jax.lax.stop_gradient
     sup0, sub0 = sg(sup_d), sg(sub_d)
@@ -115,24 +93,22 @@ def solve(factors: Factors, rhs, matvec=None):
         # factorisation). The FFI call has no transpose rule, so
         # this always runs the JAX scan, on whichever backend's factors.
         def sweep(b):
-            return _ref.solve_block_thomas_diag_offdiag(
-                _ref.BlockThomasDiagFactors(lu, perm, sup0, sub0), b
-            )
+            return _ref.solve_block_thomas_diag_offdiag(_ref.BlockThomasDiagFactors(lu, perm, sup0, sub0), b)
 
         _, vjp = jax.vjp(sweep, c)
         return vjp(c)[0]
 
+    # Reverse mode through `ffi` is refused by leaving the transpose out: `custom_linear_solve` traces it eagerly, so a
+    # raise inside it would fire on every run.
     return jax.lax.custom_linear_solve(
-        matvec, rhs, solve_, transpose_solve=transpose_solve
+        matvec, rhs, solve_, transpose_solve=None if BACKEND == "ffi" else transpose_solve
     )
 
 
 # --- C++ CPU kernel and its CUDA twin ---------------------------------------
 
 _CSRC = Path(__file__).with_name("csrc")
-_LIB = _CSRC / (
-    "libblock_thomas_cpu" + (".dylib" if platform.system() == "Darwin" else ".so")
-)
+_LIB = _CSRC / ("libblock_thomas_cpu" + (".dylib" if platform.system() == "Darwin" else ".so"))
 _CUDA_LIB = _CSRC / "libblock_thomas_cuda.so"
 _HASH_TAG = b"vulcan-bt-source-sha256:"  # VulcanBtSourceHash, block_thomas_common.h
 # The CUDA factor's register tile (block_thomas_cuda.cu kGjMaxNi); its shared
@@ -148,16 +124,19 @@ def _source_hash(src: Path) -> str:
 
 
 def _is_current(lib: Path, stamp: str) -> bool:
-    """True if `lib` embeds `stamp`, alone or as the start of a longer stamp.
-    The file is read, not loaded: dlopen would keep a stale library cached
-    under its path."""
+    """Return True if `lib` embeds `stamp`, alone or as the start of a longer stamp.
+
+    The file is read, not loaded: dlopen would keep a stale library cached under its path.
+    """
     return lib.exists() and _HASH_TAG + stamp.encode() in lib.read_bytes()
 
 
 def _nvcc_arch() -> str:
-    """$NVCC_ARCH, else sm_XY of JAX's first CUDA device, else of the host's
-    first GPU per nvidia-smi (a build shell may hide the GPU from JAX, e.g.
-    with JAX_PLATFORMS=cpu)."""
+    """Return $NVCC_ARCH, else sm_XY of JAX's first CUDA device.
+
+    Falls back on the host's first GPU per nvidia-smi (a build shell may hide the GPU from JAX, e.g. with
+    JAX_PLATFORMS=cpu).
+    """
     if arch := os.environ.get("NVCC_ARCH"):
         return arch
     try:
@@ -166,39 +145,36 @@ def _nvcc_arch() -> str:
         try:
             cc = subprocess.run(
                 ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
             ).stdout.split()[0]
         except (OSError, subprocess.CalledProcessError, IndexError) as e:
-            raise RuntimeError(
-                "no CUDA device to build the kernel for; set NVCC_ARCH (sm_90 on a GH200)"
-            ) from e
+            raise RuntimeError("no CUDA device to build the kernel for; set NVCC_ARCH (sm_90 on a GH200)") from e
     return "sm_" + cc.replace(".", "")
 
 
 def build(force: bool = False, cuda: bool = False) -> Path:
-    """Compile the CPU kernel with the system C++ compiler ($CXX or c++), or
-    with `cuda=True` the GPU twin with nvcc ($NVCC, arch from `_nvcc_arch`).
-    Returns the library at once if it embeds the stamp of the present build,
-    unless `force`: the hash of the sources and, for the GPU twin, after it a
-    hash of the arch and `nvcc --version`, so a build for another GPU or
-    toolchain is redone."""
+    """Compile the CPU kernel with the system C++ compiler ($CXX or c++).
+
+    With `cuda=True`, compile the GPU twin with nvcc ($NVCC, arch from `_nvcc_arch`). Returns the library at once if it
+    embeds the stamp of the present build, unless `force`: the hash of the sources and, for the GPU twin, after it a
+    hash of the arch and `nvcc --version`, so a build for another GPU or toolchain is redone.
+    """
     src = _CSRC / ("block_thomas_cuda.cu" if cuda else "block_thomas_cpu.cc")
     lib = _CUDA_LIB if cuda else _LIB
     stamp = _source_hash(src)
     if cuda:
         nvcc, arch = os.environ.get("NVCC", "nvcc"), _nvcc_arch()
-        version = subprocess.run([nvcc, "--version"], check=True, capture_output=True,
-                                 text=True).stdout
+        version = subprocess.run([nvcc, "--version"], check=True, capture_output=True, text=True).stdout
         stamp += "_" + hashlib.sha256(f"{arch}\n{version}".encode()).hexdigest()
     if not force and _is_current(lib, stamp):
         return lib
     # -isystem: the XLA headers' own warnings are not reported. No -Werror: the
     # CPU build runs on the first `ffi` call, where a newer compiler's warning must not fail.
-    flags = ["-O2", "-std=c++17", "-shared", f"-DVULCAN_BT_SOURCE_HASH={stamp}",
-             "-isystem", jax.ffi.include_dir()]
+    flags = ["-O2", "-std=c++17", "-shared", f"-DVULCAN_BT_SOURCE_HASH={stamp}", "-isystem", jax.ffi.include_dir()]
     if cuda:
-        cmd = [nvcc, *flags, f"-arch={arch}", "-lineinfo",
-               "-Xcompiler", "-fPIC,-Wall,-Wextra"]
+        cmd = [nvcc, *flags, f"-arch={arch}", "-lineinfo", "-Xcompiler", "-fPIC,-Wall,-Wextra"]
     else:
         cmd = [os.environ.get("CXX", "c++"), *flags, "-fPIC", "-Wall", "-Wextra"]
         if platform.system() == "Darwin":
@@ -207,9 +183,9 @@ def build(force: bool = False, cuda: bool = False) -> Path:
     # place, so a concurrent first build never loads a half-written file.
     tmp_dir = tempfile.mkdtemp(dir=lib.parent)
     try:
-        tmp = os.path.join(tmp_dir, lib.name)
-        subprocess.run(cmd + [str(src), "-o", tmp], check=True)
-        os.replace(tmp, lib)
+        tmp = Path(tmp_dir) / lib.name
+        subprocess.run([*cmd, str(src), "-o", tmp], check=True)
+        tmp.replace(lib)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
     return lib
@@ -219,7 +195,7 @@ _REGISTERED = False
 
 
 def _register():
-    global _REGISTERED
+    global _REGISTERED  # noqa: PLW0603 (registration happens once per process)
     if _REGISTERED:
         return
     # The CUDA twin is built only by `--cuda`, never here, so a stale one is
@@ -234,25 +210,17 @@ def _register():
             "vulcan3.solver_fast --cuda`, or delete it to run the CPU kernel only."
         )
     lib = ctypes.CDLL(str(build()))
-    jax.ffi.register_ffi_target(
-        "vulcan_bt_factor", jax.ffi.pycapsule(lib.VulcanBtFactor), platform="cpu"
-    )
-    jax.ffi.register_ffi_target(
-        "vulcan_bt_solve", jax.ffi.pycapsule(lib.VulcanBtSolve), platform="cpu"
-    )
+    jax.ffi.register_ffi_target("vulcan_bt_factor", jax.ffi.pycapsule(lib.VulcanBtFactor), platform="cpu")
+    jax.ffi.register_ffi_target("vulcan_bt_solve", jax.ffi.pycapsule(lib.VulcanBtSolve), platform="cpu")
     if _CUDA_LIB.exists():
         gpu = ctypes.CDLL(str(_CUDA_LIB))
-        jax.ffi.register_ffi_target(
-            "vulcan_bt_factor", jax.ffi.pycapsule(gpu.VulcanBtFactorCuda), platform="CUDA"
-        )
-        jax.ffi.register_ffi_target(
-            "vulcan_bt_solve", jax.ffi.pycapsule(gpu.VulcanBtSolveCuda), platform="CUDA"
-        )
+        jax.ffi.register_ffi_target("vulcan_bt_factor", jax.ffi.pycapsule(gpu.VulcanBtFactorCuda), platform="CUDA")
+        jax.ffi.register_ffi_target("vulcan_bt_solve", jax.ffi.pycapsule(gpu.VulcanBtSolveCuda), platform="CUDA")
     _REGISTERED = True
 
 
 def _on_cuda() -> bool:
-    """True if the step runs on a CUDA GPU (JAX's default backend)."""
+    """Return True if the step runs on a CUDA GPU (JAX's default backend)."""
     return jax.default_backend() in ("gpu", "cuda")
 
 
@@ -268,9 +236,7 @@ def _ffi_factor(diag, sup_d, sub_d):
         jax.ShapeDtypeStruct(diag.shape, diag.dtype),
         jax.ShapeDtypeStruct(diag.shape[:-1], jnp.int32),
     )
-    return jax.ffi.ffi_call("vulcan_bt_factor", out, vmap_method="broadcast_all")(
-        diag, sup_d, sub_d
-    )
+    return jax.ffi.ffi_call("vulcan_bt_factor", out, vmap_method="broadcast_all")(diag, sup_d, sub_d)
 
 
 def _ffi_solve(lu, perm, sup_d, sub_d, rhs):

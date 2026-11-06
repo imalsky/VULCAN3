@@ -71,7 +71,7 @@ def test_overrides_win_over_yaml_and_derived():
     # An explicit derived key in the overrides is not clobbered.
     cfg2 = load_config("default", dt_max=123.0)
     assert cfg2.dt_max == 123.0
-    assert default_config() is default_config()   # cached singleton
+    assert default_config() is default_config()  # cached singleton
 
 
 def test_cwd_configs_override(tmp_path, monkeypatch):
@@ -96,16 +96,18 @@ def test_cwd_configs_override(tmp_path, monkeypatch):
     cfg = load_config("mine")
     assert cfg.runtime == 5.0e19
     assert cfg.dt_max == 5.0e19 * _DT_MAX_RUNTIME_FRAC  # derived from the CWD file
-    assert cfg.count_max == 10000 and isinstance(cfg.count_max, int)
+    assert cfg.count_max == 10000
+    assert isinstance(cfg.count_max, int)
     assert cfg.para_anaTP == [1, 2, 3]
 
 
 def test_loader_refuses_bad_input(tmp_path, monkeypatch):
-    """One refusal per failure class (fail-fast rule): missing config, the
-    removed `gs` knob (migration message, also through `validate_overrides`),
-    an unknown override, an unknown key authored in the YAML itself, and
-    duplicate YAML keys. Scientific notation must parse as float (the CWD
-    test covers the int case)."""
+    """One refusal per failure class (fail-fast rule): missing config.
+
+    The removed `gs` knob (migration message, also through `validate_overrides`), an unknown override, an unknown
+    key authored in the YAML itself, and duplicate YAML keys. Scientific notation must parse as float (the CWD test
+    covers the int case).
+    """
     with pytest.raises(FileNotFoundError):
         load_config("no_such_config_name_xyz")
     with pytest.raises(ValueError, match=r"removed config key.*`gs`.*set `Mp`"):
@@ -117,10 +119,12 @@ def test_loader_refuses_bad_input(tmp_path, monkeypatch):
         validate_overrides({"gs": 2140.0})
     cfgdir = tmp_path / "configs"
     cfgdir.mkdir()
-    base = ("runtime: 1e22\ndt_min: 1e-14\nyconv_min: 0.1\nsave_evo_frq: 10\n"
-            "para_warm: [1.0]\ncount_max: 30000\n"
-            "network: thermo/NCHO_photo_network.txt\n"
-            "atom_list: [H, O, C, N]\ncom_file: thermo/all_compose.txt\n")
+    base = (
+        "runtime: 1e22\ndt_min: 1e-14\nyconv_min: 0.1\nsave_evo_frq: 10\n"
+        "para_warm: [1.0]\ncount_max: 30000\n"
+        "network: thermo/NCHO_photo_network.txt\n"
+        "atom_list: [H, O, C, N]\ncom_file: thermo/all_compose.txt\n"
+    )
     (cfgdir / "typo.yaml").write_text(base + "nz_typo: 100\n")
     (cfgdir / "dup.yaml").write_text("nz: 100\nnz: 150\n")
     (cfgdir / "sci.yaml").write_text(base)
@@ -130,11 +134,13 @@ def test_loader_refuses_bad_input(tmp_path, monkeypatch):
     with pytest.raises(yaml.YAMLError):
         load_config("dup")
     cfg = load_config("sci")
-    assert isinstance(cfg.runtime, float) and cfg.runtime == 1e22
+    assert isinstance(cfg.runtime, float)
+    assert cfg.runtime == 1e22
     # A knob the file omits takes default.yaml's value (the runner reads
     # step_size_safety directly).
     assert cfg.step_size_safety == load_config("default").step_size_safety
-    assert isinstance(cfg.dt_min, float) and cfg.dt_min == 1e-14
+    assert isinstance(cfg.dt_min, float)
+    assert cfg.dt_min == 1e-14
 
 
 def test_frozen_env_overrides_yaml(monkeypatch):
@@ -147,8 +153,10 @@ def test_frozen_env_overrides_yaml(monkeypatch):
 
 
 def test_dt_max_is_capped_where_the_stage_repair_is_resolvable():
-    """Derived dt_max saturates at DT_MAX_S; an explicit larger value is refused
-    at OuterLoop construction (the Ros2 stage repair is unresolvable there)."""
+    """Derived dt_max saturates at DT_MAX_S.
+
+    An explicit larger value is refused at OuterLoop construction (the Ros2 stage repair is unresolvable there).
+    """
     from vulcan3.outer_loop import OuterLoop
 
     assert load_config("default").dt_max == DT_MAX_S == 1.0e15

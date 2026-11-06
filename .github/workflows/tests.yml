@@ -2,15 +2,46 @@ name: tests
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+      # clang-tidy needs nvcc's toolkit and runs locally through pre-commit.
+      - name: Format, lint, types, spelling
+        run: uvx pre-commit run --all-files --show-diff-on-failure
+        env:
+          SKIP: clang-tidy,check-size-limits
+      - name: Size limits
+        run: python3 tools/check_size_limits.py
+
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest supported version, and the version the tolerances are calibrated against.
+        python-version: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
       # jax pinned to the version the tolerances are calibrated against (pyproject holds the API floor).
       # exogibbs --no-deps: only pandas is needed (exogibbs.io.load_data);
