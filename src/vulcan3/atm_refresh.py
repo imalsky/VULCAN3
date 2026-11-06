@@ -23,7 +23,7 @@ __all__ = ["AtmRefreshStatic", "hydrostatic_step", "recompute_vm_jax", "update_m
 def hydrostatic_step(T: jnp.ndarray, mu: jnp.ndarray, g: jnp.ndarray, p_lo: Any, p_hi: Any, kb: Any, Navo: Any) -> Any:
     """Pressure scale height `Hp` and layer thickness `dz` for one layer.
 
-    The single definition of the formula: `atm_setup._scan_up_mu_dz_g` and
+    The single definition of the formula: `_transport_setup._scan_up_mu_dz_g` and
     `_scan_down_mu_dz_g` call it too. It lives here because `atm_setup`
     imports `atm_refresh`, not the other way round. `UNDERFLOW_DENOM` binds
     only when `mu*g` underflows to zero (a layer with no gas), so it is a
@@ -43,9 +43,9 @@ class AtmRefreshStatic(NamedTuple):
     Dzz_top: jnp.ndarray  # (ni,)        molecular diffusion at the top interface
     diff_esc_idx: jnp.ndarray  # (n_esc,) int32  species indices for diffusion-limited escape
     pref_indx: int  # static       reference layer index (zco==zco_pref here)
-    zco_pref: float  # static       z at the reference layer (0.0 for gas giants)
-    gs: float  # surface gravity at zco_pref (cm/s^2)
-    Rp: float  # planetary radius (cm)
+    zco_pref: float | jnp.ndarray  # z at the reference layer (0.0 for gas giants)
+    gs: float | jnp.ndarray  # surface gravity at zco_pref (cm/s^2)
+    Rp: float | jnp.ndarray  # planetary radius (cm)
     kb: float
     Navo: float
     max_flux: float  # floor on the escape flux: top_flux >= -max_flux (cfg.max_flux)

@@ -107,9 +107,8 @@ def test_photo_lane_matches_its_solo_run():
     soloA = integA._runner(sA, atmA)
     soloB = integB._runner(sB_own, atmB_own)
 
-    # photo really fired: actinic flux nonzero, photo branch wrote k rows.
-    assert np.any(np.asarray(soloA.aflux) > 0), "photo branch never fired in soloA"
-    assert float(soloA.aflux_change) != 0.0, "photo branch never fired in soloA"
+    # Setup fills the flux too: only the loop's refresh can have moved it.
+    assert not np.array_equal(np.asarray(soloA.aflux), np.asarray(sA.aflux)), "photo branch never fired in soloA"
 
     # --- batch on A's runner ----------------------------------------------
     batched = integA.run_batch(
@@ -159,7 +158,7 @@ def test_lane_gone_nonfinite_on_a_photo_tick_keeps_its_whole_carry():
     import jax
     import jax.numpy as jnp
 
-    from vulcan3 import outer_loop
+    from vulcan3.state import TERM_NONFINITE
 
     vulcan_cfg = _pin_cfg()
     integ = _build_integ()
@@ -181,8 +180,8 @@ def test_lane_gone_nonfinite_on_a_photo_tick_keeps_its_whole_carry():
         ),
         2,
     )
-    assert int(frozen.termination_reason) == outer_loop.TERM_NONFINITE
-    assert int(good.termination_reason) != outer_loop.TERM_NONFINITE
+    assert int(frozen.termination_reason) == TERM_NONFINITE
+    assert int(good.termination_reason) != TERM_NONFINITE
     # vacuity: the update the frozen lane took would have made these nonzero
     assert np.any(np.asarray(good.aflux) != 0.0)
     assert np.any(np.asarray(good.tau) != 0.0)

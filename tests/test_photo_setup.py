@@ -120,3 +120,15 @@ def test_branch_key_order_is_deterministic():
         for sp in set(species):
             branches = [br for s, br in keys if s == sp]
             assert branches == sorted(branches), f"{name}: {sp} branches {branches}"
+
+
+def test_t_dependent_samples_are_found_under_the_configured_root(tmp_path, monkeypatch):
+    """Discovery reads the same `cross_folder` as the files it lists."""
+    from types import SimpleNamespace
+
+    from vulcan3 import photo_setup
+
+    (tmp_path / "H2O").mkdir()
+    (tmp_path / "H2O" / "H2O_cross_777K.csv").write_text("")
+    monkeypatch.setattr(photo_setup, "_CFG", SimpleNamespace(cross_folder=str(tmp_path)))
+    assert photo_setup._discover_T_cross_files("H2O") == [777]

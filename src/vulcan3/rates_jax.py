@@ -23,10 +23,11 @@ import numpy as np
 
 from ._paths import resolve_data_path
 from .gibbs import _NASA9_BRANCH_T, CORR, load_nasa9
-from .network import Network, parse_network
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+    from .network import Network
 
 __all__ = [
     "K_COLL",
@@ -63,7 +64,7 @@ _LOWT_CAP_CONST = (  # (rxn, T_max, k_cap)
 )
 
 
-def _thermo_dir(network_file: Any) -> Path:
+def thermo_dir(network_file: Any) -> Path:
     """`thermo/` beside the network file, else the packaged one.
 
     The rate build and the equilibrium seed read one NASA-9 table from one place.
@@ -74,7 +75,7 @@ def _thermo_dir(network_file: Any) -> Path:
     return Path(__file__).resolve().parent / "thermo"
 
 
-thermo_dir = _thermo_dir  # the public name; `_thermo_dir` is deprecated (docs/api.md)
+_thermo_dir = thermo_dir  # deprecated (docs/api.md)
 
 
 def _arrhenius(a: Any, n: Any, E: Any, T: jnp.ndarray) -> Any:
@@ -105,12 +106,12 @@ def compute_forward_k(
     T: jnp.ndarray,
     M: jnp.ndarray,
     *,
-    a: Any = None,
-    n: int | None = None,
-    E: Any = None,
-    a_inf: Any = None,
-    n_inf: Any = None,
-    E_inf: Any = None,
+    a: jnp.ndarray | None = None,
+    n: jnp.ndarray | None = None,
+    E: jnp.ndarray | None = None,
+    a_inf: jnp.ndarray | None = None,
+    n_inf: jnp.ndarray | None = None,
+    E_inf: jnp.ndarray | None = None,
 ) -> jnp.ndarray:
     """Vectorized forward rates. T, M are (nz,) arrays -> (nr+1, nz).
 
@@ -190,15 +191,15 @@ def apply_lowT_caps(net: Network, k_fwd: jnp.ndarray, T: jnp.ndarray, M: jnp.nda
 
     k = k_fwd
     rxn, t_max, k0 = _LOWT_CAP_CH3
-    i = rows.get(rxn)
-    if i is not None:
+    row = rows.get(rxn)
+    if row is not None:
         kinf = 2.06e-10 * Tz**-0.4
         cap = k0 / (1.0 + k0 * Mz / kinf)
-        k = k.at[i].set(jnp.where(Tz <= t_max, cap, k[i]))
+        k = k.at[row].set(jnp.where(Tz <= t_max, cap, k[row]))
     for rxn, t_max, k_cap in _LOWT_CAP_CONST:
-        i = rows.get(rxn)
-        if i is not None:
-            k = k.at[i].set(jnp.where(Tz <= t_max, k_cap, k[i]))
+        row = rows.get(rxn)
+        if row is not None:
+            k = k.at[row].set(jnp.where(Tz <= t_max, k_cap, k[row]))
     return k
 
 
@@ -400,7 +401,7 @@ def _assert_reversible_thermo_present(net: Network, present: np.ndarray) -> None
 
 
 def setup_var_k(cfg: Any, var: Any, atm: Any) -> Network:
-    """Parse network, load NASA-9 coeffs, freeze `var.k_arr`. Returns the Network.
+    """Load NASA-9 coeffs for the import-locked network, freeze `var.k_arr`. Returns the Network.
 
     The host half of the setup contract: it resolves the files and pins the
     result to NumPy for the runner. The physics is :func:`build_rate_array`,
@@ -408,8 +409,13 @@ def setup_var_k(cfg: Any, var: Any, atm: Any) -> Network:
     `op_jax.compute_J` writes the photolysis rows into `var.k_arr` in place,
     and a view of a JAX buffer is read-only.
     """
-    network = parse_network(str(resolve_data_path(cfg.network)))
-    nasa9_coeffs, present = load_nasa9(network.species, _thermo_dir(cfg.network))
+    from . import chem_funs
+    from .state import _assert_frozen_knobs_match_import
+
+    _assert_frozen_knobs_match_import(cfg)
+    network = chem_funs.NETWORK
+
+    nasa9_coeffs, present = load_nasa9(network.species, thermo_dir(cfg.network))
     _assert_reversible_thermo_present(network, present)
     var.k_arr = np.array(
         build_rate_array(

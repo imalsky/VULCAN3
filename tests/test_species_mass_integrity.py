@@ -11,9 +11,9 @@
 #
 # Duplicate rows are a second silent hazard: production resolves a species via
 # `list.index`, i.e. the FIRST row wins, so a duplicate with a different mass is
-# file-order-dependent. The vendored upstream table ships exactly six duplicated
-# species (three disagreeing in mass); that state is pinned below so any new
-# duplicate, or any change to which value wins, fails loudly.
+# file-order-dependent. The vendored table ships exactly six duplicated species
+# (two disagreeing in mass); that state is pinned below so any new duplicate, or
+# any change to which value wins, fails loudly.
 #
 # Pure data check: no EQ seed, no VULCAN-master, no integration.
 
@@ -46,13 +46,10 @@ _ATOMIC_MASS = {
 }
 _TOL = 0.12
 
-# The vendored upstream all_compose.txt defines these species twice (same atom
-# counts). Three pairs disagree in mass; production's first-wins `.index`
-# selects the values below. HCS's 45.178 sits 0.099 amu above its elemental
-# sum (the second row's 45.079 is the consistent one): an upstream data bug
-# kept for parity (~7e-5 on one moldiff coefficient).
+# The vendored all_compose.txt defines these species twice (same atom counts). Two pairs disagree in mass, and
+# production's first-wins `.index` selects the values below; HCS's two rows agree.
 _KNOWN_DUPLICATE_SPECIES = {"C4H2", "CH3O2", "CH3OOH", "C2H4O", "CH3NO2", "HCS"}
-_KNOWN_FIRST_WINS_MASS = {"C2H4O": 44.054, "CH3NO2": 61.042, "HCS": 45.178}
+_KNOWN_FIRST_WINS_MASS = {"C2H4O": 44.054, "CH3NO2": 61.042}
 
 
 def test_species_masses_match_atom_counts():

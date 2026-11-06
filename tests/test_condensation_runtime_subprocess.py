@@ -102,12 +102,13 @@ print(f"CONDEN_OK t={float(rs_out.step.t):.2e} count={int(rs_out.params.count)} 
 # On default_config() and on a separate Config (the load_config path, where
 # setup runs on a copy of the config); neither config is mutated.
 import copy
+from vulcan3._build_statics import build_statics
 from vulcan3.state import legacy_view
 cfg.use_sat_surfaceH2O = True
 for c in (cfg, copy.deepcopy(cfg)):
     rs = RunState.with_pre_loop_setup(c)
     var, atm, _ = legacy_view(rs)
-    st = outer_loop.OuterLoop(op_jax.Ros2JAX(), op.Output(cfg=c), cfg=c)._build_statics(var, atm)
+    st = build_statics(outer_loop.OuterLoop(op_jax.Ros2JAX(), op.Output(cfg=c), cfg=c), var, atm)
     pins = {sl[int(i)]: float(m) for i, m in
             zip(np.asarray(st.fix_sp_bot_idx), np.asarray(st.fix_sp_bot_mix))}
     want = float(np.asarray(rs.metadata.sat_mix["H2O"])[0])

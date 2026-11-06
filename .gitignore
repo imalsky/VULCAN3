@@ -121,3 +121,6 @@ validation_artifacts_*/
 
 # One-off scripts, tests and figures made on top of the code: never tracked.
 /scratch/
+
+# A manifest of fixtures built on a machine other than the arm64 laptop (tests/gen_fixtures.py).
+tests/data/FIXTURES.*.json

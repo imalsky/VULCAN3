@@ -19,12 +19,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from vulcan3.steady_state_grad import (
-    _BODY_MAP_DT_MAX,
-    _conserved_null_basis,
-    _safe_inv_y,
-    steady_state_reaction_sensitivity,
-)
+from vulcan3._adjoint_core import _BODY_MAP_DT_MAX, _conserved_null_basis, _safe_inv_y
+from vulcan3.steady_state_grad import steady_state_reaction_sensitivity
 
 DATA = Path(__file__).resolve().parent / "data"
 HD189_FIXTURE = DATA / "adj_state_hd189.npz"
@@ -115,11 +111,32 @@ def test_conserved_null_basis_refuses_degenerate_columns(inputs, match):
         _conserved_null_basis(*inputs())
 
 
-def test_poor_convergence_warns():
-    """Default-on diagnostics: a poor residual or a loose fixed point warns even.
+def test_non_finite_diagnostics_refuse_instead_of_passing():
+    """A NaN reads False in every comparison: the solve, the audit and the rebuild check must not call that success."""
+    from vulcan3 import _adjoint_audit
+    from vulcan3._adjoint_core import _lgmres_solve
+    from vulcan3.config import default_config
+    from vulcan3.steady_state_grad import _worst_rel
 
-    When the caller never inspects `info`; a good solve is silent.
-    """
+    with pytest.raises(RuntimeError, match="no finite residual"):
+        _lgmres_solve(lambda x: np.full_like(x, np.nan), np.ones(2))
+
+    assert _worst_rel(np.array([np.nan, 1.0]), np.array([1.0, 1.0])) == np.inf
+    assert _worst_rel(np.array([1.0]), np.array([1.0])) == 0.0
+
+    def nan_probe(*_args):
+        return None, lambda y: y * jnp.nan, None, None
+
+    y = jnp.ones((3, 2))
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_adjoint_audit, "_make_body_map", nan_probe)
+        report = _adjoint_audit.audit_adjoint_scope(y, None, None, None, cfg=default_config(), print_report=False)
+    assert not report["ok"]
+    assert "probe_non_finite" in {f["code"] for f in report["findings"]}
+
+
+def test_poor_convergence_warns():
+    """A poor residual or a loose fixed point warns though the caller never inspects `info`; a good solve is silent."""
     import warnings as _w
 
     from vulcan3.steady_state_grad import _warn_poor_convergence
@@ -181,8 +198,8 @@ def test_hd189_reaction_sensitivity_regression():
         **_atm_fields,
         **{k[9:]: bool(d[k]) for k in d.files if k.startswith("atmbool__")},
     )
-    net = chem_funs._NET_JAX
-    ch4 = chem_funs._NETWORK.species_idx["CH4"]
+    net = chem_funs.NET_JAX
+    ch4 = chem_funs.NETWORK.species_idx["CH4"]
     L0 = nz // 2
 
     def loss(y):  # log10 CH4 VMR at mid-column (matches the reference run)

@@ -54,8 +54,7 @@ def surface_gravity(cfg: Any) -> float:
     Single source of gravity (upstream vm_branch); there is no ``gs`` knob.
     Callers supply ``Mp`` (planet mass, g) and ``Rp`` (planet radius, cm).
     """
-    Mp = getattr(cfg, "Mp", None)
-    Rp = getattr(cfg, "Rp", None)
+    Mp, Rp = cfg.Mp, cfg.Rp
     if Mp is None or Rp is None or float(Mp) <= 0.0 or float(Rp) <= 0.0:
         raise RuntimeError(
             "Surface gravity is undetermined: set `Mp` (planet mass, g) and "
@@ -65,7 +64,7 @@ def surface_gravity(cfg: Any) -> float:
 
 
 def high_temp_cut_regrid(
-    pco: jnp.ndarray, Tco: jnp.ndarray, *, T_max: float, P_min: float, P_t: float, nz: int
+    pco: np.ndarray | jnp.ndarray, Tco: np.ndarray | jnp.ndarray, *, T_max: float, P_min: float, P_t: float, nz: int
 ) -> np.ndarray | None:
     """Re-gridded pressure column for the high-temperature bottom cut.
 
@@ -119,12 +118,12 @@ def analytical_TP_H14(pco: jnp.ndarray, params: Any, *, gs: float, Pb: float) ->
 
 def kzz_profile_jax(
     kzz_prof: str,
-    pico_int: jnp.ndarray,
+    pico_int: np.ndarray | jnp.ndarray,
     *,
-    K_deep: float = 0.0,
-    K_max: float = 0.0,
-    K_p_lev: float = 0.0,
-    const_Kzz: float = 0.0,
+    K_deep: float | jnp.ndarray = 0.0,
+    K_max: float | jnp.ndarray = 0.0,
+    K_p_lev: float | jnp.ndarray = 0.0,
+    const_Kzz: float | jnp.ndarray = 0.0,
 ) -> jnp.ndarray:
     """Analytic eddy-diffusion profile Kzz(P) at interior interfaces (cm^2/s).
 
@@ -217,7 +216,7 @@ def _read_atm_table(atm_file: str) -> dict[str, np.ndarray]:
 
 
 # size-limit-ok: one branch per atm_type and Kzz_prof, as master
-def load_TPK(cfg: Any, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, jnp.ndarray]:  # noqa: C901 (one branch per atm_type and Kzz_prof, as master)
+def load_TPK(cfg: Any, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, np.ndarray]:  # noqa: C901 (one branch per atm_type and Kzz_prof, as master)
     """Build (Tco, Kzz, vz, M, n_0) for the configured atm/Kzz/vz modes.
 
     `pco` and `pico` are inputs because the `table` mode
@@ -280,11 +279,11 @@ def load_TPK(cfg: Any, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, jnp.nd
         Tco = np.asarray(vul_data["atm"]["Tco"], dtype=np.float64)
     elif atm_type == "table":
         logger.info("Initializing PT from the previous run %s", cfg.vul_ini)
-        table = np.genfromtxt(resolve_data_path(cfg.vul_ini), names=True, dtype=None, skip_header=1)
-        if not nz == len(table["Pressure"]):
-            raise OSError("Initial profile has different layers than the current setting")
-        out["pco"] = np.asarray(table["Pressure"], dtype=np.float64)
-        Tco = np.asarray(table["Temp"], dtype=np.float64)
+        prev = np.genfromtxt(resolve_data_path(cfg.vul_ini), names=True, dtype=None, skip_header=1)
+        if not nz == len(prev["Pressure"]):
+            raise OSError(f"{cfg.vul_ini} has {len(prev['Pressure'])} layers, the config's nz is {nz}.")
+        out["pco"] = np.asarray(prev["Pressure"], dtype=np.float64)
+        Tco = np.asarray(prev["Temp"], dtype=np.float64)
     else:
         raise OSError(f'\n"atm_type"={atm_type!r} cannot be recognized.\nPlease reassign it in the config.')
     out["Tco"] = Tco

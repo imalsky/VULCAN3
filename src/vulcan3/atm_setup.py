@@ -9,40 +9,17 @@ from __future__ import annotations
 
 import logging
 import warnings
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-import jax
 import jax.numpy as jnp
-import jax.scipy.special as jsp_special
 import numpy as np
 
-from ._paths import resolve_data_path
-from .atm_refresh import hydrostatic_step, recompute_vm_jax
-from .config import default_config
-from .phy_const import ATM_BAR, ATM_CGS, BAR_CGS, G_grav, Navo, au, kb, r_sun
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
 from ._saturation import (
-    _CMHG_TO_BAR,
-    _GIBBS_T_MAX_K,
-    _GIBBS_T_MIN_K,
-    _H2S_ICE_LIQUID_K,
-    _S_ALLOTROPE_BREAK_K,
-    _SUPPORTED_CONDENSABLES,
     compute_sat_p,
     sat_p_jax,
 )
-from ._stellar_flux import (
-    _parse_bc_file,
-    read_bc_flux,
-    read_sflux_binned,
-)
+from ._stellar_flux import read_sflux_binned
 from ._tp_kzz import (
-    _interp_descending_or_ascending,
-    _read_atm_table,
     analytical_TP_H14,
     compute_pico,
     high_temp_cut_regrid,
@@ -51,21 +28,23 @@ from ._tp_kzz import (
     surface_gravity,
 )
 from ._transport_setup import (
-    _VISCOSITY_TABLE,
     VISCOSITY_TABLE,
     _alpha_array_for_base,
-    _Dzz_gen_for_base,
-    _scan_down_mu_dz_g,
-    _scan_up_mu_dz_g,
     compute_mean_mass,
     compute_mol_diff,
     compute_mu_dz_g,
     compute_settling_velocity,
     mol_diff_jax,
     mu_dz_g_jax,
+    read_bc_flux,
     settling_coeff_array,
     settling_velocity_jax,
 )
+from .config import default_config
+from .gibbs import _GIBBS_T_MAX_K, _GIBBS_T_MIN_K
+from .phy_const import BAR_CGS
+
+_VISCOSITY_TABLE = VISCOSITY_TABLE  # deprecated (docs/api.md)
 
 __all__ = [
     "VISCOSITY_TABLE",
@@ -165,9 +144,8 @@ class Atm:
     def mean_mass(self, var: Any, atm: Any, ni: int) -> Any:
         """Compute per-layer mean molecular mass (amu, (nz,)) and write `atm.mu`.
 
-        No in-repo call site, but a LIVE cross-repo contract: master's
-        `op.Integration.update_mu_dz` (op.py:951) duck-types this method on
-        our `Atm` (tests/test_outer_loop_atm_refresh.py). Do not delete.
+        Master's `op.Integration.update_mu_dz` (op.py:951) calls this on our `Atm` in the parity test
+        (tests/test_outer_loop_atm_refresh.py).
         """
         from .composition import species_mass
 
@@ -209,11 +187,15 @@ class Atm:
                 data_atm.Tco,
                 data_atm.g,
                 list(species),
-                rho_p=getattr(data_atm, "rho_p", {}),
-                r_p=getattr(data_atm, "r_p", {}),
+                rho_p=data_atm.rho_p,
+                r_p=data_atm.r_p,
             )
         if np.any(np.logical_or(data_atm.Tco < _GIBBS_T_MIN_K, data_atm.Tco > _GIBBS_T_MAX_K)):
-            warnings.warn("Temperatures exceed the valid range of Gibbs free energy.", stacklevel=2)
+            warnings.warn(
+                f"Temperatures {float(np.min(data_atm.Tco)):g} to {float(np.max(data_atm.Tco)):g} K exceed the valid "
+                f"range of Gibbs free energy, {_GIBBS_T_MIN_K:g} to {_GIBBS_T_MAX_K:g} K.",
+                stacklevel=2,
+            )
         return data_atm
 
     def mol_diff(self, atm: Any) -> None:

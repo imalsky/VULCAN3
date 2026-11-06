@@ -3,8 +3,8 @@
     python tests/gen_fixtures.py --all
 
 That one command, run in a clean clone with no sibling repositories, produces
-all five fixtures and writes `tests/data/FIXTURES.json` recording each file's
-SHA-256 alongside the commit, config, and dependency versions that made it.
+all five fixtures and writes this machine's manifest (`MANIFEST`) recording, per file, its
+SHA-256 and the commit, config and dependency versions that made it.
 
 The fixtures are required (conftest fails collection when one is missing)
 but gitignored (~36 MB), so a clean clone must regenerate them. The network
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import json
 import os
 import platform
@@ -29,7 +30,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_DIR = ROOT / "tests" / "data"
-MANIFEST = FIXTURE_DIR / "FIXTURES.json"
+# Converged states are machine-dependent, so each machine has its own manifest. The tracked FIXTURES.json is the
+# arm64 laptop's; any other machine's is local and gitignored.
+_MACHINE = platform.machine()
+MANIFEST = FIXTURE_DIR / ("FIXTURES.json" if _MACHINE == "arm64" else f"FIXTURES.{_MACHINE}.json")
 
 # fixture file -> (generator argv relative to ROOT, which fixtures it writes).
 # Grouped by generator so one subprocess can emit several files.
@@ -67,41 +71,28 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _git_head() -> str | None:
-    try:
-        r = subprocess.run(
-            ["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10, check=False
-        )
-        head = r.stdout.strip()
-        if r.returncode != 0 or not head:
-            return None
-        dirty = subprocess.run(
-            ["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        ).stdout.strip()
-        return head + ("-dirty" if dirty else "")
-    except Exception:  # best-effort provenance: record None, never block generation
-        return None
+def _git_head() -> str:
+    head = subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10, check=True
+    ).stdout.strip()
+    dirty = subprocess.run(
+        ["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    ).stdout.strip()
+    return head + ("-dirty" if dirty else "")
 
 
 def _versions() -> dict:
     out = {"python": sys.version.split()[0]}
     for mod in ("jax", "jaxlib", "numpy", "scipy"):
-        try:
-            out[mod] = __import__(mod).__version__
-        except Exception:  # best-effort provenance: record None
-            out[mod] = None
-    try:
-        # Read the source of truth, not the installed dist metadata: under an
-        # editable install importlib.metadata reports whatever version was
-        # current at `pip install -e`, which silently mislabels every fixture.
-        src = (ROOT / "src" / "vulcan3" / "_version.py").read_text()
-        out["vulcan3"] = re.search(r"__version__\s*=\s*[\"']([^\"']+)", src).group(1)
-    except Exception:  # best-effort provenance: record None
-        out["vulcan3"] = None
+        out[mod] = importlib.import_module(mod).__version__
+    # The source of truth: under an editable install importlib.metadata reports the version at `pip install -e`.
+    out["vulcan3"] = re.search(
+        r"__version__\s*=\s*[\"']([^\"']+)", (ROOT / "src/vulcan3/_version.py").read_text()
+    ).group(1)
     return out
 
 
@@ -137,42 +128,46 @@ def run_generator(key: str) -> None:
     print(f"=== {key}: done in {time.time() - t0:.1f}s ===", flush=True)
 
 
-def write_manifest() -> dict:
-    """Record hashes + provenance for every fixture present."""
-    entries = {}
-    for spec in GENERATORS.values():
-        for name in spec["writes"]:
-            p = FIXTURE_DIR / name
-            if not p.is_file():
-                continue
-            entries[name] = {
-                "sha256": sha256(p),
-                "bytes": p.stat().st_size,
-                "generator": " ".join(spec["argv"][1:]),
-                "note": spec["note"],
-            }
-    manifest = {
+def record_generated(keys: list[str]) -> dict:
+    """Record this checkout's provenance for the fixtures of generators `keys`; every other record stays as it was."""
+    manifest = json.loads(MANIFEST.read_text()) if MANIFEST.is_file() else {"fixtures": {}}
+    provenance = {
         "generated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "vulcan3_commit": _git_head(),
-        # Converged states are machine-dependent; record the machine they came from.
         "platform_machine": platform.machine(),
         "versions": _versions(),
         "config_sha256_16": _config_identity(),
-        "fixtures": entries,
     }
+    for key in keys:
+        spec = GENERATORS[key]
+        for name in spec["writes"]:
+            path = FIXTURE_DIR / name
+            manifest["fixtures"][name] = {
+                "sha256": sha256(path),
+                "bytes": path.stat().st_size,
+                "generator": " ".join(spec["argv"][1:]),
+                "note": spec["note"],
+                **provenance,
+            }
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"\nwrote {MANIFEST}")
     return manifest
 
 
-def verify() -> int:
-    """Check every fixture against the manifest. Returns an exit code."""
+def built_on(name: str) -> str | None:
+    """Return the machine that built fixture `name`, or None when this machine's manifest does not say."""
     if not MANIFEST.is_file():
-        print(f"gen_fixtures: no manifest at {MANIFEST}; run --all first", file=sys.stderr)
+        return None
+    return json.loads(MANIFEST.read_text())["fixtures"].get(name, {}).get("platform_machine")
+
+
+def verify() -> int:
+    """Check every fixture against its record in the manifest. Returns an exit code."""
+    if not MANIFEST.is_file():
+        print(f"gen_fixtures: no manifest at {MANIFEST}; run --all --force first", file=sys.stderr)
         return 1
-    manifest = json.loads(MANIFEST.read_text())
-    recorded = manifest.get("fixtures", {})
+    recorded = json.loads(MANIFEST.read_text())["fixtures"]
     bad = []
     for name in ALL_FIXTURES:
         p = FIXTURE_DIR / name
@@ -180,27 +175,32 @@ def verify() -> int:
             bad.append(f"{name}: MISSING")
             continue
         if name not in recorded:
-            bad.append(f"{name}: present but not in the manifest")
+            bad.append(f"{name}: present but not in the manifest; rebuild it with --force")
+            continue
+        if "vulcan3_commit" not in recorded[name]:
+            bad.append(f"{name}: an old-format record with no provenance; rebuild it with --force")
             continue
         got = sha256(p)
         if got != recorded[name]["sha256"]:
-            bad.append(f"{name}: sha256 {got[:16]}... != recorded {recorded[name]['sha256'][:16]}...")
+            bad.append(
+                f"{name}: sha256 {got[:16]}... != recorded {recorded[name]['sha256'][:16]}...; rebuild it with --force"
+            )
     if bad:
         print("gen_fixtures: verification FAILED", file=sys.stderr)
         for b in bad:
             print(f"  - {b}", file=sys.stderr)
         return 1
-    print(
-        f"gen_fixtures: all {len(ALL_FIXTURES)} fixtures match the manifest "
-        f"(built from commit {manifest.get('vulcan3_commit')})"
-    )
+    for name in ALL_FIXTURES:
+        print(f"{name}: matches the record, built from {recorded[name]['vulcan3_commit']}")
     return 0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument("--all", action="store_true", help="build every missing fixture, then write the manifest")
+    g.add_argument(
+        "--all", action="store_true", help="build every missing fixture and record it, then verify all of them"
+    )
     g.add_argument("--only", choices=sorted(GENERATORS), help="run one generator")
     g.add_argument("--verify", action="store_true", help="check the existing fixtures against the manifest")
     ap.add_argument("--force", action="store_true", help="rebuild even when the fixture is already present")
@@ -210,19 +210,19 @@ def main(argv=None) -> int:
         return verify()
 
     keys = sorted(GENERATORS) if args.all else [args.only]
+    generated = []
     for key in keys:
         have = all((FIXTURE_DIR / n).is_file() for n in GENERATORS[key]["writes"])
         if have and not args.force:
             print(f"=== {key}: already present, skipping (--force to rebuild) ===", flush=True)
             continue
         run_generator(key)
+        generated.append(key)
 
-    missing = [n for n in ALL_FIXTURES if not (FIXTURE_DIR / n).is_file()]
-    if missing and args.all:
-        print("gen_fixtures: generators ran but these are still missing: " + ", ".join(missing), file=sys.stderr)
-        return 1
-    write_manifest()
-    return 0
+    if generated:
+        record_generated(generated)
+    # A skipped fixture keeps its record, and must still match it.
+    return verify() if args.all else 0
 
 
 if __name__ == "__main__":

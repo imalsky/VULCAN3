@@ -27,6 +27,7 @@ from . import _settings
 
 if TYPE_CHECKING:
     import os
+    from collections.abc import Callable
 
 __all__ = [
     "DT_MAX_S",
@@ -99,7 +100,7 @@ _DT_MAX_RUNTIME_FRAC = 1e-5
 _PHOTO_SWITCH_LONGDY_FACTOR = 10.0
 # Values that are functions of other knobs. Authored YAML omits them; an
 # explicit YAML/override value always wins (they are only filled when absent).
-_DERIVED = (
+_DERIVED: tuple[tuple[str, Callable[[dict[str, Any]], Any]], ...] = (
     ("dt_max", lambda d: min(d["runtime"] * _DT_MAX_RUNTIME_FRAC, DT_MAX_S)),
     ("photo_switch_longdy_thresh", lambda d: d["yconv_min"] * _PHOTO_SWITCH_LONGDY_FACTOR),
     ("para_anaTP", lambda d: copy.deepcopy(d["para_warm"])),
@@ -229,14 +230,7 @@ def validate_overrides(overrides: dict[str, Any]) -> None:
 
 
 class Config(types.SimpleNamespace):
-    """Free-attribute config namespace (attribute access like master's ``vulcan_cfg``).
-
-    A ``SimpleNamespace`` subclass so ``vars(cfg)``, ``getattr(cfg, name,
-    default)``, ``setattr``, dynamic keys (``getattr(cfg, sp + "_H")``), and
-    ``copy.deepcopy`` all behave as the reflection layer
-    (``make_config`` / ``state._cfg_overlay`` / ``legacy_io.Output.save_cfg``)
-    expects.
-    """
+    """Free-attribute config namespace (attribute access like master's ``vulcan_cfg``)."""
 
 
 def _read_text(name_or_path: str | os.PathLike) -> str:

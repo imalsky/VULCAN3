@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING, Any
 import jax
 import jax.numpy as jnp
 
-from ._convergence import _longdy_reduce, _slope_min
+from ._convergence import _longdy_reduce, _slope_min, lookback_index, real_terminate, two_branch
 from ._loop_body import body_fn
-from ._termination import lookback_index, real_terminate, two_branch
 from .phy_const import UNDERFLOW_DENOM
 
 if TYPE_CHECKING:
-    from ._carry import JaxIntegState, _Statics
-    from ._loop_env import RunnerEnv
+    from collections.abc import Callable
+
+    from ._carry import JaxIntegState, RunnerEnv, _Statics
 
 
 def _tangent_conv(statics: _Statics, s_next: JaxIntegState, ds_next: JaxIntegState) -> Any:
@@ -48,7 +48,7 @@ def _tangent_conv(statics: _Statics, s_next: JaxIntegState, ds_next: JaxIntegSta
     return jax.vmap(one_dir)(ds_next.y, ds_next.y_time_ring)
 
 
-def _make_jvp_step(env: RunnerEnv, active_state: Any, active_atm: Any) -> Any:
+def _make_jvp_step(env: RunnerEnv, active_state: tuple[bool, ...], active_atm: tuple[bool, ...]) -> Callable:
     """One `jax.jvp` of `body_fn`, vmapped over a leading direction axis D.
 
     `active_*` flag, per flattened leaf of the state and AtmStatic, the
@@ -59,7 +59,7 @@ def _make_jvp_step(env: RunnerEnv, active_state: Any, active_atm: Any) -> Any:
     computed once for all D directions.
     """
 
-    def _merge(flat: Any, leaves: Any, active: Any) -> Any:
+    def _merge(flat: list, leaves: list, active: tuple[bool, ...]) -> list:
         nxt = iter(flat)
         return [next(nxt) if a else x for x, a in zip(leaves, active, strict=False)]
 
@@ -68,9 +68,9 @@ def _make_jvp_step(env: RunnerEnv, active_state: Any, active_atm: Any) -> Any:
         a_leaves, a_def = jax.tree_util.tree_flatten(atm_static)
 
         def f(s_act: Any, a_act: Any) -> Any:
-            s_in = s_def.unflatten(_merge(s_act, jax.tree_util.tree_leaves(s), active_state))
-            a_in = a_def.unflatten(_merge(a_act, a_leaves, active_atm))
-            o_leaves = jax.tree_util.tree_leaves(body_fn(env, s_in, a_in))
+            s_in = jax.tree_util.tree_unflatten(s_def, _merge(s_act, jax.tree_util.tree_leaves(s), active_state))
+            a_in = jax.tree_util.tree_unflatten(a_def, _merge(a_act, a_leaves, active_atm))
+            o_leaves = jax.tree_util.tree_leaves(body_fn(env, s_in, a_in)[0])
             act = [x for x, a in zip(o_leaves, active_state, strict=False) if a]
             rest = [x for x, a in zip(o_leaves, active_state, strict=False) if not a]
             return act, rest
@@ -82,16 +82,16 @@ def _make_jvp_step(env: RunnerEnv, active_state: Any, active_atm: Any) -> Any:
             out_axes=(None, 0, None),
         )(list(ds_active), list(datm_active))
         it_a, it_r = iter(act_out), iter(rest_out)
-        s_next = s_def.unflatten([next(it_a) if a else next(it_r) for a in active_state])
+        s_next = jax.tree_util.tree_unflatten(s_def, [next(it_a) if a else next(it_r) for a in active_state])
         # Tangent tree for the reduction: inactive leaves borrow the
         # primal (never read there).
-        ds_next = s_def.unflatten(_merge(dact_out, jax.tree_util.tree_leaves(s_next), active_state))
+        ds_next = jax.tree_util.tree_unflatten(s_def, _merge(dact_out, jax.tree_util.tree_leaves(s_next), active_state))
         return s_next, dact_out, ds_next
 
     return _step
 
 
-def make_runner_jvp(env: RunnerEnv, active_state: Any, active_atm: Any) -> Any:
+def make_runner_jvp(env: RunnerEnv, active_state: tuple[bool, ...], active_atm: tuple[bool, ...]) -> Callable:
     """Build the forward-mode runner: integrates (state, tangent) together.
 
     Stops only when the tangent has settled by the primal's own rule.

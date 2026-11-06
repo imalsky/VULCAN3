@@ -2,22 +2,32 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import numpy as np
 
-from . import atm_refresh as _atm_refresh_mod, phy_const as _phy_const, state as _state_mod
-from ._carry import JaxIntegState, ProfileVars
-from .chem_funs import _NETWORK
+from . import _build_statics, atm_refresh as _atm_refresh_mod, phy_const as _phy_const, state as _state_mod
+from ._carry import JaxIntegState, ProfileVars, _Statics
+from .chem_funs import NETWORK
 from .ini_abun import column_atoms
 from .state import TERM_CONVERGED, TERM_NONFINITE, TERM_RUNNING, TERM_RUNTIME, TERM_STEP_COUNT
 
+if TYPE_CHECKING:
+    from .outer_loop import OuterLoop
+    from .state import RunState
 
-def initial_photo_carry(integ: Any, rs: Any) -> dict:
+
+def _built_statics(integ: OuterLoop) -> _Statics:
+    if integ._statics is None:
+        raise RuntimeError("the runner's statics are not built: call ensure_runner or prepare_runstate first.")
+    return integ._statics
+
+
+def _initial_photo_carry(integ: OuterLoop, rs: RunState) -> dict[str, jnp.ndarray]:
     """Build the initial photo carry from `rs.rate.k` and `rs.photo_runtime` (placeholders when photo is off)."""
     nz = int(rs.atm.Tco.shape[0])
-    nr = _NETWORK.nr
+    nr = NETWORK.nr
     k_arr = jnp.asarray(rs.rate.k, dtype=jnp.float64)
     if k_arr.shape != (nr + 1, nz):
         raise ValueError(f"rs.rate.k shape {k_arr.shape} != expected ({nr + 1}, {nz})")
@@ -32,6 +42,10 @@ def initial_photo_carry(integ: Any, rs: Any) -> dict:
             "aflux_change": jnp.float64(0.0),
         }
     pr = rs.photo_runtime
+    if pr is None:
+        raise ValueError(
+            "use_photo is on but this RunState has no photo_runtime: build it with with_pre_loop_setup(cfg)."
+        )
     return {
         "k_arr": k_arr,
         "tau": jnp.asarray(pr.tau, dtype=jnp.float64),
@@ -42,7 +56,7 @@ def initial_photo_carry(integ: Any, rs: Any) -> dict:
     }
 
 
-def initial_atm_carry(rs: Any) -> dict:
+def _initial_atm_carry(rs: RunState) -> dict[str, jnp.ndarray]:
     """Build the initial atm-refresh carry from a RunState slice."""
     return {
         "g": jnp.asarray(rs.atm.g, dtype=jnp.float64),
@@ -57,10 +71,10 @@ def initial_atm_carry(rs: Any) -> dict:
     }
 
 
-def initial_conv_carry(integ: Any, rs: Any) -> dict:
+def _initial_conv_carry(integ: OuterLoop, rs: RunState) -> dict[str, jnp.ndarray]:
     """Build the initial conv-history carry from a RunState slice."""
     nz = int(rs.atm.Tco.shape[0])
-    ni = _NETWORK.ni
+    ni = NETWORK.ni
     conv_step = int(integ._cfg.conv_step)
     ini_frq = int(integ._cfg.ini_update_photo_frq)
     return {
@@ -88,7 +102,7 @@ def initial_conv_carry(integ: Any, rs: Any) -> dict:
     }
 
 
-def profile_vars(integ: Any, rs: Any) -> ProfileVars:
+def _profile_vars(integ: OuterLoop, rs: RunState) -> ProfileVars:
     """Snapshot this profile's per-profile constants into a `ProfileVars`.
 
     Rebuilds the per-run static bundles for this runstate (so the values
@@ -99,10 +113,10 @@ def profile_vars(integ: Any, rs: Any) -> ProfileVars:
     never reads them in that case).
     """
     var, atm, _ = _state_mod.legacy_view(rs)
-    statics = integ._build_statics(var, atm)
-    refresh = integ._build_refresh_static(atm)
+    statics = _build_statics.build_statics(integ, var, atm)
+    refresh = _build_statics.build_refresh_static(integ, atm)
     nz = int(atm.Tco.shape[0])
-    conden = integ._build_conden_static(var, atm, jnp.asarray(integ._gas_mask(atm)))
+    conden = _build_statics.build_conden_static(integ, var, atm, jnp.asarray(_build_statics.gas_mask(integ, atm)))
     if conden is not None:
         c_Dg = jnp.asarray(conden.Dg_per_re, dtype=jnp.float64)
         c_sat_n = jnp.asarray(conden.sat_n_per_re, dtype=jnp.float64)
@@ -130,7 +144,7 @@ def profile_vars(integ: Any, rs: Any) -> ProfileVars:
                 "it with RunState.with_pre_loop_setup(cfg), or attach one "
                 "with rs._replace(photo_static=...)."
             )
-        # The two T-P-dependent photo statics, as _build_photo_static
+        # The two T-P-dependent photo statics, as build_photo_static
         # would bake them for this profile.
         p_absp_T_cross = jnp.asarray(rs.photo_static.absp_T_cross, dtype=jnp.float64)
         p_cross_J_T = jnp.asarray(rs.photo_static.cross_J_T, dtype=jnp.float64)
@@ -162,30 +176,31 @@ def profile_vars(integ: Any, rs: Any) -> ProfileVars:
 
 
 # size-limit-ok: one carry field per line
-def pack_state(integ: Any, rs: Any) -> JaxIntegState:
+def pack_state(integ: OuterLoop, rs: RunState) -> JaxIntegState:
     """Build the initial JaxIntegState from a fully-populated RunState.
 
     Static metadata (atom ordering, fix-species mapping) lives on the
     `OuterLoop` instance.
     """
-    photo_fields = integ._initial_photo_carry_from_runstate(rs)
-    atm_fields = integ._initial_atm_carry_from_runstate(rs)
-    conv_fields = integ._initial_conv_carry_from_runstate(rs)
+    statics = _built_statics(integ)
+    photo_fields = _initial_photo_carry(integ, rs)
+    atm_fields = _initial_atm_carry(rs)
+    conv_fields = _initial_conv_carry(integ, rs)
     nz = int(rs.atm.Tco.shape[0])
-    ni = _NETWORK.ni
-    n_fix = int(integ._statics.fix_species_idx.shape[0])
+    ni = NETWORK.ni
+    n_fix = int(statics.fix_species_idx.shape[0])
     fix_started = bool(rs.params.fix_species_start)
     fix_y_init = np.zeros((nz, ni), dtype=np.float64)
     fix_mask_init = np.zeros((nz, ni), dtype=bool)
     fix_pfix_idx_init = np.zeros((n_fix,), dtype=np.int32)
-    if integ._statics.use_fix_species and rs.fix_species is not None and len(rs.fix_species.fix_species) > 0:
+    if statics.use_fix_species and len(rs.fix_species.fix_species) > 0:
         fix_y_arr = np.asarray(rs.fix_species.fix_y, dtype=np.float64)
         coldtrap = np.asarray(rs.fix_species.conden_min_lev, dtype=np.int32)
         for i, sp in enumerate(rs.fix_species.fix_species):
-            sp_idx = _NETWORK.species_idx[sp]
+            sp_idx = NETWORK.species_idx[sp]
             fix_y_init[:, sp_idx] = fix_y_arr[i]
             if fix_started:
-                if integ._statics.fix_species_from_coldtrap_lev:
+                if statics.fix_species_from_coldtrap_lev:
                     pfix = int(coldtrap[i])
                     fix_mask_init[:pfix, sp_idx] = True
                     fix_pfix_idx_init[i] = pfix
@@ -223,11 +238,11 @@ def pack_state(integ: Any, rs: Any) -> JaxIntegState:
         # (ceil(count_max / save_evo_frq) + 1) when on; length-1
         # placeholder when off.
         y_evo=jnp.zeros(
-            (int(integ._statics.save_evo_n_max), nz, ni),
+            (int(statics.save_evo_n_max), nz, ni),
             dtype=jnp.float64,
         ),
         t_evo=jnp.zeros(
-            (int(integ._statics.save_evo_n_max),),
+            (int(statics.save_evo_n_max),),
             dtype=jnp.float64,
         ),
         evo_idx=jnp.int32(0),
@@ -237,20 +252,20 @@ def pack_state(integ: Any, rs: Any) -> JaxIntegState:
         termination_reason=jnp.int32(TERM_RUNNING),
         # Phase seed: upwind (1.0) when use_vm_mol, else central (0.0);
         # only hybrid runs ever flip it.
-        hybrid_use_vm=jnp.float64(1.0 if bool(integ._statics.use_vm_mol) else 0.0),
+        hybrid_use_vm=jnp.float64(1.0 if bool(statics.use_vm_mol) else 0.0),
         # Live termination budget, seeded to the static caps. Only the
         # hybrid phase flip mutates these (extends phase 1's allowance).
-        count_min_dyn=jnp.int32(int(integ._statics.count_min)),
-        count_max_dyn=jnp.int32(int(integ._statics.count_max)),
-        runtime_dyn=jnp.float64(float(integ._statics.runtime)),
+        count_min_dyn=jnp.int32(int(statics.count_min)),
+        count_max_dyn=jnp.int32(int(statics.count_max)),
+        runtime_dyn=jnp.float64(float(statics.runtime)),
         # Per-profile constants must ride the carry (vmap does not batch
         # closures); value-identical to the closures single-profile.
-        pv=integ._profile_vars_from_runstate(rs),
+        pv=_profile_vars(integ, rs),
     )
 
 
-# size-limit-ok: one RunState field per line
-def unpack_state(integ: Any, state: JaxIntegState, rs_entry: Any) -> Any:
+# size-limit-ok: each RunState slot in turn, with the vm, photolysis and fix_species branches
+def unpack_state(integ: OuterLoop, state: JaxIntegState, rs_entry: RunState) -> RunState:
     """Build a fresh `RunState` from the runner's final JaxIntegState.
 
     The static atm fields (pco, Tco, Kzz, n_0, ms, alpha, ...) are
@@ -260,6 +275,7 @@ def unpack_state(integ: Any, state: JaxIntegState, rs_entry: Any) -> Any:
     photo_runtime / fix_species are rebuilt from the carry, in the
     OuterLoop's atom order and cfg `fix_species` order.
     """
+    statics = _built_statics(integ)
     g = jnp.asarray(state.g, dtype=jnp.float64)
     zco = jnp.asarray(state.zco, dtype=jnp.float64)
     dzi = jnp.asarray(state.dzi, dtype=jnp.float64)
@@ -277,7 +293,7 @@ def unpack_state(integ: Any, state: JaxIntegState, rs_entry: Any) -> Any:
         top_flux=jnp.asarray(state.top_flux, dtype=jnp.float64),
         vs=jnp.asarray(state.vs, dtype=jnp.float64),
     )
-    if integ._statics.use_vm_mol:
+    if statics.use_vm_mol:
         # vm_branch op.py:945-992 refreshes vm inside update_mu_dz. The
         # runner recomputes it per step from the carry and never stores
         # it, so rebuild the terminal value here (same inputs as in-loop).
@@ -327,7 +343,7 @@ def unpack_state(integ: Any, state: JaxIntegState, rs_entry: Any) -> Any:
         delta=float(state.delta),
         small_y=float(state.small_y),
         nega_y=float(state.nega_y),
-        end_case=integ._classify_end_case(state),
+        end_case=classify_end_case(state),
         switch_final_photo_frq=bool(state.is_final_photo_frq),
         pic_count=int(rs_entry.params.pic_count),
         where_varies_most=jnp.asarray(
@@ -363,13 +379,13 @@ def unpack_state(integ: Any, state: JaxIntegState, rs_entry: Any) -> Any:
         photo_runtime_out = None
 
     nz = int(rs_entry.atm.Tco.shape[0])
-    fix_species_cfg = list(integ._cfg.fix_species or [])
+    fix_species_cfg = list(integ._cfg.fix_species)
     if fix_species_cfg:
         fix_y_full = np.asarray(state.fix_y, dtype=np.float64)
         fix_y_per_sp = np.zeros((len(fix_species_cfg), nz), dtype=np.float64)
         for i, sp in enumerate(fix_species_cfg):
-            fix_y_per_sp[i] = fix_y_full[:, _NETWORK.species_idx[sp]]
-        if integ._statics.fix_species_from_coldtrap_lev:
+            fix_y_per_sp[i] = fix_y_full[:, NETWORK.species_idx[sp]]
+        if statics.fix_species_from_coldtrap_lev:
             pfix_np = np.asarray(state.fix_pfix_idx, dtype=np.int32)
         else:
             pfix_np = np.zeros((len(fix_species_cfg),), dtype=np.int32)
@@ -399,10 +415,10 @@ def unpack_state(integ: Any, state: JaxIntegState, rs_entry: Any) -> Any:
     )
 
 
-def classify_end_case(state: JaxIntegState) -> Any:
+def classify_end_case(state: JaxIntegState) -> int:
     """Classify end-of-run (op.py:1069-1085) from the in-loop reason.
 
-    `_real_terminate` applies master's priority (converged over runtime
+    `real_terminate` applies master's priority (converged over runtime
     over step-count) against the live budget, so a step that converges
     while hitting a cap reads end_case=1, and so does a hybrid phase-1
     convergence past the static count_max.

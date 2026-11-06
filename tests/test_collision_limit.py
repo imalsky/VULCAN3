@@ -19,7 +19,7 @@ def _rates(T):
 
     f = "thermo/NCHO_photo_network.txt"
     net = parse_network(resolve_data_path(f))
-    nasa9, _ = load_nasa9(net.species, rates_jax._thermo_dir(f))
+    nasa9, _ = load_nasa9(net.species, rates_jax.thermo_dir(f))
     Tj = jnp.asarray([T])
     M = jnp.asarray([1e6 / (1.380649e-16 * T)])
     k_fwd = rates_jax.compute_forward_k(net, Tj, M)

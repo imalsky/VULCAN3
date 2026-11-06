@@ -3,29 +3,34 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
 
 from ._carry import (
-    _ATM_STATIC_BATCH_AXES,
     _CONV_RING_FIELDS,
     _EVO_RING_FIELDS,
     _LANE_AXIS,
+    ATM_STATIC_BATCH_AXES,
     JaxIntegState,
+    RunnerEnv,
     _PhotoStatic,
     _Statics,
 )
+from ._convergence import cond_fn, real_terminate
 from ._loop_body import body_fn
-from ._loop_env import RunnerEnv, make_env
+from ._loop_branches import _make_conden_branch, _make_photo_branch
 from ._runner_jvp import make_runner_jvp
 from ._runner_queue import runner_queue
-from ._termination import cond_fn, real_terminate
+from ._step_control import _make_aggregate_delta_fn, _make_clip_fn
 from .state import TERM_NONFINITE, TERM_RUNNING
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from . import atm_refresh as _atm_refresh_mod, conden as _conden_mod
+    from .chem import NetworkArrays
     from .jax_step import AtmStatic
 
 # --- batched freeze ------------------------------------------------------
@@ -38,7 +43,7 @@ if TYPE_CHECKING:
 # would copy the whole (conv_step, nz, ni) leaf twice per iteration.
 
 
-def _freeze_leaf(old: Any, new: Any, keep_old: Any) -> Any:
+def _freeze_leaf(old: jnp.ndarray, new: jnp.ndarray, keep_old: jnp.ndarray) -> jnp.ndarray:
     """`where(keep_old, old, new)`.
 
     Skipped when the step passed the leaf through unchanged (the same object, so the select is a copy for nothing).
@@ -46,7 +51,7 @@ def _freeze_leaf(old: Any, new: Any, keep_old: Any) -> Any:
     return old if old is new else jnp.where(keep_old, old, new)
 
 
-def _freeze_state(s: JaxIntegState, s_adv: JaxIntegState, keep_old: Any) -> Any:
+def _freeze_state(s: JaxIntegState, s_adv: JaxIntegState, keep_old: jnp.ndarray) -> JaxIntegState:
     """Keep the pre-step carry `s` where `keep_old`, the advanced carry elsewhere.
 
     Leaf by leaf, so untouched leaves are not re-selected. The ring buffers come back from `body_fn` already frozen
@@ -64,7 +69,13 @@ def _freeze_state(s: JaxIntegState, s_adv: JaxIntegState, keep_old: Any) -> Any:
     return s._replace(**out)
 
 
-def body_fn_batch(env: RunnerEnv, s: JaxIntegState, atm_static_: Any, lane_axis: Any = None, it: Any = None) -> Any:
+def body_fn_batch(
+    env: RunnerEnv,
+    s: JaxIntegState,
+    atm_static_: AtmStatic,
+    lane_axis: str | None = None,
+    it: jnp.ndarray | None = None,
+) -> JaxIntegState:
     """Advance every lane one tick and freeze the ones that are done."""
     statics = env.statics
     # vmap applies the body to every lane each iteration until the slowest
@@ -76,8 +87,10 @@ def body_fn_batch(env: RunnerEnv, s: JaxIntegState, atm_static_: Any, lane_axis:
     already_done = s.is_done
     hold = already_done | real_term
 
-    def tick(photo_take: Any) -> Any:
-        def advance(operand: Any) -> Any:
+    def tick(
+        photo_take: jnp.ndarray | None,
+    ) -> Callable[[tuple[JaxIntegState, jnp.ndarray]], tuple[JaxIntegState, jnp.ndarray, jnp.ndarray]]:
+        def advance(operand: tuple[JaxIntegState, jnp.ndarray]) -> tuple[JaxIntegState, jnp.ndarray, jnp.ndarray]:
             ss, y_ring = operand
             ss = ss._replace(y_time_ring=y_ring)
             s_adv, ring_idx, y_slot = body_fn(
@@ -98,16 +111,17 @@ def body_fn_batch(env: RunnerEnv, s: JaxIntegState, atm_static_: Any, lane_axis:
                     jnp.where(became_nan, jnp.int32(TERM_NONFINITE), jnp.int32(TERM_RUNNING)),
                 ),
             )
-            frozen = frozen._replace(is_done=keep_old, termination_reason=reason_next, y_time_ring=None)
+            frozen = frozen._replace(is_done=keep_old, termination_reason=reason_next)
+            frozen = frozen._replace(y_time_ring=None)  # type: ignore[arg-type]  # the ring rides beside the carry
             return frozen, ring_idx, y_slot
 
         return advance
 
     # The y ring enters the step read-only and is written after it
     # (body_fn's `defer_ring`).
-    operand = (s._replace(y_time_ring=None), s.y_time_ring)
+    operand = (s._replace(y_time_ring=None), s.y_time_ring)  # type: ignore[arg-type]  # the ring rides beside the carry
 
-    def write_ring(out: Any) -> Any:
+    def write_ring(out: tuple[JaxIntegState, jnp.ndarray, jnp.ndarray]) -> JaxIntegState:
         s_out, ring_idx, y_slot = out
         return s_out._replace(y_time_ring=s.y_time_ring.at[ring_idx].set(y_slot))
 
@@ -131,7 +145,7 @@ def body_fn_batch(env: RunnerEnv, s: JaxIntegState, atm_static_: Any, lane_axis:
 
 # size-limit-ok: the runner closures share one environment
 def make_runner(
-    net: Any,
+    net: NetworkArrays,
     statics: _Statics,
     non_gas_present: bool,
     gas_indx_mask: jnp.ndarray,
@@ -142,7 +156,7 @@ def make_runner(
     refresh_static: _atm_refresh_mod.AtmRefreshStatic,
     photo_static: _PhotoStatic | None = None,
     conden_static: _conden_mod.CondenStatic | None = None,
-) -> Any:
+) -> tuple[Callable, Callable, Callable, Callable, Callable]:
     """Build `(runner, runner_chunk, runner_batch, runner_queue, make_runner_jvp)`.
 
     The JIT'd `runner(state, atm_static) -> state` runs to convergence, `count_max`, or `runtime`, and
@@ -152,26 +166,26 @@ def make_runner(
     The termination test reads count_min, count_max and runtime from the carry's `*_dyn` fields (the hybrid flip extends
     them), never from `statics`.
     """
-    env = make_env(
-        net,
-        statics,
-        non_gas_present,
-        gas_indx_mask,
-        zero_bot_row,
-        condense_zero_mask,
-        start_conden_time,
-        stop_conden_time,
-        refresh_static,
-        photo_static,
-        conden_static,
+    env = RunnerEnv(
+        net=net,
+        statics=statics,
+        non_gas_present=non_gas_present,
+        gas_indx_mask=gas_indx_mask,
+        start_conden_time=start_conden_time,
+        stop_conden_time=stop_conden_time,
+        refresh_static=refresh_static,
+        clip_fn=_make_clip_fn(non_gas_present, gas_indx_mask, statics.pos_cut, statics.nega_cut),
+        agg_delta_fn=_make_aggregate_delta_fn(statics.mtol, statics.atol, zero_bot_row, condense_zero_mask),
+        photo_branch=_make_photo_branch(photo_static) if photo_static is not None else None,
+        conden_branch=_make_conden_branch(conden_static) if conden_static is not None else None,
     )
 
     @jax.jit
-    def runner(state: JaxIntegState, atm_static: AtmStatic) -> Any:
+    def runner(state: JaxIntegState, atm_static: AtmStatic) -> JaxIntegState:
         # One-shot run to convergence / count_max / runtime.
         final = jax.lax.while_loop(
             functools.partial(cond_fn, statics),
-            lambda s: body_fn(env, s, atm_static),
+            lambda s: body_fn(env, s, atm_static)[0],
             state,
         )
         # The single-profile body never writes termination_reason; evaluate
@@ -180,7 +194,7 @@ def make_runner(
         return final._replace(termination_reason=reason)
 
     @jax.jit
-    def runner_chunk(state: JaxIntegState, atm_static: AtmStatic, target: Any) -> Any:
+    def runner_chunk(state: JaxIntegState, atm_static: AtmStatic, target: jnp.ndarray) -> JaxIntegState:
         # `runner` cut off once `accept_count` reaches `target`, so a host
         # loop can print progress and take Ctrl+C between chunks. Same body
         # and carry: resuming from the returned state continues the run.
@@ -189,20 +203,20 @@ def make_runner(
         # costs seconds of tracing and nothing in the primal.
         final = jax.lax.while_loop(
             lambda s: cond_fn(statics, s) & (s.accept_count < target),
-            lambda s: body_fn(env, s, atm_static, matrix_free=False),
+            lambda s: body_fn(env, s, atm_static, matrix_free=False)[0],
             state,
         )
         _real_term, reason = real_terminate(statics, final)
         return final._replace(termination_reason=reason)
 
     # One batched iteration over the lanes at the shared tick `it`.
-    lane_step = jax.vmap(
+    lane_step: Callable[[jnp.ndarray, JaxIntegState, AtmStatic], JaxIntegState] = jax.vmap(
         lambda it, s, a: body_fn_batch(env, s, a, lane_axis=_LANE_AXIS, it=it),
-        in_axes=(None, 0, _ATM_STATIC_BATCH_AXES),
+        in_axes=(None, 0, ATM_STATIC_BATCH_AXES),
         axis_name=_LANE_AXIS,
     )
 
-    def runner_batch(state_b: JaxIntegState, atm_b: AtmStatic) -> Any:
+    def runner_batch(state_b: JaxIntegState, atm_b: AtmStatic) -> JaxIntegState:
         # Freeze-on-done loop on stacked inputs; the caller jits it. The
         # while loop sits above the vmap, so photo/refresh conds key on the
         # shared iteration tick: batched and solo runs agree at the

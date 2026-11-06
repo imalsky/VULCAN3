@@ -1,4 +1,4 @@
-"""Tests for the on-graph atmosphere pieces (`atm_setup.mu_dz_g_jax`, `atm_jax._mol_diff`).
+"""Tests for the on-graph atmosphere pieces (`atm_setup.mu_dz_g_jax`, `atm_jax.mol_diff`).
 
 Pins two things:
   1. The vm expression against the verbatim vm_branch port.
@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 from vulcan3 import atm_setup
-from vulcan3.atm_jax import AtmSpec, PhysicalInputs, _mol_diff, make_physical_inputs
+from vulcan3.atm_jax import AtmSpec, PhysicalInputs, make_physical_inputs, mol_diff
 from vulcan3.atm_setup import (
     analytical_TP_H14,
     compute_mean_mass,
@@ -72,7 +72,7 @@ def _reference_vm_branch_vm(Tco, n_0, g, Hp, dz, ms, alpha, species_list, non_ga
     port the build_atm.py copy instead: it drops `axis=0`, a latent
     species-mixing bug that op.update_mu_dz overrides during the run.
     """
-    from vulcan3.atm_setup import _Dzz_gen_for_base
+    from vulcan3._transport_setup import _Dzz_gen_for_base
     from vulcan3.phy_const import Navo, kb
 
     Tco = np.asarray(Tco, np.float64)
@@ -107,7 +107,7 @@ def _reference_vm_branch_vm(Tco, n_0, g, Hp, dz, ms, alpha, species_list, non_ga
 def test_compute_mol_diff_vm_matches_vm_branch_reference():
     """compute_mol_diff's upwind vm equals the canonical vm_branch expression.
 
-    (the production kernel's discretization is covered separately in test_diffusion_production_kernel).
+    The production kernel's discretization is test_diffusion_production_kernel.
     """
     species_list, ms_arr, nz, ni, Tco, n_0, g, Hp, dz, alpha = _synthetic_mol_diff_setup()
     cfg = types.SimpleNamespace(
@@ -152,7 +152,7 @@ def test_vm_branch_differentiates_wrt_Tco():
     n0_j, g_j, Hp_j, dz_j = (jnp.asarray(a) for a in (n_0, g, Hp, dz))
 
     def vm_sum(scale):
-        _, _, vm = _mol_diff(phys._replace(Tco=Tco_j * scale), spec, n0_j, g_j, Hp_j, dz_j)
+        _, _, vm = mol_diff(phys._replace(Tco=Tco_j * scale), spec, n0_j, g_j, Hp_j, dz_j)
         return jnp.sum(vm)
 
     _, tangent = jax.jvp(vm_sum, (jnp.float64(1.0),), (jnp.float64(1.0),))
@@ -167,9 +167,10 @@ def test_vm_branch_differentiates_wrt_Tco():
 
 
 def _column(hd189_state, gs_scale, T_scale):
-    """(M, dzi, Dzz) of the HD189 column through the live on-graph pieces.
+    """(dzi, Dzz) of the HD189 column through the live on-graph pieces.
 
-    The hydrostatic integrator and molecular diffusion, at scaled gs and Tco.
+    The hydrostatic integrator and molecular diffusion, at scaled gs and Tco. `M` is the ideal-gas law a T-profile
+    gradient writes itself, as vulcan-forward does: the package has no on-graph M to test, and its tangent reaches Dzz.
     """
     from vulcan3.config import default_config
 
@@ -186,28 +187,31 @@ def _column(hd189_state, gs_scale, T_scale):
         compute_pico(phys.pco),
         spec.nz,
     )
-    Dzz, _, _ = _mol_diff(phys._replace(Tco=Tco), spec, M, g, Hp, dz)
-    return M, dzi, Dzz
+    Dzz, _, _ = mol_diff(phys._replace(Tco=Tco), spec, M, g, Hp, dz)
+    return dzi, Dzz
 
 
-@pytest.mark.parametrize("knob", ["gs", "Tco"])
-def test_column_jvp_matches_fd(hd189_state, knob):
-    """Dzi responds to surface gravity.
+@pytest.mark.parametrize(
+    ("knob", "field"),
+    [("gs", "dzi"), ("Tco", "dzi"), ("Tco", "Dzz")],
+)
+def test_column_jvp_matches_fd(hd189_state, knob, field):
+    """The tangent of each field under a unit scale of gs or Tco matches a central difference in every cell.
 
-    M, Dzz and dzi to temperature. The forward-mode tangent of each unit scale matches a central difference.
+    A column bar would be set by the deepest cell: Dzz spans 11 orders, so a zeroed upper atmosphere would pass it.
     """
+    index = ("dzi", "Dzz").index(field)
 
-    def loss(x):
-        if knob == "gs":
-            return jnp.sum(_column(hd189_state, x, 1.0)[1])
-        return sum(jnp.sum(a) for a in _column(hd189_state, 1.0, x))
+    def column(x):
+        return _column(hd189_state, x, 1.0)[index] if knob == "gs" else _column(hd189_state, 1.0, x)[index]
 
-    _, tangent = jax.jvp(loss, (jnp.float64(1.0),), (jnp.float64(1.0),))
+    _, tangent = jax.jvp(column, (jnp.float64(1.0),), (jnp.float64(1.0),))
     eps = 1e-6
-    fd = (loss(jnp.float64(1.0 + eps)) - loss(jnp.float64(1.0 - eps))) / (2 * eps)
-    assert np.isfinite(float(tangent))
-    assert float(tangent) != 0.0
-    assert abs(float(tangent) - float(fd)) / (abs(float(fd)) + UNDERFLOW_DENOM) < FD_RTOL
+    fd = (np.asarray(column(jnp.float64(1.0 + eps))) - np.asarray(column(jnp.float64(1.0 - eps)))) / (2 * eps)
+    tangent = np.asarray(tangent)
+    assert np.any(fd != 0.0)
+    bad = np.abs(tangent - fd) > FD_RTOL * np.abs(fd)  # where fd is zero, the tangent must be too
+    assert not bad.any(), f"{int(bad.sum())} of {bad.size} cells off, first {np.argwhere(bad)[0]}"
 
 
 def test_analytical_TP_front_end_differentiates():

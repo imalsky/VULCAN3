@@ -1,10 +1,9 @@
-"""Read the stellar flux onto the wavelength bins, and the boundary-flux files."""
+"""Read the stellar flux onto the wavelength bins."""
 
 from __future__ import annotations
 
 import logging
 import warnings
-from pathlib import Path
 from typing import Any
 
 import jax.numpy as jnp
@@ -13,7 +12,7 @@ import numpy as np
 from ._paths import resolve_data_path
 from .phy_const import au, r_sun
 
-__all__ = ["read_bc_flux", "read_sflux_binned"]
+__all__ = ["read_sflux_binned"]
 
 logger = logging.getLogger(__name__)
 
@@ -133,46 +132,3 @@ def read_sflux_binned(
         "sflux_top": sflux_top,
         "sflux_din12_indx": sflux_din12_indx,
     }
-
-
-def _parse_bc_file(path: str) -> list[list[str]]:
-    """Read a BC text file into token rows; skip comments and blank lines."""
-    rows: list[list[str]] = []
-    with Path(resolve_data_path(path)).open() as f:
-        for line in f:
-            if not line.startswith("#") and line.strip():
-                rows.append(line.split())
-    return rows
-
-
-def _bc_species_index(sp: str, species_list: list[str], path: str) -> int:
-    """Return a boundary-flux row's species index, refusing a species outside the network, as upstream does."""
-    if sp not in species_list:
-        raise ValueError(f"{path}: boundary-flux row names {sp!r}, which is not in the network; remove the row.")
-    return species_list.index(sp)
-
-
-def read_bc_flux(cfg: Any, species_list: list[str]) -> dict[str, np.ndarray]:
-    """Build (top_flux, bot_flux, bot_vdep, bot_fix_sp).
-
-    use_topflux and use_botflux each fill their section from a file. bot_fix_sp
-    stays zero: OuterLoop pins the `use_fix_sp_bot` dict entries itself.
-    """
-    ni = len(species_list)
-    out = {
-        "top_flux": np.zeros(ni, dtype=np.float64),
-        "bot_flux": np.zeros(ni, dtype=np.float64),
-        "bot_vdep": np.zeros(ni, dtype=np.float64),
-        "bot_fix_sp": np.zeros(ni, dtype=np.float64),
-    }
-    if bool(cfg.use_topflux):
-        logger.info("Using the prescribed constant top flux.")
-        for tokens in _parse_bc_file(cfg.top_BC_flux_file):
-            out["top_flux"][_bc_species_index(tokens[0], species_list, cfg.top_BC_flux_file)] = float(tokens[1])
-    if bool(cfg.use_botflux):
-        logger.info("Using the prescribed constant bottom flux.")
-        for tokens in _parse_bc_file(cfg.bot_BC_flux_file):
-            i = _bc_species_index(tokens[0], species_list, cfg.bot_BC_flux_file)
-            out["bot_flux"][i] = float(tokens[1])
-            out["bot_vdep"][i] = float(tokens[2])
-    return out

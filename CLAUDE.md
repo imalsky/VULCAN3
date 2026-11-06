@@ -164,7 +164,7 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
 - `make_config(...)` overrides need all three wirings: `_cfg_overlay` (setup), `OuterLoop(..., cfg=)` (runner),
   `Output(cfg=)` (output).
 - Setup never writes a config knob (`state._cfg_overlay` discards the write). The runner builds any setting derived in
-  setup, as `OuterLoop._build_statics` builds the `use_sat_surfaceH2O` bottom pin from `sat_mix` (notes "Code contracts
+  setup, as `build_statics` builds the `use_sat_surfaceH2O` bottom pin from `sat_mix` (notes "Code contracts
   not obvious from the modules").
 - Import-frozen knobs (`config._FROZEN_ENV`: `network`, `com_file`, `atom_list`) and `$VULCAN3_SOLVER` /
   `$VULCAN3_CHEM_RHS` are set in the environment before the first import; the CLI re-execs once to match a config, the
@@ -174,8 +174,8 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
   closure constants). Only T-P may vary across a photo batch; conden config and `pref_indx` are closure-baked.
   `run_queue` is bitwise `run_batch` when `n_lanes >= n_jobs`; a fresh lane takes photolysis exactly once, on its own
   fields. Compare a batched entry against vmap-of-solo, never the solo runner.
-- Adding a field to `AtmStatic` touches three places in src (the NamedTuple, `make_atm_static`, `ATM_STATIC_BATCH_AXES`)
-  plus every direct `AtmStatic(` call in examples/ and tests/. Splice defaults into saved-fixture loaders rather than
+- Adding a field to `AtmStatic` touches two places in src (the NamedTuple, `make_atm_static`; a toggle also
+  `_carry._ATM_TOGGLES`) plus every direct `AtmStatic(` call in examples/ and tests/. Splice defaults into saved-fixture loaders rather than
   regenerating.
 - Add no runtime dependency beyond jax / numpy / scipy / PyYAML and `exogibbs` (notes "Charter, configs, API").
 

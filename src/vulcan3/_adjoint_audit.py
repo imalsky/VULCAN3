@@ -20,12 +20,20 @@ if TYPE_CHECKING:
 
 __all__ = ["audit_adjoint_scope"]
 
+# The per-cell defect scan ignores cells below this mixing ratio: numerical dust with meaningless relative defect, far
+# below any loss species (trace radicals sit ~1e-12..1e-8).
 _AUDIT_MIN_YMIX = 1e-16
 
+# Per-cell defect above which the finding is an ERROR: an O(1) move under one probe step means the iterated map includes
+# a process (pin, conden clamp, charge balance) the body map lacks. Between _FP_ERR_WARN and this is a WARNING (slow
+# trace cells of a healthy column land here).
 _AUDIT_DEFECT_ERROR = 0.3
 
+# The "loss footprint": cells whose log-space cotangent magnitude |y* dL/dy| is within this fraction of the maximum, the
+# cells the loss actually reads, where a fixed-point defect directly biases the gradient.
 _AUDIT_LOSS_FOOTPRINT_FRAC = 1e-3
 
+# A spliced refresh field (g, dzi, Hpi, top_flux, vs) must match the converged carry to float noise.
 _STALE_GEOMETRY_RTOL = 1e-12
 
 logger = logging.getLogger(__name__)
@@ -49,17 +57,13 @@ def _adjoint_scope_findings(  # noqa: C901 (one check per process)
     def add(code: str, severity: str, message: str) -> None:
         findings.append({"code": code, "severity": severity, "message": message})
 
-    def flag(name: str, default: Any) -> Any:
-        return getattr(cfg, name, default)
-
     def state_bool(name: str) -> Any:
         if final_state is None:
             return None
-        val = getattr(final_state, name, None)
-        return None if val is None else bool(np.asarray(val))
+        return bool(np.asarray(getattr(final_state, name)))
 
     pass_terms = "Pass body_terms from make_body_terms(integ, final, atm_static)."
-    if bool(flag("use_ion", False)):
+    if bool(cfg.use_ion):
         add(
             "ion_charge_balance",
             "error",
@@ -71,7 +75,7 @@ def _adjoint_scope_findings(  # noqa: C901 (one check per process)
     terms_fix = body_terms is not None and body_terms.fix_mask is not None
     terms_bot = body_terms is not None and body_terms.bot_idx is not None
 
-    if bool(flag("use_condense", False)):
+    if bool(cfg.use_condense):
         started = state_bool("fix_species_started")
         if terms_conden or (started and terms_fix):
             add(
@@ -95,7 +99,7 @@ def _adjoint_scope_findings(  # noqa: C901 (one check per process)
                 "fix_species is active at this state (fix_species_started) but "
                 "the body map has no fix_mask. " + pass_terms,
             )
-        elif started is None and not terms_fix and not terms_conden and len(list(flag("fix_species", []) or [])) > 0:
+        elif started is None and not terms_fix and not terms_conden and len(cfg.fix_species) > 0:
             add(
                 "fix_species_pins",
                 "error",
@@ -103,7 +107,7 @@ def _adjoint_scope_findings(  # noqa: C901 (one check per process)
                 "pass the converged state to check whether the pin is active.",
             )
 
-    bot_pins = len(dict(flag("use_fix_sp_bot", {}) or {})) > 0
+    bot_pins = len(cfg.use_fix_sp_bot) > 0
     if bot_pins:
         if terms_bot:
             add("bottom_boundary_pins", "info", "the bottom-layer pins are carried by body_terms.")
@@ -116,7 +120,7 @@ def _adjoint_scope_findings(  # noqa: C901 (one check per process)
                 "~1e-9; trust the per-cell defect scan. " + pass_terms,
             )
 
-    if bool(flag("use_fix_H2He", False)):
+    if bool(cfg.use_fix_H2He):
         pinned = state_bool("h2he_pinned")
         if pinned and terms_bot:
             add("hycean_h2he_pin", "info", "the tripped H2/He bottom pin is carried by body_terms.")
@@ -134,7 +138,7 @@ def _adjoint_scope_findings(  # noqa: C901 (one check per process)
                 "use_fix_H2He=True: the H2/He bottom pin is not in the body map. " + pass_terms,
             )
 
-    if bool(flag("use_photo", False)):
+    if bool(cfg.use_photo):
         if photo_recompute_k is None:
             add(
                 "photolysis_feedback",
@@ -150,20 +154,20 @@ def _adjoint_scope_findings(  # noqa: C901 (one check per process)
                 "dflux_u is held at its converged value inside the photo recompute (second order).",
             )
 
-    if len(list(flag("diff_esc", []) or [])) > 0:
+    if len(cfg.diff_esc) > 0:
         add(
             "escape_flux_feedback",
             "warning",
             "diff_esc: top_flux is frozen, so d(phi_esc)/dy is dropped and TOA-sensitive losses are biased.",
         )
 
-    if bool(flag("use_vm_mol", False)) and not bool(flag("use_hybrid_vm_mol", False)):
+    if bool(cfg.use_vm_mol) and not bool(cfg.use_hybrid_vm_mol):
         add(
             "vm_mol_feedback",
             "warning",
             "use_vm_mol=True: vm is frozen at its converged value, dropping d(vm)/dy (matters at low Kzz).",
         )
-    elif bool(flag("use_vm_mol", False)) and bool(flag("use_hybrid_vm_mol", False)):
+    elif bool(cfg.use_vm_mol) and bool(cfg.use_hybrid_vm_mol):
         add(
             "vm_mol_hybrid",
             "info",
@@ -178,12 +182,7 @@ def _adjoint_scope_findings(  # noqa: C901 (one check per process)
         "order; included in the 0.1-0.7% FD totals on HD189/W39b).",
     )
 
-    if (
-        bool(flag("use_topflux", False))
-        or bool(flag("use_botflux", False))
-        or bot_pins
-        or len(list(flag("diff_esc", []) or [])) > 0
-    ):
+    if bool(cfg.use_topflux) or bool(cfg.use_botflux) or bot_pins or len(cfg.diff_esc) > 0:
         add(
             "open_boundary_deflation",
             "info",
@@ -257,11 +256,7 @@ def audit_adjoint_scope(  # noqa: C901 (four checks in order)
     if final_state is not None:
         stale = []
         for name in ("g", "dzi", "Hpi", "top_flux", "vs"):
-            a = getattr(atm, name, None)
-            b = getattr(final_state, name, None)
-            if a is None or b is None:
-                continue
-            a_np, b_np = np.asarray(a), np.asarray(b)
+            a_np, b_np = np.asarray(getattr(atm, name)), np.asarray(getattr(final_state, name))
             if a_np.shape != b_np.shape or not np.allclose(a_np, b_np, rtol=_STALE_GEOMETRY_RTOL, atol=0.0):
                 stale.append(name)
         if stale:
@@ -281,6 +276,18 @@ def audit_adjoint_scope(  # noqa: C901 (four checks in order)
     G = jax.jit(body_map)(y_star)
     y_np = np.asarray(y_star)
     G_np = np.asarray(G)
+    non_finite = ~(np.isfinite(y_np) & np.isfinite(G_np))
+    if non_finite.any():
+        z, i = np.argwhere(non_finite)[0]
+        findings.append(
+            {
+                "code": "probe_non_finite",
+                "severity": "error",
+                "message": f"{int(non_finite.sum())} cell(s) of y_star or of its one-step probe are NaN/Inf, first at "
+                f"layer {int(z)}, species index {int(i)} (y {y_np[z, i]:g}, probe {G_np[z, i]:g}): every defect "
+                "comparison below reads False against a NaN, so nothing below certifies this state.",
+            }
+        )
     defect = np.abs(G_np - y_np)
     fp_err_global = float(defect.max() / max(float(np.abs(y_np).max()), _UNDERFLOW_DENOM))
     ymix = y_np / np.maximum(y_np.sum(axis=1, keepdims=True), _UNDERFLOW_DENOM)

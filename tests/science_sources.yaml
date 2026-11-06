@@ -28,9 +28,10 @@ oracles:
     commit: 80f75b9bf243a5a8db55eb04a5806269f56125e7
     why: >-
       Parent of 39f1906, which removed `NH3 + CH -> NH2 + CH2` from
-      NCHO_photo_network.txt. The vendored network is byte-identical to this
-      revision's file, so reaction positions line up; any later revision shifts
-      every index past that reaction.
+      NCHO_photo_network.txt. The vendored network differs from this revision's
+      file only by the declared corrections, and the oracle copy gets those
+      through `tests/oracle.py::ORACLE_DATA_DELTAS`, so reaction positions line
+      up; any later revision shifts every index past that reaction.
     used_by:
       - tests/test_gibbs.py
       - tests/test_chem.py
@@ -237,7 +238,7 @@ intentional_divergences:
       came out below ground-state N in G. VULCAN-JAX builds it from N:
       Cp = 2.5 R, H = H(N) + 230.017 kJ/mol (NIST 2D5/2, 2D3/2 levels,
       J-weighted), S = S(N) + R ln(10/4).
-    recorded_in: tests/oracle.py::ORACLE_DATA_DELTAS
+    recorded_in: tests/oracle.py::ORACLE_DATA_DELTAS; tests/oracle.py::ORACLE_CODE_DELTAS (FastChem's table)
 
   hno3_thermo:
     files: [thermo/NASA9/HNO3.txt]

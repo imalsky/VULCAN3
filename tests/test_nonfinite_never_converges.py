@@ -16,7 +16,7 @@ import pytest
 
 def _longdy(y, ymix, y_old, n_0, *, atol=1e-2, mtol_conv=1e-20):
     """Return the shipped reduction, imported so deleting the guard fails this file."""
-    from vulcan3.outer_loop import _longdy_reduce
+    from vulcan3._convergence import _longdy_reduce
 
     return _longdy_reduce(y, ymix, y_old, n_0, atol=atol, mtol_conv=mtol_conv)[0]
 
@@ -66,7 +66,7 @@ def test_sub_atol_cell_gives_a_finite_batch_independent_tangent():
     select rewrite hides.
     """
     # The shipped step-acceptance reduction (same import rule as `_longdy`).
-    from vulcan3.outer_loop import _make_aggregate_delta_fn
+    from vulcan3._step_control import _make_aggregate_delta_fn
 
     y, ymix, y_old, n_0 = _mk()
     y = y.at[0, 1].set(1e-160)
@@ -100,7 +100,7 @@ def test_end_case_is_not_success_for_a_frozen_or_yielded_lane():
     So neither cap fires and a fall-through would report end_case=1 "Integration successful". A converged state that
     is not finite is not a success either.
     """
-    from vulcan3.outer_loop import OuterLoop
+    from vulcan3._pack_state import classify_end_case
 
     class _S:
         y = jnp.ones((2, 2))
@@ -108,15 +108,15 @@ def test_end_case_is_not_success_for_a_frozen_or_yielded_lane():
         def __init__(self, reason):
             self.termination_reason = reason
 
-    clf = OuterLoop._classify_end_case
-    assert clf(None, _S(1)) == 1
+    clf = classify_end_case
+    assert clf(_S(1)) == 1
     for reason in (0, 5):
-        assert clf(None, _S(reason)) == 5, f"reason {reason} reported as success"
+        assert clf(_S(reason)) == 5, f"reason {reason} reported as success"
     bad = _S(1)
     bad.y = jnp.asarray([[1.0, jnp.nan], [1.0, 1.0]])
-    assert clf(None, bad) == 5
-    assert clf(None, _S(3)) == 3
-    assert clf(None, _S(2)) == 2
+    assert clf(bad) == 5
+    assert clf(_S(3)) == 3
+    assert clf(_S(2)) == 2
 
 
 _COUNT_MAX = 8  # small: the control run must exhaust it in seconds
@@ -125,9 +125,9 @@ _COUNT_MAX = 8  # small: the control run must exhaust it in seconds
 @pytest.mark.strict_isolation
 @pytest.mark.parametrize(("poison", "want_reason"), [(False, 3), (True, 5)])
 def test_single_profile_run_stops_on_a_nonfinite_state(poison, want_reason):
-    """End to end: the single-profile `cond_fn` must bail on a non-finite state with the batched path's reason 5.
+    """End to end: the single-profile `cond_fn` must bail on a non-finite state with `body_fn_batch`'s reason 5.
 
-    (`body_fn_batch`) instead of burning the whole step budget. The finite case is the control: unchanged predicate,
+    It must not burn the whole step budget. The finite case is the control: unchanged predicate,
     so it still runs out its budget (reason 3).
     """
     from _helpers import fast_cfg

@@ -8,11 +8,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from ._carry import _ATM_ARRAY_FIELDS, _ATM_STATIC_BATCH_AXES, _PHOTO_FIELDS, _QUEUE_STOP_FIELDS
+from ._carry import _ATM_ARRAY_FIELDS, _PHOTO_FIELDS, _QUEUE_STOP_FIELDS, ATM_STATIC_BATCH_AXES
 from .jax_step import AtmStatic
 
 if TYPE_CHECKING:
-    from ._loop_env import RunnerEnv
+    from ._carry import RunnerEnv
 
 # run_queue's refill cadence: refill once this many lanes are free (or every
 # lane still holding a job is), and at least every _QUEUE_REFILL_EVERY loop
@@ -32,12 +32,12 @@ def _queue_compact_rungs(spec: Any, n_lanes: int) -> tuple:
         return ()
     if isinstance(spec, (int, np.integer, str, bytes)):
         raise ValueError(  # noqa: TRY004 (a bad config value)
-            f"queue_compact must be a list of lane counts, refilled {spec!r}"
+            f"queue_compact must be a list of lane counts, got {spec!r}"
         )
     rungs = []
     for r in spec:
         if isinstance(r, (bool, np.bool_)) or not isinstance(r, (int, np.integer)) or r < 1:
-            raise ValueError(f"queue_compact: every rung must be an int >= 1, refilled {r!r} in {spec!r}")
+            raise ValueError(f"queue_compact: every rung must be an int >= 1, got {r!r} in {spec!r}")
         rungs.append(int(r))
     return tuple(sorted({r for r in rungs if r < int(n_lanes)}, reverse=True))
 
@@ -77,9 +77,7 @@ def runner_queue(  # noqa: C901 (one loop program)
     if n_jobs < 1:
         raise ValueError("run_queue: the job queue is empty (n_jobs = 0).")
     if n_lanes < 1:
-        raise ValueError(
-            f"run_queue: n_lanes must be >= 1; refilled {n_lanes}. With no lane the queue is never drained."
-        )
+        raise ValueError(f"run_queue: n_lanes must be >= 1; got {n_lanes}. With no lane the queue is never drained.")
     chunk = int(max(1, min(int(chunk), n_lanes)))
 
     def job_at(j: Any) -> Any:
@@ -102,7 +100,7 @@ def runner_queue(  # noqa: C901 (one loop program)
         """
         st, atm = jax.vmap(
             lambda jj: init_fn(job_at(jj)),
-            out_axes=(0, _ATM_STATIC_BATCH_AXES),
+            out_axes=(0, ATM_STATIC_BATCH_AXES),
         )(j)
         if env.photo_branch is not None and not isinstance(first_tick, int):
             off = jnp.mod(first_tick, st.update_photo_frq) != jnp.int32(0)
@@ -209,7 +207,7 @@ def runner_queue(  # noqa: C901 (one loop program)
     def n_live(lanes: Any, lane_job: Any) -> Any:
         return jnp.sum(jnp.logical_not(lanes.is_done) & (lane_job >= 0), dtype=jnp.int32)
 
-    def until(width: int) -> Any:
+    def until(width: int | None) -> Any:
         """`cond`, also ending once no job is pending and the live lanes fit `width`.
 
         `width` None is the last rung, run to the end.

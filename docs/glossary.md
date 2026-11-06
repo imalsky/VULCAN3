@@ -25,7 +25,7 @@ Master's `plot_py/` reads these names from a `.vul` file, and `pyproject.toml` l
 | `C_H`, `N_H`, `O_H`, `He_H` | element ratio to hydrogen | |
 | `eps_L`, `ka_CIA`, `T_irr`, `T_int` | T-P parameters, as in `analytical_TP_H14` | |
 | `Navo`, `kb`, `G_grav` | Avogadro's number, Boltzmann's constant, the gravitational constant | CGS |
-| `PAD` | index 0 of a 1-based rate table | |
+| `PAD` | the species index `ni`, padding a short term list in the RHS and Jacobian tables | |
 
 Master-facing classes and methods keep their names: `Atm`, `Output`, `ReadRate`, `InitialAbun`, `Ros2JAX`, `naming_solver`,
 `load_TPK`, `f_mu_dz`, and the containers `var`, `atm`, `para`.

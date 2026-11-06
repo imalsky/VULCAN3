@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -11,26 +11,29 @@ import numpy as np
 from . import chem_funs, photo as _photo_mod, phy_const as _phy_const
 from .config import default_config
 
+if TYPE_CHECKING:
+    from .state import PhotoStaticInputs
+
 __all__ = ["Ros2JAX"]
 
 logger = logging.getLogger(__name__)
 
 _CFG = default_config()
-_NETWORK = chem_funs._NETWORK  # the one parse per process
+NETWORK = chem_funs.NETWORK
 
 
 class Ros2JAX:
-    """Photo wrapper holding lazy PhotoData/PhotoJData caches."""
+    """The photochemistry master keeps on its solver object, under master's class name; the step is `jax_step`."""
 
-    def __init__(self, photo_static: Any = None) -> None:
+    def __init__(self, photo_static: PhotoStaticInputs | None = None) -> None:
         self._photo_static = photo_static
-        self._photo_data = None
-        self._photo_J_data = None
-        self._photo_ion_data = None
+        self._photo_data: _photo_mod.PhotoData | None = None
+        self._photo_J_data: _photo_mod.PhotoJData | None = None
+        self._photo_ion_data: _photo_mod.PhotoJData | None = None
 
     @property
-    def photo_static(self) -> Any:
-        """The pre-built photolysis tables, or None; the old name `_photo_static` is deprecated (docs/api.md)."""
+    def photo_static(self) -> PhotoStaticInputs | None:
+        """The pre-built photolysis tables, or None."""
         return self._photo_static
 
     @photo_static.setter
@@ -51,7 +54,7 @@ class Ros2JAX:
         """Compute optical depth and write to `var.tau`."""
         if self._photo_data is None:
             static = self._ensure_photo_static(var, atm)
-            self._photo_data = _photo_mod.photo_data_from_static(static, list(_NETWORK.species))
+            self._photo_data = _photo_mod.photo_data_from_static(static, list(NETWORK.species))
         tau_j = _photo_mod.compute_tau_jax(
             jnp.asarray(var.y),
             jnp.asarray(atm.dz),

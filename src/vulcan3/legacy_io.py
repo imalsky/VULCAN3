@@ -105,7 +105,7 @@ class ReadRate:
         republished here.
         """
         del atm  # upstream signature; the metadata is temperature-free
-        net = chem_funs._NETWORK
+        net = chem_funs.NETWORK
         var.Rf = dict(net.Rf)
         var.pho_rate_index = dict(net.pho_rate_index)
         var.ion_rate_index = dict(net.ion_rate_index)
@@ -175,11 +175,11 @@ def _synthesize_save_dicts(runstate: Any, cfg: Any) -> Any:
     if use_ion:
         keys += ["charge_list", "ion_sp", "ion_branch", "ion_br_ratio"]
     var_save = {"species": species, "nr": nr}
-    var_save.update({k: getattr(var, k) for k in keys if hasattr(var, k)})
+    var_save.update({k: getattr(var, k) for k in keys})
     var_save["k"] = {i: var.k_arr[i].copy() for i in range(1, var.k_arr.shape[0])}
 
     static = runstate.photo_static
-    if use_photo and static is not None:
+    if use_photo:
         photo_dicts = _synthesize_cross_dicts(static)
         var_save["cross"] = photo_dicts["cross"]
         var_save["cross_scat"] = photo_dicts["cross_scat"]
@@ -190,19 +190,18 @@ def _synthesize_save_dicts(runstate: Any, cfg: Any) -> Any:
             var_save["cross_Jion"] = photo_dicts["cross_Jion"]
         # Master writes J for every branch, removed ones included (op.py:2764,
         # 2785); an empty rate index makes `_fill_J` leave k_arr alone.
-        if hasattr(var, "aflux"):
-            var_save["J_sp"] = Ros2JAX._fill_J(
-                var, _photo_mod.photo_J_data_from_static(static), var.photo_sp, var.n_branch, {}
+        var_save["J_sp"] = Ros2JAX._fill_J(
+            var, _photo_mod.photo_J_data_from_static(static), var.photo_sp, var.n_branch, {}
+        )
+        if use_ion:
+            var_save["Jion_sp"] = Ros2JAX._fill_J(
+                var, _photo_mod.photo_ion_data_from_static(static), var.ion_sp, var.ion_branch, {}
             )
-            if use_ion:
-                var_save["Jion_sp"] = Ros2JAX._fill_J(
-                    var, _photo_mod.photo_ion_data_from_static(static), var.ion_sp, var.ion_branch, {}
-                )
     if use_ion:
         var_save["ion_wavelen"] = {}
 
     # Evolution buffer under the legacy y_time / t_time keys.
-    if bool(cfg.save_evolution) and runstate.step is not None:
+    if bool(cfg.save_evolution):
         var_save["y_time"] = np.asarray(runstate.step.y_evo, dtype=np.float64)
         var_save["t_time"] = np.asarray(runstate.step.t_evo, dtype=np.float64)
 
@@ -232,11 +231,7 @@ class Output:
             warnings.warn("The output file: " + str(out_name) + " already exists.", stacklevel=2)
 
     def print_prog(self, var: Any, para: Any) -> None:
-        """Log one progress block (the config asked for it.
-
-        `use_print_prog`): elapsed model time, step count vs `count_max`, longdy / longdy_dt / dt, and the
-        most-varying (level, species).
-        """
+        """Log one progress block: model time, step count vs `count_max`, longdy, longdy_dt, dt, most-varying cell."""
         indx_max = np.nanargmax(para.where_varies_most)
         logger.info("Elapsed time: %.2e || Step number: %s/%s", var.t, para.count, self._cfg.count_max)
         logger.info("longdy = %.2e      || longdy/dt = %.2e  || dt = %.2e", var.longdy, var.longdydt, var.dt)
@@ -246,10 +241,10 @@ class Output:
     def print_end_msg(self, var: Any, para: Any) -> None:
         """Log the steady-state success summary.
 
-        CPU wall time, step count, final model time, long dy / dy_dt, per-atom loss (skipping `cfg.loss_ex`),
+        Wall time, step count, final model time, long dy / dy_dt, per-atom loss (skipping `cfg.loss_ex`),
         and the negative/loss/delta rejection counters.
         """
-        logger.info("%s s CPU time", "After ------- %s seconds -------" % (time.time() - para.start_time))
+        logger.info("After %s s of wall time", time.time() - para.start_time)
         logger.info(
             "%s has successfully run to steady-state with %s steps and %s s",
             self._cfg.out_name[:-4],
@@ -276,7 +271,7 @@ class Output:
         if why is None:
             raise RuntimeError(f"Unconverged case undefined (case={case})")
 
-        logger.info("%s s CPU time", "After ------- %s seconds -------" % (time.time() - para.start_time))
+        logger.info("After %s s of wall time", time.time() - para.start_time)
         logger.warning("%s did not reach steady-state:", self._cfg.out_name[:-4])
         logger.info("long dy = %s and long dy/dt = %s", var.longdy, var.longdydt)
         logger.warning("Integration stopped before converged...\n%s", why)

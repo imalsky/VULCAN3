@@ -20,11 +20,6 @@ _H2S_ICE_LIQUID_K = 187.6
 # bar per cmHg. Upstream's 0.001333 (build_atm.py:857) is mmHg.
 _CMHG_TO_BAR = 0.01333
 
-# Valid temperature range of the NASA-9 Gibbs fits (build_atm.py:618).
-_GIBBS_T_MIN_K = 200.0
-
-_GIBBS_T_MAX_K = 6000.0
-
 _SUPPORTED_CONDENSABLES: tuple[str, ...] = (
     "H2O",
     "NH3",

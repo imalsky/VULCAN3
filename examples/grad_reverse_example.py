@@ -61,9 +61,9 @@ def main() -> int:
         **fields,
         **{k[9:]: bool(d[k]) for k in d.files if k.startswith("atmbool__")},
     )
-    net = chem_funs._NET_JAX
-    rf = chem_funs._NETWORK.Rf
-    ch4 = chem_funs._NETWORK.species_idx["CH4"]
+    net = chem_funs.NET_JAX
+    rf = chem_funs.NETWORK.Rf
+    ch4 = chem_funs.NETWORK.species_idx["CH4"]
     L0 = nz // 2
     print(f"Loaded converged HD189: nz={nz} ni={ni} nr={net.nr}  ({time.time() - t0:.1f}s)")
 

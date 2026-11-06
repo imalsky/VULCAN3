@@ -19,6 +19,10 @@ if TYPE_CHECKING:
 
 __all__ = ["CORR", "load_nasa9"]
 
+# Valid temperature range of the NASA-9 Gibbs fits (build_atm.py:618).
+_GIBBS_T_MIN_K = 200.0
+_GIBBS_T_MAX_K = 6000.0
+
 # `CORR * T` is the (kB T / P0) factor K_eq carries per unit change in mole
 # number, P0 = 1 bar the standard-state pressure.
 CORR = kb / BAR_CGS

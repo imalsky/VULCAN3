@@ -21,7 +21,7 @@ def test_refreshed_gravity_matches_refreshed_zco(hd189_state):
     ymix = hd189_state.var.ymix
     ymix = ymix * (1.0 + 1e-3 * np.random.default_rng(0).standard_normal(ymix.shape))
     ymix = ymix / ymix.sum(axis=1, keepdims=True)
-    st = outer_loop.OuterLoop(hd189_state.solver, op.Output())._build_refresh_static(hd189_state.atm)
+    st = outer_loop.OuterLoop(hd189_state.solver, op.Output()).build_refresh_static(hd189_state.atm)
     _, g, _, _, zco, _, _ = atm_refresh.update_mu_dz_jax(jnp.asarray(ymix), st)
     g, zco = np.asarray(g), np.asarray(zco)
     p, nz, gs, Rp = int(st.pref_indx), g.shape[0], float(st.gs), float(st.Rp)

@@ -1,18 +1,23 @@
-"""Step control: the step size, the per-step clip and the aggregate truncation error."""
+"""Step control: the per-step clip, the aggregate truncation error, the adaptive rtol and the next step size."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 
 from .phy_const import UNDERFLOW_DENOM
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from ._carry import JaxIntegState, _Statics
+
 
 def _step_size(
     dt: jnp.ndarray,
     delta: jnp.ndarray,
-    rtol: float,
+    rtol: float | jnp.ndarray,
     dt_var_min: float,
     dt_var_max: float,
     dt_min: float,
@@ -34,7 +39,7 @@ def _step_size(
     return jnp.clip(dt * h_factor, dt_min, dt_max)
 
 
-def _clip_prologue(y_in: Any, pos_cut: float, nega_cut: float) -> Any:
+def _clip_prologue(y_in: jnp.ndarray, pos_cut: float, nega_cut: float) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Return `(y_clip, small_y_inc, nega_y_inc)`: the per-step clip of both `_make_clip_fn` branches.
 
     Values in [nega_cut, pos_cut) go to 0. A value below nega_cut stays
@@ -53,7 +58,7 @@ def _make_clip_fn(
     gas_indx_mask: jnp.ndarray,
     pos_cut: float,
     nega_cut: float,
-) -> Any:
+) -> Callable[[jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]]:
     """Build a `clip(y_in) -> (y_clip, ymix_new, small_inc, nega_inc)` closure.
 
     `non_gas_present` selects between the gas-only / total `ysum` denominators
@@ -63,7 +68,7 @@ def _make_clip_fn(
     if non_gas_present:
         gas_mask_2d = gas_indx_mask  # (ni,) bool
 
-        def clip_fn(y_in: Any) -> Any:
+        def clip_fn(y_in: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
             y_clip, small_y_inc, nega_y_inc = _clip_prologue(y_in, pos_cut, nega_cut)
             ysum = jnp.sum(jnp.where(gas_mask_2d[None, :], y_clip, 0.0), axis=1, keepdims=True)
             # ysum==0 on an all-clipped gas layer (master divides unguarded):
@@ -74,7 +79,7 @@ def _make_clip_fn(
             return y_clip, ymix_new, small_y_inc, nega_y_inc
     else:
 
-        def clip_fn(y_in: Any) -> Any:
+        def clip_fn(y_in: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
             y_clip, small_y_inc, nega_y_inc = _clip_prologue(y_in, pos_cut, nega_cut)
             # No condensate column exists here, so the numerator cannot
             # overflow a tiny denominator: flooring an all-zero layer's ysum
@@ -87,7 +92,9 @@ def _make_clip_fn(
     return clip_fn
 
 
-def _make_aggregate_delta_fn(mtol: float, atol: float, zero_bot_row: bool, condense_zero_mask: jnp.ndarray) -> Any:
+def _make_aggregate_delta_fn(
+    mtol: float, atol: float, zero_bot_row: bool, condense_zero_mask: jnp.ndarray
+) -> Callable[..., jnp.ndarray]:
     """Build the scalar `delta(sol, delta_arr, ymix_old, zero_bot, ymix_trial)` reducer.
 
     Zeros entries where both the pre-step and the trial (pre-clip) mixing ratio
@@ -100,8 +107,12 @@ def _make_aggregate_delta_fn(mtol: float, atol: float, zero_bot_row: bool, conde
     cond_zero = jnp.asarray(condense_zero_mask, dtype=jnp.bool_)
 
     def agg(
-        sol: jnp.ndarray, delta_arr: jnp.ndarray, ymix_old: Any, zero_bot: Any = None, ymix_trial: Any = None
-    ) -> Any:
+        sol: jnp.ndarray,
+        delta_arr: jnp.ndarray,
+        ymix_old: jnp.ndarray,
+        zero_bot: jnp.ndarray | None = None,
+        ymix_trial: jnp.ndarray | None = None,
+    ) -> jnp.ndarray:
         dead = ymix_old < mtol
         if ymix_trial is not None:
             dead = dead & (ymix_trial < mtol)
@@ -124,3 +135,74 @@ def _make_aggregate_delta_fn(mtol: float, atol: float, zero_bot_row: bool, conde
         return jnp.max(ratio)
 
     return agg
+
+
+def _adapt_rtol(
+    statics: _Statics, s: JaxIntegState, atom_loss_new: jnp.ndarray, do_accept: jnp.ndarray, trigger_fix: jnp.ndarray
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Return `(rtol_next, loss_criteria_after_dec)`, from the atom loss on accepted steps."""
+    # Adaptive rtol (accepted steps only): periodic decrease while
+    # |atom_loss| >= loss_criteria; periodic increase below a lower
+    # atom-loss threshold.
+    max_atom_loss = jnp.max(jnp.abs(atom_loss_new))
+    do_dec = (
+        jnp.bool_(statics.use_adapt_rtol)
+        & do_accept
+        & (jnp.mod(s.accept_count, jnp.int32(statics.adapt_rtol_dec_period)) == jnp.int32(0))
+        & (max_atom_loss >= s.loss_criteria)
+    )
+    rtol_dec = jnp.maximum(s.rtol * jnp.float64(statics.adapt_rtol_dec), jnp.float64(statics.rtol_min))
+    loss_crit_dec = s.loss_criteria * jnp.float64(statics.adapt_rtol_loss_mul)
+    rtol_after_dec = jnp.where(do_dec, rtol_dec, s.rtol)
+    loss_criteria_after_dec = jnp.where(do_dec, loss_crit_dec, s.loss_criteria)
+
+    do_inc = (
+        jnp.bool_(statics.use_adapt_rtol)
+        & do_accept
+        & (jnp.mod(s.accept_count, jnp.int32(statics.adapt_rtol_inc_period)) == jnp.int32(0))
+        & (s.accept_count > jnp.int32(0))
+        & (max_atom_loss < jnp.float64(statics.adapt_rtol_inc_loss_thresh))
+    )
+    rtol_inc = jnp.minimum(rtol_after_dec * jnp.float64(statics.adapt_rtol_inc), jnp.float64(statics.rtol_max))
+    rtol_adapt = jnp.where(do_inc, rtol_inc, rtol_after_dec)
+    rtol_next = jnp.where(trigger_fix, jnp.float64(statics.post_conden_rtol), rtol_adapt)
+    return rtol_next, loss_criteria_after_dec
+
+
+def _next_dt(
+    statics: _Statics,
+    s: JaxIntegState,
+    delta: jnp.ndarray,
+    rtol_next: jnp.ndarray,
+    accept: jnp.ndarray,
+    force_accept: jnp.ndarray,
+    next_dt_if_reject: jnp.ndarray,
+) -> jnp.ndarray:
+    """Return the next step size; it runs after the adaptive rtol, so the new tolerance applies."""
+    dt_after_normal = _step_size(
+        s.dt,
+        delta,
+        rtol_next,
+        statics.dt_var_min,
+        statics.dt_var_max,
+        statics.dt_min,
+        statics.dt_max,
+        statics.step_size_safety,
+        statics.step_size_zero_delta_frac,
+    )
+    dt_after_force = _step_size(
+        jnp.float64(statics.dt_min),
+        delta,
+        rtol_next,
+        statics.dt_var_min,
+        statics.dt_var_max,
+        statics.dt_min,
+        statics.dt_max,
+        statics.step_size_safety,
+        statics.step_size_zero_delta_frac,
+    )
+    return jnp.where(
+        force_accept,
+        dt_after_force,
+        jnp.where(accept, dt_after_normal, next_dt_if_reject),
+    )

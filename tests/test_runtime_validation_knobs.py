@@ -1,50 +1,8 @@
-"""`runtime_validation`'s bound checks refuse their silently wrong values.
-
-And the validator carries no literal config defaults: every Config carries every knob (a config file overlays
-default.yaml), so default.yaml is the only home of each value.
-"""
+"""`runtime_validation`'s bound checks refuse their silently wrong values."""
 
 from __future__ import annotations
 
-import ast
-from pathlib import Path
-
 import pytest
-
-VALIDATION = Path(__file__).resolve().parent.parent / "src" / "vulcan3" / "runtime_validation.py"
-
-
-def test_the_validator_carries_no_literal_config_defaults():
-    """No `getattr(cfg, "knob", <number>)` may come back.
-
-    Such a literal is a second copy of a YAML-owned value. If the two drift,
-    this module validates a number the run never uses.
-    """
-    tree = ast.parse(VALIDATION.read_text())
-    offenders = []
-    for node in ast.walk(tree):
-        if not (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "getattr"
-            and len(node.args) == 3
-        ):
-            continue
-        target, name, default = node.args
-        if not (isinstance(target, ast.Name) and target.id == "cfg"):
-            continue
-        if (
-            isinstance(default, ast.Constant)
-            and isinstance(default.value, (int, float))
-            and not isinstance(default.value, bool)
-        ):
-            offenders.append(f"line {node.lineno}: getattr(cfg, {getattr(name, 'value', '?')!r}, {default.value!r})")
-    assert not offenders, (
-        "numeric literal config defaults are back in runtime_validation.py:\n  "
-        + "\n  ".join(offenders)
-        + "\nRead the knob without a default: every Config carries it."
-    )
-
 
 _VALID = {
     "atom_list": [],

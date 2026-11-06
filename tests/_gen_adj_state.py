@@ -79,6 +79,7 @@ def build_hd189(out_dir: Path) -> Path:
     cfg.runtime = 1e14
     import vulcan3.legacy_io as op
     from vulcan3 import chem as chem_mod, composition, network as net_mod, op_jax, outer_loop
+    from vulcan3._pack_state import classify_end_case
     from vulcan3.jax_step import jax_ros2_step, make_atm_static
     from vulcan3.state import RunState, legacy_view
 
@@ -94,9 +95,9 @@ def build_hd189(out_dir: Path) -> Path:
     solver.naming_solver(para)
     integ.prepare_runstate(rs)  # builds the runner without running it
     atm_static = make_atm_static(atm_d, ni, nz, cfg=integ._cfg)
-    state0 = integ._pack_state_from_runstate(rs)
+    state0 = integ.pack_state(rs)
     final = integ._runner(state0, atm_static)
-    if integ._classify_end_case(final) != 1:
+    if classify_end_case(final) != 1:
         raise RuntimeError(f"HD189 fixture not certified at step {int(final.accept_count)}")
     y0 = final.y
     atm_step = atm_static._replace(g=final.g, dzi=final.dzi, Hpi=final.Hpi, top_flux=final.top_flux, vs=final.vs)
@@ -143,9 +144,8 @@ def build_w39b(out_dir: Path) -> Path:
     """Converge WASP-39 b with photochemistry ON and dump the frozen-photo state.
 
     Photo is held FROZEN at its converged `k_arr` (the rate table including the
-    photolysis rows the runner populated), so the solver-map step-vjp gives the
-    frozen-photo adjoint: the leading-order thermochemistry sensitivity of SO2.
-    The dJ/dy feedback (second order) is omitted.
+    photolysis rows the runner populated): the fixture replays the frozen-photo
+    step, and carries no dJ/dy feedback.
     """
     t0 = time.time()
     # Import-locked: must precede the first `import vulcan3` in this process.
@@ -155,7 +155,6 @@ def build_w39b(out_dir: Path) -> Path:
     os.chdir(ROOT)
 
     import jax
-    import jax.numpy as jnp
 
     jax.config.update("jax_enable_x64", True)
 
@@ -167,6 +166,7 @@ def build_w39b(out_dir: Path) -> Path:
 
     import vulcan3.legacy_io as op
     from vulcan3 import composition, network as net_mod, op_jax, outer_loop
+    from vulcan3._pack_state import classify_end_case
     from vulcan3._paths import resolve_data_path
     from vulcan3.jax_step import make_atm_static
     from vulcan3.state import RunState, legacy_view
@@ -193,13 +193,16 @@ def build_w39b(out_dir: Path) -> Path:
     solver.naming_solver(para)
     integ.prepare_runstate(rs)  # builds the runner without running it
     atm_static = make_atm_static(atm, ni, nz, cfg=cfg)
-    state0 = integ._pack_state_from_runstate(rs)
+    state0 = integ.pack_state(rs)
     final = integ._runner(state0, atm_static)
+    if classify_end_case(final) != 1:
+        raise RuntimeError(
+            f"W39b fixture not certified: end case {classify_end_case(final)} at step {int(final.accept_count)}"
+        )
     y_star = final.y
     k_frozen = final.k_arr
     atm_step = atm_static._replace(g=final.g, dzi=final.dzi, Hpi=final.Hpi, top_flux=final.top_flux, vs=final.vs)
-    so2_mid = float(y_star[nz // 2, so2] / jnp.sum(y_star[nz // 2]))
-    print(f"[w39b] converged {time.time() - t0:.1f}s SO2(mid)={so2_mid:.2e}", flush=True)
+    print(f"[w39b] certified {time.time() - t0:.1f}s", flush=True)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "adj_state_w39b.npz"
@@ -220,9 +223,9 @@ def build_w39b(out_dir: Path) -> Path:
 
 
 def build_hd209(out_dir: Path) -> Path:
-    """Run the shipped HD209 config (photo ON) to its certificate, as the CLI does, and dump the final y.
+    """Run the shipped HD209 config (photo ON) to its certificate, as the CLI does, and dump the final y, M and k.
 
-    M and rate table (photolysis rows included).
+    The rate table includes the photolysis rows.
     """
     t0 = time.time()
     os.environ.setdefault("OMP_NUM_THREADS", "1")

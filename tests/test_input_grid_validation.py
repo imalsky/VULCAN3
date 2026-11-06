@@ -1,6 +1,6 @@
-"""Input-grid contracts: every vendored stellar spectrum loads (upstream accepts duplicate wavelengths.
+"""Input-grid contracts: every vendored stellar spectrum loads, and malformed inputs fail loud.
 
-Sflux-epseri.txt keeps 20), and malformed inputs fail loud instead of interpolating garbage.
+Upstream accepts duplicate wavelengths (sflux-epseri.txt keeps 20).
 """
 
 from types import SimpleNamespace
@@ -17,14 +17,18 @@ _SFLUX_FILES = sorted(p.name for p in (PACKAGE_ROOT / "atm/stellar_flux").glob("
 
 @pytest.mark.parametrize("name", _SFLUX_FILES)
 def test_every_vendored_stellar_spectrum_loads(name):
-    sf = np.genfromtxt(
-        PACKAGE_ROOT / "atm/stellar_flux" / name,
-        dtype=float,
-        skip_header=1,
-        names=["lambda", "flux"],
-    )
-    assert np.all(np.diff(sf["lambda"]) >= 0.0)
-    assert np.all(np.isfinite(sf["flux"]))
+    """The production loader takes each file on a bin grid across its range and gives a finite, positive flux."""
+    from vulcan3.config import default_config
+
+    cfg = default_config()
+    rel = f"atm/stellar_flux/{name}"
+    wavelength = np.genfromtxt(PACKAGE_ROOT / rel, skip_header=1, usecols=0)
+    assert np.all(np.diff(wavelength) >= 0.0)
+    bins = _make_bins(wavelength[0], wavelength[-1], cfg.dbin1, cfg.dbin2, cfg.dbin_12trans)
+    out = read_sflux_binned(SimpleNamespace(**{**vars(cfg), "sflux_file": rel}), bins)
+    assert np.all(np.isfinite(out["sflux_top"]))
+    assert np.all(out["sflux_top"] >= 0.0)
+    assert np.any(out["sflux_top"] > 0.0)
 
 
 def _sflux(*rows):

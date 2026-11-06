@@ -75,7 +75,7 @@ def _condensate_species() -> set[str]:
     They have no gas-phase entry in the minimizer: the seed solves the gas
     equilibrium and the cold-trap clip (`_apply_condense`) runs after it.
     """
-    net = chem_funs._NETWORK
+    net = chem_funs.NETWORK
     out: set[str] = set()
     for i in range(1, net.nr + 1):
         if not (net.is_conden[i] and net.is_forward[i]):
@@ -116,7 +116,7 @@ def _build_seed_setup() -> tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]:
 
     excluded = _condensate_species() | set(_charged_species())
     seed_idx = np.array([i for i, sp in enumerate(species) if sp not in excluded], dtype=np.int64)
-    coeffs, present = gibbs.load_nasa9(tuple(species), rates_jax._thermo_dir(_CFG.network))
+    coeffs, present = gibbs.load_nasa9(tuple(species), rates_jax.thermo_dir(_CFG.network))
     missing = [species[i] for i in seed_idx if not present[i]]
     if missing:
         raise RuntimeError(
@@ -202,7 +202,7 @@ def eq_seed(Tco: jnp.ndarray, p_bar: Any, b: Any) -> Any:
     return _eq_seed_column(Tco, p_bar, b)
 
 
-def _solve_profile(Tco: jnp.ndarray, p_bar: Any, b: Any) -> Any:
+def _solve_profile(Tco: np.ndarray | jnp.ndarray, p_bar: Any, b: Any) -> Any:
     """ExoGibbs `solve_profile` on one column: `(result, per-layer diagnostics)`."""
     from exogibbs.api.gas import solve_profile
 
@@ -421,7 +421,7 @@ def column_atoms(y: jnp.ndarray, dz: jnp.ndarray, compo_arr: Any = compo_array) 
     return jnp.einsum("z,zi,ia->a", w, jnp.asarray(y, dtype=jnp.float64), compo_arr)
 
 
-def eq_column(pco: jnp.ndarray, Tco: jnp.ndarray, M: jnp.ndarray) -> np.ndarray:
+def eq_column(pco: np.ndarray | jnp.ndarray, Tco: np.ndarray | jnp.ndarray, M: np.ndarray | jnp.ndarray) -> np.ndarray:
     """Equilibrium column ``(nz, ni)`` in absolute number densities.
 
     ``pco`` is in dyne/cm^2, ``Tco`` in K and ``M`` the total gas density.
@@ -497,9 +497,7 @@ def _load_table_y(data_atm: Any) -> tuple[np.ndarray, list[str]]:
     """Load `y` from a per-layer mixing-ratio text table."""
     table = np.genfromtxt(resolve_data_path(_CFG.vul_ini), names=True, dtype=None, skip_header=1)
     if not len(data_atm.pco) == len(table["Pressure"]):
-        raise OSError(
-            "Initial profile / cfg layer mismatch: the initial profile has different layers than the current setting"
-        )
+        raise OSError(f"{_CFG.vul_ini} has {len(table['Pressure'])} layers, the config's nz is {len(data_atm.pco)}.")
     nz_ = len(data_atm.pco)
     y = np.zeros((nz_, chem_funs.ni), dtype=np.float64)
     n_0 = np.asarray(data_atm.n_0)
@@ -597,7 +595,7 @@ def _apply_condense(y: np.ndarray, data_atm: Any) -> np.ndarray:
             if _CFG.use_sat_surfaceH2O is True:
                 conden_bot = 0
             else:
-                conden_bot = np.argmax(data_atm.n_0 * data_atm.sat_mix[sp] <= y[:, sp_idx])
+                conden_bot = int(np.argmax(data_atm.n_0 * data_atm.sat_mix[sp] <= y[:, sp_idx]))
             sat_rho = data_atm.n_0 * data_atm.sat_mix[sp]
             conden_status = y[:, sp_idx] >= sat_rho
             y[:, sp_idx] = np.minimum(
@@ -637,7 +635,7 @@ def compute_initial_abundance(data_atm: Any) -> IniAbunOutputs:
     """
     mix = _CFG.ini_mix
     if mix not in _MODE_DISPATCH:
-        raise OSError("\nInitial mixing ratios unknown. Check the setting in the config.")
+        raise OSError(f"ini_mix={mix!r} is not a mode; choose one of {sorted(_MODE_DISPATCH)}.")
     y, charge_list = _MODE_DISPATCH[mix](data_atm)
     y = _apply_condense(y, data_atm)
     ymix = _compute_ymix(y)
@@ -679,8 +677,8 @@ class InitialAbun:
     def ele_sum(self, data_var: Any) -> Any:
         """Write per-atom initial totals onto `data_var.atom_ini` and return `data_var`.
 
-        Zeroes `atom_loss` and `atom_conden`, reads `data_var.y`, looks up each cfg atom's column by name and skips
-        atoms in `cfg.loss_ex`.
+        Zeroes `atom_sum`, `atom_loss` and `atom_conden`; reads `data_var.y` and looks up each atom's column by name,
+        skipping those in `cfg.loss_ex`.
         """
         atoms_jax = compute_atom_ini(jnp.asarray(data_var.y))
         atoms_np = np.asarray(atoms_jax)
@@ -690,6 +688,7 @@ class InitialAbun:
                 continue
             col = _compo_atoms.index(atom)
             data_var.atom_ini[atom] = float(atoms_np[col])
+            data_var.atom_sum[atom] = 0.0  # written each step
             data_var.atom_loss[atom] = 0.0
             data_var.atom_conden[atom] = 0.0
         return data_var

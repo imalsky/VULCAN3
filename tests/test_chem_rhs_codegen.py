@@ -1,6 +1,6 @@
-"""Validate the SymPy-faithful chem_rhs codegen against `chem_rhs_numpy`.
+"""Validate the SymPy-faithful chem_rhs codegen against `chem_rhs_numpy` (master-faithful term order, NumPy float64).
 
-(master-faithful term order, NumPy float64): rtol=1e-5 on significant cells. The threshold absorbs XLA FMA fusion vs
+The bar is rtol=1e-5 on significant cells. The threshold absorbs XLA FMA fusion vs
 NumPy `*`-chains; actual worst-cell agreement is ~2e-13. The comparison with master's `chemdf` is test_chem.py. The
 grouped RHS (`VULCAN3_CHEM_RHS=grouped`) must equal the codegen bitwise (an expected failure on Apple Silicon, where the
 two agree to roundoff only).
@@ -120,7 +120,7 @@ def test_codegen_source_preserves_master_emission_rules(tmp_path):
 
 
 def test_codegen_cache_key_changes_with_the_generator(tmp_path, monkeypatch):
-    """A codegen fix must re-key, or the stale cache file is exec'd instead."""
+    """A codegen change re-keys the cached callable."""
     import vulcan3.make_chem_funs as mcf
 
     net = _toy_network_for_codegen(tmp_path)
@@ -159,10 +159,7 @@ def test_codegen_cache_key_changes_with_consumed_network_fields(tmp_path):
 def _hd209_repeated_final_layer_fixture() -> tuple[
     np.ndarray, np.ndarray, np.ndarray, object, tuple[str, ...], np.ndarray
 ]:
-    """Return one HD209 final-state layer repeated to the production column shape.
-
-    (`tests/data/state_hd209.npz`, the shipped HD209 run's final state).
-    """
+    """Return one layer of `tests/data/state_hd209.npz`, the shipped run's final state, repeated to the column shape."""
     import vulcan3.network as net_mod
     from vulcan3.config import default_config
 

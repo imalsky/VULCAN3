@@ -302,16 +302,13 @@ def _read_reaction(st: _ParseState, file_id_str: str, eq: str, tail: str) -> Non
 
     cols = tail.split()
     num_cols = _numeric_prefix(cols)
-    rec = {
+    rec: dict[str, Any] = {
         "parser_i": parser_i,
         "section": section,
         "Rf": eq,
         "reactants_collapsed": _collapse_side(reactants, st.species_idx),
         "products_collapsed": _collapse_side(products, st.species_idx),
-        # M is tracked per side: a row with M on one side only gets
-        # different M-factors forward and reverse. The only such row in
-        # the shipped networks is the inherited HNCO + M -> H + NCO
-        # typo, kept at parity.
+        # M is tracked per side: a row with M on one side only gets different M-factors forward and reverse.
         "has_M_reac": any(sp == "M" for _, sp in reactants),
         "has_M_prod": any(sp == "M" for _, sp in products),
         "num_cols": num_cols,

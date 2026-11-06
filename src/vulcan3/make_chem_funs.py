@@ -4,9 +4,8 @@ Emits per-network Python source mirroring VULCAN-master's `chemdf` body
 (paired `v_i = forward - reverse`, stoich-replicated multiply chains so
 XLA cannot rewrite `H*H` as `exp(2*log(H))`, terminal `*M` when three-
 body, asymmetric M handled per slot via `is_three_body[i]` independently
-of `is_three_body[i+1]`). Source is written to
-`__pycache__/chem_rhs_codegen_<hash>.py` for inspection; `build_chem_rhs`
-returns a JIT'd `vmap`'d `Callable` with signature
+of `is_three_body[i+1]`). The source is compiled in memory, with one callable per process; XLA's compiled-program
+cache is separate. `build_chem_rhs` returns a JIT'd `vmap`'d `Callable` with signature
 `(y[nz, ni], M[nz], k[nr+1, nz]) -> dydt[nz, ni]`.
 
 `$VULCAN3_CHEM_RHS=grouped` (import-frozen; default `codegen`) selects
@@ -155,8 +154,7 @@ def network_signature(net: Network) -> bytes:
 def chem_rhs_cache_key(net: Network) -> str:
     """SHA-256 of the network signature and the generator, truncated to 16 hex chars.
 
-    The emitter's own source is hashed so a codegen fix re-keys instead of
-    being masked by a stale cache file.
+    The emitter's own source is hashed so a codegen fix re-keys the process-local callable.
     """
     h = hashlib.sha256(network_signature(net))
     for fn in (emit_chem_rhs_source, _emit_rate_term):
@@ -209,9 +207,9 @@ def build_chem_rhs(net: Network) -> Callable:
 
 
 def _rate_factors(net: Network, slot_i: int, max_terms: int, PAD: int) -> tuple[list, bool]:
-    """Species factors of rate slot `slot_i` in `_emit_rate_term` order (stoich expanded.
+    """Species factors of rate slot `slot_i` in `_emit_rate_term` order, and its three-body flag.
 
-    `H + H` gives `[H, H]`) and its three-body flag.
+    Stoichiometry is expanded: `H + H` gives `[H, H]`.
     """
     out: list[int] = []
     for kslot in range(max_terms):

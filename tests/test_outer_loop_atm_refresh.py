@@ -63,12 +63,12 @@ def main() -> None:
     if vulcan_cfg.use_photo and rs.photo_static is not None:
         solver_B._photo_static = rs.photo_static
     integ = outer_loop.OuterLoop(solver_B, output)
-    integ._ensure_runner(data_var, data_atm)
+    integ.ensure_runner(data_var, data_atm)
 
     # Drive the refresh kernels directly on a packed initial state: this
     # exercises update_mu_dz_jax + update_phi_esc_jax wiring without
     # depending on the photo branch / chem step.
-    init_state = integ._pack_state_from_runstate(
+    init_state = integ.pack_state(
         runstate_from_store(data_var, data_atm, data_para)._replace(photo_static=rs.photo_static)
     )
     st = integ._refresh_static

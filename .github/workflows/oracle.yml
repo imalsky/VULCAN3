@@ -78,7 +78,9 @@ jobs:
         env:
           VULCAN3_RUN_SLOW: "1"
         run: |
-          mapfile -t slow < <(python -m pytest tests -m slow --collect-only -q | grep '::')
+          collected="$(python -m pytest tests -m slow --collect-only -q)" || { echo "$collected"; echo "slow-test collection failed"; exit 1; }
+          mapfile -t slow < <(grep '::' <<< "$collected")
+          if [ ${#slow[@]} -eq 0 ]; then echo "$collected"; echo "no slow tests collected"; exit 1; fi
           failed=()
           for t in "${slow[@]}"; do
             python -m pytest "$t" -q --tb=short -ra < /dev/null || failed+=("$t")

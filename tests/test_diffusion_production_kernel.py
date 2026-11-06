@@ -1,6 +1,6 @@
 """Validate the PRODUCTION JAX diffusion kernel against the NumPy reference (`diffusion_numpy_ref`).
 
-Which is itself master-validated elsewhere. JAX-only; no VULCAN-master oracle required.
+The reference is master-validated elsewhere, so this needs no VULCAN-master oracle.
 
 Pins, for the default 'gravity' mode and the upwind 'vm' mode:
   1. coefficient arrays (A/B/C eddy + mol) at ~machine precision,
@@ -20,10 +20,7 @@ OP_FLOOR = 1e-12  # absolute and peak-relative floor for significant operator ce
 
 @pytest.mark.parametrize("mode", ["gravity", "vm"])
 def test_production_kernel_matches_reference(mode):
-    """The 'vm' case pins the hot-path upwind.
-
-    (`use_vm_mol`) discretization with a nonzero mixed-sign interface drift vm (shape (nz-1, ni)).
-    """
+    """The 'vm' case pins the hot-path upwind (`use_vm_mol`) with a nonzero mixed-sign interface drift, (nz-1, ni)."""
     import diffusion_numpy_ref as diff_ref
     import jax.numpy as jnp
 

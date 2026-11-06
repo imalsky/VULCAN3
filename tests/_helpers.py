@@ -163,9 +163,9 @@ def load_adj_state(fixture: str, cfg_name: str):
 
 
 def run_self(test_file, *args, network: str, atom_list: str, cwd) -> None:
-    """Re-run `test_file` as a single-threaded script with `network` and `atom_list` selected.
+    """Re-run `test_file` as a single-threaded script with `network` and `atom_list` selected; assert a clean exit.
 
-    (both are import-frozen); assert a clean exit.
+    Both are import-frozen.
     """
     env = dict(os.environ, VULCAN3_NETWORK=network, VULCAN3_ATOM_LIST=atom_list, OMP_NUM_THREADS="1")
     result = subprocess.run(
@@ -232,7 +232,7 @@ def stack_atm_statics(atms):
     """
     import jax.numpy as jnp
 
-    from vulcan3.outer_loop import _ATM_ARRAY_FIELDS
+    from vulcan3._carry import _ATM_ARRAY_FIELDS
 
     first = atms[0]
     flags = [f for f in first._fields if f not in _ATM_ARRAY_FIELDS]

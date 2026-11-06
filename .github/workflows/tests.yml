@@ -64,5 +64,5 @@ jobs:
       - name: Run tests
         env:
           VULCAN3_ALLOW_MISSING_FIXTURES: "1"
-        # Three workers: four exceed the 16 GB runner.
-        run: python -m pytest tests -n 3 -q --tb=short -ra --durations=15
+        # Three workers: four exceed the 16 GB runner. --cov holds the run to pyproject's fail_under.
+        run: python -m pytest tests -n 3 -q --tb=short -ra --durations=15 --cov --cov-report=term

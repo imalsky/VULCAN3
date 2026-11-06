@@ -77,6 +77,7 @@ def run_oracle_subprocess(test_file, family: str, config_rel: str | None = None)
     upstream-comparison test re-execs itself from a cold Python start.
     """
     with oracle_worktree(family, config_rel) as master:
+        regenerate_chem_funs(master)
         env = os.environ.copy()
         env["VULCAN_MASTER_DIR"] = str(master)
         result = subprocess.run(
@@ -147,10 +148,7 @@ def upstream_preloop(cfg, var, atm, make_atm, rate, ini=None, output=None):
 
 
 def assert_below(scores: dict[str, tuple[float, float]]) -> None:
-    """Print every `name.
-
-    (error, bound)`, then fail on each error not below its bound (NaN included).
-    """
+    """Print every `name: (error, bound)`, then fail on each error not below its bound (NaN included)."""
     for name, (err, bound) in scores.items():
         print(f"{name}: {err:.3e} (bound {bound:.0e})")
     over = [name for name, (err, bound) in scores.items() if not err < bound]
@@ -158,9 +156,7 @@ def assert_below(scores: dict[str, tuple[float, float]]) -> None:
 
 
 def write_master_cfg(root: Path, cfg_text: str) -> None:
-    """Write `vulcan_cfg.py` into the oracle COPY at `root`.
-
-    And regenerate its chem_funs.py with upstream's make_chem_funs.py.
+    """Write `vulcan_cfg.py` into the oracle COPY at `root`, and regenerate its chem_funs.py with upstream's generator.
 
     The old module is deleted first, so a failed generator cannot pass by
     leaving the shipped one importable. make_chem_funs.py writes chem_funs.py
@@ -170,6 +166,15 @@ def write_master_cfg(root: Path, cfg_text: str) -> None:
     order).
     """
     (root / "vulcan_cfg.py").write_text(cfg_text)
+    regenerate_chem_funs(root)
+
+
+def regenerate_chem_funs(root: Path) -> None:
+    """Rebuild the oracle COPY's chem_funs.py from its current cfg and network.
+
+    The clone's tracked module numbers the pinned network's rows, so it is stale once
+    `ORACLE_DATA_DELTAS` has replaced the network: rows past a removed one shift by two.
+    """
     (root / "chem_funs.py").unlink(missing_ok=True)
     env = {**os.environ, "PYTHONHASHSEED": "0"}
     gen = subprocess.run(
@@ -282,6 +287,37 @@ ORACLE_CODE_DELTAS: dict[str, tuple[tuple[str, str, str], ...]] = {
                 "                        ff = Fc**( 1./(1.+ (np.log10(k[i]*M/k_inf)/nn)**2 ) )\n"
             ),
             "OH+CH3+M Troe width in log10 (Visscher & Moses 2011 eq 14)",
+        ),
+        (
+            "        return var\n        \n    \n    def remove_rate(self, var):",
+            (
+                "        for i in rev_list:\n"
+                "            r = [np.zeros(nz)]\n"
+                "            for side, ki in zip(var.Rf[i-1].split('->'), (var.k[i-1], var.k[i])):\n"
+                "                names = [q.strip() for q in side.split('+')]\n"
+                "                m = sum(q != 'M' for q in names)\n"
+                "                if m >= 2: r.append(ki * atm.M**(('M' in names) + m - 2.) / 1.e-9)\n"
+                "            c = 1./np.maximum(np.max(r, axis=0), 1.)\n"
+                "            var.k[i-1], var.k[i] = var.k[i-1]*c, var.k[i]*c\n"
+                "        return var\n        \n    \n    def remove_rate(self, var):"
+            ),
+            "collision limit on thermal pairs, as rates_jax.apply_collision_limit (notes Parity ledger)",
+        ),
+    ),
+    # FastChem's table holds the same N(2D) fit as thermo/NASA9/N_2D.txt (`n2d_thermo`), so the seed needs it too.
+    "fastchem_vulcan/input/nasa9_logK_SNCHOPTi.dat": (
+        (
+            (
+                "-9.03708588e+03  2.48128703e+00 4.48951881e+00 -2.46852066e-03 5.07361986e-06 -4.80560489e-09  "
+                "1.73150465e-12 0.             8.32331232e+04  1.76541859e+00 -2.29928631e+01 -4.63139448e-01 "
+                "4.00395298e+00 -1.48851690e-05 2.76628541e-08 -2.41078078e-11  7.93668376e-15 0.             "
+                "8.33519446e+04  4.02697144e+00"
+            ),
+            (
+                "0. 0. 2.500000000E+00 0. 0. 0. 0. 0. 8.376936653E+04 5.110195768E+00 "
+                "0. 0. 2.500000000E+00 0. 0. 0. 0. 0. 8.376936653E+04 5.110195768E+00"
+            ),
+            "N(2D) thermo in FastChem's table, as thermo/NASA9/N_2D.txt (n2d_thermo)",
         ),
     ),
 }

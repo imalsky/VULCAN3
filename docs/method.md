@@ -88,7 +88,7 @@ the condensation region to layers at or below `conden_top`.
 
 `make_conden_spec` (host, once per config) extracts the temperature-independent metadata. `build_conden_profile` (pure JAX)
 rebuilds every array that depends on temperature or structure, so a caller with a live T(P) can regenerate the `ProfileVars`
-`c_*` fields and splice them into the runner carry. `OuterLoop._build_conden_static` delegates to it, so host and on-graph
+`c_*` fields and splice them into the runner carry. `_build_statics.build_conden_static` delegates to it, so host and on-graph
 paths share one implementation.
 
 ## Reverse-mode sensitivities

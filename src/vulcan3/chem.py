@@ -163,7 +163,7 @@ def chem_jac_entries(
     """Return the nonzero entries of the analytical Jacobian for a whole column.
 
     [n_entries + 1, nz] in `net.jac_place` row order, the last row zero (the structural-zero slot).
-    `chem_jac_analytical` scatters them densely.
+    `chem_jac_analytical` gathers them into the dense blocks.
 
     The layer axis trails every intermediate. Under the batched runner's
     lane vmap that keeps (reaction, slot) major and (lane, layer)

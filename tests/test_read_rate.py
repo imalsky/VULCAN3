@@ -69,20 +69,18 @@ def test_lowT_caps_fire_all_three():
     # CH3 row: cap below 277.5, untouched above.
     assert k_out[i_ch3, 0] == pytest.approx(cap_ch3[0], rel=0, abs=0)
     assert k_out[i_ch3, 1] == pytest.approx(cap_ch3[1], rel=0, abs=0)
-    assert k_out[i_ch3, 2] == pytest.approx(7.77e-12)  # T=290 > 277.5, untouched
-    assert k_out[i_ch3, 3] == pytest.approx(7.77e-12)  # T=350 > 277.5, untouched
+    assert k_out[i_ch3, 2] == k_in[i_ch3, 2]  # T=290 > 277.5, untouched
+    assert k_out[i_ch3, 3] == k_in[i_ch3, 3]  # T=350 > 277.5, untouched
 
     # C2H4 row: cap below 300, untouched at 350.
     assert k_out[i_c2h4, 0] == cap_c2h4
     assert k_out[i_c2h4, 1] == cap_c2h4
     assert k_out[i_c2h4, 2] == cap_c2h4  # T=290 <= 300, capped
-    assert k_out[i_c2h4, 3] == pytest.approx(7.77e-12)
+    assert k_out[i_c2h4, 3] == k_in[i_c2h4, 3]
 
     # C2H5 row: cap below 200, untouched above.
     assert k_out[i_c2h5, 0] == cap_c2h5
-    assert k_out[i_c2h5, 1] == pytest.approx(7.77e-12)  # T=250 > 200, untouched
-    assert k_out[i_c2h5, 2] == pytest.approx(7.77e-12)
-    assert k_out[i_c2h5, 3] == pytest.approx(7.77e-12)
+    assert np.array_equal(k_out[i_c2h5, 1:], k_in[i_c2h5, 1:])  # T=250 and up > 200, untouched
 
     # Every other row untouched.
     mask = np.ones(net.nr + 1, dtype=bool)
@@ -94,10 +92,7 @@ def test_lowT_caps_fire_all_three():
 
 
 def test_remove_list_zeros_only_listed_indices():
-    """`apply_remove_list` zeros literally the indices in `remove_list` and nothing else.
-
-    (does not auto-zero the paired forward/reverse partner).
-    """
+    """`apply_remove_list` zeros the indices in `remove_list` and nothing else, not even the paired partner."""
     import vulcan3.network as net_mod
     import vulcan3.rates_jax as rates
     from vulcan3.config import default_config
@@ -146,7 +141,7 @@ def test_build_rate_array_matches_legacy_hd189(hd189_state):
     vulcan_cfg = default_config()
 
     net = net_mod.parse_network(vulcan_cfg.network)
-    nasa9_coeffs, _ = gibbs.load_nasa9(net.species, rates._thermo_dir(vulcan_cfg.network))
+    nasa9_coeffs, _ = gibbs.load_nasa9(net.species, rates.thermo_dir(vulcan_cfg.network))
     k_jax = np.asarray(
         rates.build_rate_array(
             net,
@@ -189,7 +184,7 @@ def test_build_rate_array_matches_legacy_hd189(hd189_state):
 def test_build_rate_array_with_lowT_caps(hd189_state):
     """Pins that `use_lowT_limit_rates=True` is a no-op on HD189.
 
-    (coolest layer ~860 K is above every cap threshold). Cap-firing coverage lives in
+    The coolest layer, ~860 K, is above every cap threshold. Cap-firing coverage lives in
     `test_lowT_caps_fire_all_three`.
     """
     import vulcan3.network as net_mod
@@ -200,7 +195,7 @@ def test_build_rate_array_with_lowT_caps(hd189_state):
     vulcan_cfg = default_config()
 
     net = net_mod.parse_network(vulcan_cfg.network)
-    nasa9_coeffs, _ = gibbs.load_nasa9(net.species, rates._thermo_dir(vulcan_cfg.network))
+    nasa9_coeffs, _ = gibbs.load_nasa9(net.species, rates.thermo_dir(vulcan_cfg.network))
 
     def _build(use_caps):
         return np.asarray(

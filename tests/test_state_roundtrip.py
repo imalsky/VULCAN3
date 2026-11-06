@@ -1,9 +1,6 @@
 """Typed pre-loop pytree schema.
 
-`pytree_from_store(var, atm)` must carry every runner-visible field, and
-the RunState-backed `.vul` writer must expose VULCAN-master's parameter
-keys. Pins the schema so future setup-pipeline edits cannot silently drop
-a field.
+The conversion between a legacy (var, atm, para) and a RunState, its refusals, and the `.vul` writer's parameter keys.
 """
 
 from __future__ import annotations
@@ -11,41 +8,82 @@ from __future__ import annotations
 import numpy as np
 
 
-def test_roundtrip_field_set_complete(hd189_state):
-    """The pytree must capture all fields needed for the runner.
+def test_store_inputs_carry_the_source_values(hd189_state):
+    """Each field holds its own source's values, so a cross-wired field fails."""
+    from vulcan3.state import AtmInputs, _inputs_from_store
 
-    This test enumerates the AtmData attribute names on the HD189 reference state and asserts each runner-visible
-    array attribute is present in the AtmInputs slot.
-    """
-    from vulcan3.state import AtmInputs, pytree_from_store
+    var, atm = hd189_state.var, hd189_state.atm
+    atm_inputs, rate, photo = _inputs_from_store(var, atm)
 
-    pt = pytree_from_store(hd189_state.var, hd189_state.atm)
-
-    # Every AtmInputs field must have a non-None / non-empty backing.
     for name in AtmInputs._fields:
-        leaf = getattr(pt.atm, name)
-        assert leaf is not None, f"AtmInputs.{name} is None"
-        arr = np.asarray(leaf)
-        assert arr.size > 0 or name in {
-            "top_flux",
-            "bot_flux",
-            "bot_vdep",
-            "bot_fix_sp",
-        }, f"AtmInputs.{name} unexpectedly empty (shape={arr.shape})"
+        np.testing.assert_array_equal(
+            np.asarray(getattr(atm_inputs, name)), np.asarray(getattr(atm, name)), err_msg=name
+        )
+    np.testing.assert_array_equal(np.asarray(rate.k), np.asarray(var.k_arr))
+    np.testing.assert_array_equal(np.asarray(photo.sflux_top), np.asarray(var.sflux_top).reshape(-1))
+    assert photo.sflux_top.size > 0
 
-    # Rate constants: densified (nr+1, nz) array, non-empty.
-    k_arr = np.asarray(pt.rate.k)
-    assert k_arr.ndim == 2, f"rate.k must be 2D, got {k_arr.shape}"
-    assert k_arr.shape[1] == hd189_state.atm.Tco.shape[0], f"rate.k second dim must be nz, got {k_arr.shape}"
 
-    # PhotoInputs: sflux_top is populated when use_photo=True.
-    from vulcan3.config import default_config
+def test_runstate_round_trips_through_the_legacy_view(hd189_state):
+    """`legacy_view` and `runstate_from_store` are inverses on the slots a run starts from."""
+    import jax
 
-    vulcan_cfg = default_config()
+    from vulcan3.state import legacy_view, runstate_from_store
 
-    if bool(getattr(vulcan_cfg, "use_photo", False)):
-        sflux_arr = np.asarray(pt.photo.sflux_top)
-        assert sflux_arr.size > 0, "PhotoInputs.sflux_top empty even though use_photo=True"
+    rs = runstate_from_store(hd189_state.var, hd189_state.atm, hd189_state.para)
+    back = runstate_from_store(*legacy_view(rs))
+    for slot in ("atm", "step", "params", "atoms", "fix_species"):
+        for a, b in zip(
+            jax.tree_util.tree_leaves(getattr(rs, slot)), jax.tree_util.tree_leaves(getattr(back, slot)), strict=True
+        ):
+            np.testing.assert_array_equal(np.asarray(a), np.asarray(b), err_msg=slot)
+
+
+def test_conversion_and_entry_points_refuse_what_they_cannot_honour(hd189_state, monkeypatch):
+    """Each refusal stands where a wrong input would become a silent zero, a wrong network or a NoneType call."""
+    import copy
+
+    import pytest
+
+    from vulcan3 import legacy_io, op_jax, rates_jax
+    from vulcan3._pack_state import _initial_photo_carry
+    from vulcan3.config import default_config, load_config
+    from vulcan3.outer_loop import OuterLoop
+    from vulcan3.runtime_validation import RuntimeConfigError, validate_runtime_config
+    from vulcan3.state import runstate_from_store
+
+    var, atm, para = hd189_state.var, hd189_state.atm, hd189_state.para
+    rs = runstate_from_store(var, atm, para)
+
+    # A missing element total reads as a refusal, not 0, which `atom_loss` would then divide by.
+    short = copy.copy(var)
+    short.atom_ini = {k: v for k, v in var.atom_ini.items() if k != "H"}
+    with pytest.raises(ValueError, match=r"var.atom_ini has no value for \['H'\]"):
+        runstate_from_store(short, atm, para)
+
+    # The legacy view carries no fix_species pin, so a frozen run cannot come back through it.
+    monkeypatch.setattr(default_config(), "fix_species", ["H2O"])
+    frozen = copy.copy(para)
+    frozen.fix_species_start = True
+    with pytest.raises(ValueError, match="has already frozen"):
+        runstate_from_store(var, atm, frozen)
+    monkeypatch.setattr(default_config(), "fix_species", [])
+
+    # Rates of the frozen network must not be built with another network's thermo.
+    with pytest.raises(ValueError, match="import-locked"):
+        rates_jax.setup_var_k(load_config("default", network="thermo/CHO_photo_network.txt"), var, atm)
+
+    integ = OuterLoop(op_jax.Ros2JAX(), legacy_io.Output())
+    with pytest.raises(RuntimeError, match="statics are not built"):
+        integ.pack_state(rs)
+    with pytest.raises(RuntimeError, match="run_jvp called before"):
+        integ.run_jvp(None, None, None, None)
+    integ._photo_static = rs.photo_static or object()
+    with pytest.raises(ValueError, match="no photo_runtime"):
+        _initial_photo_carry(integ, rs._replace(photo_runtime=None))
+
+    with pytest.raises(RuntimeConfigError, match="fix_species"):
+        validate_runtime_config(load_config("default", fix_species=None))
 
 
 def test_runstate_output_parameter_schema(hd189_state):

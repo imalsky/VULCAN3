@@ -1,4 +1,7 @@
-"""Every name the consumers (vulcan-forward, vulcan-retrieval, jwst-transit-authority) use must resolve."""
+"""The names the consumers (vulcan-forward, vulcan-retrieval, jwst-transit-authority) use must resolve.
+
+Hand-kept lists: a consumer's new read of an internal is not caught here.
+"""
 
 from __future__ import annotations
 
@@ -6,9 +9,9 @@ import importlib
 
 import pytest
 
-# module -> names read by a consumer, deprecated private ones included until the consumers have moved.
+# module -> names read by a consumer, with the deprecated aliases that released consumers read (docs/api.md).
 _CONSUMED = {
-    "vulcan3": ["__file__", "__version__", "conv_normal", "load_config", "validate_overrides", "RunState"],
+    "vulcan3": ["__version__", "conv_normal", "load_config", "validate_overrides", "RunState"],
     "vulcan3.paths": ["resolve_data_path"],
     "vulcan3._paths": ["resolve_data_path"],
     "vulcan3.atm_jax": ["make_physical_inputs", "mol_diff", "_mol_diff"],
@@ -68,8 +71,11 @@ _OUTER_LOOP_ATTRS = [
     "_ensure_runner",
     "_pack_state_from_runstate",
     "_build_refresh_static",
-    "_build_statics",
 ]
+
+# Internals that consumers read: vulcan-retrieval's `_statics` (retrieval_forward.py:57, until it moves to `statics`),
+# and in their tests `_conden_static` and `_vrunner_queue`.
+_OUTER_LOOP_INTERNALS = ["_statics", "_conden_static", "_vrunner_queue"]
 
 
 @pytest.mark.parametrize(("module", "names"), _CONSUMED.items(), ids=list(_CONSUMED))
@@ -79,10 +85,12 @@ def test_consumed_names_resolve(module, names):
     assert not missing, f"{module} lost {missing}: move the consumers before removing a name (docs/api.md)"
 
 
-@pytest.mark.parametrize("name", [n for names in _CONSUMED.values() for n in names if not n.startswith("_")])
-def test_public_names_are_listed(name):
-    module = next(m for m, names in _CONSUMED.items() if name in names and not m.endswith("._paths"))
-    assert name in importlib.import_module(module).__all__ or name in {"__file__", "RunState"}
+@pytest.mark.parametrize(
+    ("module", "name"),
+    [(m, n) for m, names in _CONSUMED.items() for n in names if not n.startswith("_") and m != "vulcan3._paths"],
+)
+def test_public_names_are_listed(module, name):
+    assert name in importlib.import_module(module).__all__
 
 
 def test_outer_loop_and_solver_attributes():
@@ -92,11 +100,13 @@ def test_outer_loop_and_solver_attributes():
     missing = [name for name in _OUTER_LOOP_ATTRS if not hasattr(OuterLoop, name)]
     assert not missing, f"OuterLoop lost {missing}"
     solver = Ros2JAX()
+    integ = OuterLoop(solver, None)
+    missing = [name for name in _OUTER_LOOP_INTERNALS if not hasattr(integ, name)]
+    assert not missing, f"OuterLoop lost {missing}, which a consumer reads"
     assert solver.photo_static is None
     solver.photo_static = 1
     assert solver._photo_static == 1
     assert hasattr(solver, "naming_solver")
-    assert not hasattr(OuterLoop, "does_not_exist")
 
 
 def test_private_aliases_are_the_public_objects():

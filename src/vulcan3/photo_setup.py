@@ -65,12 +65,9 @@ def _read_table(path: str, names: Any, delimiter: str | None = ",") -> np.ndarra
 
 
 def _discover_T_cross_files(sp: str) -> list[int]:
-    """Scan `thermo/photo_cross/{sp}/` for `{sp}_cross_{T}K.csv` files; return the integer T list.
-
-    Path is hardcoded (not via cfg.cross_folder).
-    """
+    """Scan `cross_folder/{sp}/` for `{sp}_cross_{T}K.csv` files; return the integer T list."""
     T_list: list[int] = []
-    folder = str(resolve_data_path("thermo/photo_cross/" + sp + "/"))
+    folder = _cross_folder() + sp + "/"
     for temp_file in os.listdir(folder):  # noqa: PTH208 (only the plain names are read)
         if temp_file.startswith(sp) and temp_file.endswith("K.csv"):
             temp = temp_file.replace(sp, "").replace("_cross_", "").replace("K.csv", "")
@@ -328,8 +325,8 @@ def _build_photo_static_dense(var: Any, atm: Any) -> PhotoStaticInputs:  # noqa:
     # of network reading order.
     absp_sp_list = sorted(set(photo_sp) | set(ion_sp))
     use_ion = bool(_CFG.use_ion)
-    T_cross_sp = list(_CFG.T_cross_sp or [])
-    scat_sp_list = list(_CFG.scat_sp or [])
+    T_cross_sp = list(_CFG.T_cross_sp)
+    scat_sp_list = list(_CFG.scat_sp)
     nz = int(atm.Tco.shape[0])
 
     from . import chem_funs

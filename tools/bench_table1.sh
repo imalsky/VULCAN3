@@ -5,7 +5,7 @@
 # is near 1 (contention or throttling inflates wall time). Step counts are
 # load-independent and always reported.
 #
-# Usage:  tools/bench_table1.sh [HD189]
+# Usage:  tools/bench_table1.sh
 #
 # HD189 only: the VULCAN 2.0 side runs the pinned clone's own vulcan_cfg.py, which
 # is HD189's (atmosphere, stellar flux, radius, 120 layers), swapping only the
@@ -31,21 +31,9 @@ esac
 LOAD_MAX="${LOAD_MAX:-$(awk "BEGIN{printf \"%.1f\", $_NCPU/2}")}"
 
 mkdir -p "$OUT"
-PLANETS=("${@:-HD189}")
-read -r -a PLANETS <<< "${PLANETS[*]}"
-for P in "${PLANETS[@]}"; do
-  [ "$P" = HD189 ] || { echo "ABORT: $P: the VULCAN 2.0 side has HD189's inputs only (see the header)." >&2; exit 1; }
-done
-
-# --- network / atom_list per planet (import-locked in VULCAN-JAX, must be set BEFORE import) ---
-net_for() { case "$1" in
-    W39b) echo "thermo/SNCHO_photo_network_2025.txt" ;;
-    *)    echo "thermo/NCHO_photo_network.txt" ;;
-  esac; }
-atoms_for() { case "$1" in
-    W39b) echo "H,O,C,N,S" ;;
-    *)    echo "H,O,C,N" ;;
-  esac; }
+P=HD189
+NETWORK=thermo/NCHO_photo_network.txt  # import-locked in VULCAN-JAX: set before the import
+ATOMS=H,O,C,N
 
 # ---------------------------------------------------------------- preflight
 # Advisory only: sysctl/uptime are blocked in some sandboxes, so a missing load
@@ -84,22 +72,23 @@ print(f"{wall:.2f} {ru.ru_utime:.2f} {ru.ru_stime:.2f}")
 TIMEEOF
 }
 
-# A clean clone ships FastChem as source only: build upstream's own once (tests/oracle.py).
+# Refuse anything but a clean clone at the pin, then build upstream's own FastChem once
+# (a clean clone ships it as source only; tests/oracle.py).
+VULCAN3_REQUIRE_ORACLE=1 VULCAN_MASTER_DIR="$MASTER" PYTHONPATH="$JAX_REPO/tests" "$PY" -c 'import oracle; oracle.require_oracle("vulcan2_ncho")'
 FASTCHEM_BIN="$OUT/fastchem"
 PYTHONPATH="$JAX_REPO/tests" "$PY" -c 'import sys, shutil, pathlib, oracle; shutil.copy2(oracle._oracle_fastchem_binary("vulcan2_ncho", pathlib.Path(sys.argv[1])), sys.argv[2])' "$MASTER" "$FASTCHEM_BIN"
 
 printf '%-8s %-12s %8s %8s %8s %9s %7s\n' PLANET CODE REAL USER SYS CPU/WALL STEPS | tee "$OUT/summary.txt"
 
-for P in "${PLANETS[@]}"; do
-  # ---------------- VULCAN 2.0 in a disposable copy: upstream setup writes into thermo/ and
-  # fastchem_vulcan/, so nothing is linked back to the pinned clone.
-  W="$OUT/master_$P"; mkdir -p "$W/output" "$W/plot"
-  for d in atm thermo fastchem_vulcan; do cp -R "$MASTER/$d" "$W/$d"; done
-  cp "$MASTER"/*.py "$W/"
-  [ -e "$W/fastchem_vulcan/fastchem" ] || cp "$FASTCHEM_BIN" "$W/fastchem_vulcan/fastchem"
-  # declared upstream correction(s) on this scratch copy only (tests/oracle.py ORACLE_CODE_DELTAS)
-  PYTHONPATH="$JAX_REPO/tests" "$PY" -c 'import sys, pathlib, oracle; print("oracle deltas:", oracle.apply_code_deltas(pathlib.Path(sys.argv[1])), file=sys.stderr)' "$W"
-  "$PY" - "$W/vulcan_cfg.py" "$(net_for "$P")" <<'PYEOF'
+# ---------------- VULCAN 2.0 in a disposable copy: upstream setup writes into thermo/ and
+# fastchem_vulcan/, so nothing is linked back to the pinned clone.
+W="$OUT/master_$P"; mkdir -p "$W/output" "$W/plot"
+for d in atm thermo fastchem_vulcan; do cp -R "$MASTER/$d" "$W/$d"; done
+cp "$MASTER"/*.py "$W/"
+[ -e "$W/fastchem_vulcan/fastchem" ] || cp "$FASTCHEM_BIN" "$W/fastchem_vulcan/fastchem"
+# declared upstream correction(s) on this scratch copy only (tests/oracle.py ORACLE_CODE_DELTAS)
+PYTHONPATH="$JAX_REPO/tests" "$PY" -c 'import sys, pathlib, oracle; print("oracle deltas:", oracle.apply_code_deltas(pathlib.Path(sys.argv[1])), file=sys.stderr)' "$W"
+"$PY" - "$W/vulcan_cfg.py" "$NETWORK" <<'PYEOF'
 import re, sys, pathlib
 p, net = pathlib.Path(sys.argv[1]), sys.argv[2]
 t = p.read_text()
@@ -108,39 +97,38 @@ for k in ("use_print_prog", "use_live_plot", "use_live_flux", "use_plot_end", "u
     t = re.sub(rf"^{k}\s*=.*$", f"{k} = False", t, flags=re.M)
 p.write_text(t)
 PYEOF
-  read -r m_real m_user m_sys < <(cd "$W" && timed "$W/run.log" "$PY" vulcan.py)
-  m_steps=$(grep -oE 'successfully run to steady-state with [0-9]+ steps' "$W/run.log" | grep -oE '[0-9]+' | head -1)
-  m_ratio=$(awk "BEGIN{printf \"%.2f\", ($m_user+$m_sys)/$m_real}")
-  printf '%-8s %-12s %8s %8s %8s %9s %7s\n' "$P" "VULCAN2.0" "$m_real" "$m_user" "$m_sys" "$m_ratio" "${m_steps:-?}" | tee -a "$OUT/summary.txt"
+read -r m_real m_user m_sys < <(cd "$W" && timed "$W/run.log" "$PY" vulcan.py)
+m_steps=$(grep -oE 'successfully run to steady-state with [0-9]+ steps' "$W/run.log" | grep -oE '[0-9]+' | head -1)
+m_ratio=$(awk "BEGIN{printf \"%.2f\", ($m_user+$m_sys)/$m_real}")
+printf '%-8s %-12s %8s %8s %8s %9s %7s\n' "$P" "VULCAN2.0" "$m_real" "$m_user" "$m_sys" "$m_ratio" "${m_steps:-?}" | tee -a "$OUT/summary.txt"
 
-  # ---------------- VULCAN-JAX 3.0, fresh subprocess + empty XLA cache (Table 1's protocol)
-  J="$OUT/jax_$P"; mkdir -p "$J"
-  # One chunk: the CLI otherwise syncs and prints every print_prog_num steps,
-  # and Table 1 times the uninterrupted loop. A config that sets no knob is
-  # the empty mapping `{}` (HD189.yaml); the appended key replaces it.
-  { sed '/^{}$/d' "$JAX_REPO/src/vulcan3/configs/$P.yaml"; echo "print_prog_num: 1000000000"; } > "$J/$P.yaml"
-  read -r j_real j_user j_sys < <(cd "$J" && \
-    JAX_COMPILATION_CACHE_DIR="$J/xlacache" \
-    VULCAN3_NETWORK="$JAX_REPO/src/vulcan3/$(net_for "$P")" \
-    VULCAN3_ATOM_LIST="$(atoms_for "$P")" \
-    timed "$J/run.log" "$PY" -m vulcan3.cli --config "$J/$P.yaml")
-  j_steps=$(grep -oE 'successfully run to steady-state with [0-9]+ steps' "$J/run.log" | grep -oE '[0-9]+' | head -1)
-  j_ratio=$(awk "BEGIN{printf \"%.2f\", ($j_user+$j_sys)/$j_real}")
-  printf '%-8s %-12s %8s %8s %8s %9s %7s\n' "$P" "VULCAN-JAX" "$j_real" "$j_user" "$j_sys" "$j_ratio" "${j_steps:-?}" | tee -a "$OUT/summary.txt"
+# ---------------- VULCAN-JAX 3.0, fresh subprocess + empty XLA cache (Table 1's protocol)
+J="$OUT/jax_$P"; mkdir -p "$J"
+# One chunk: the CLI otherwise syncs and prints every print_prog_num steps,
+# and Table 1 times the uninterrupted loop. A config that sets no knob is
+# the empty mapping `{}` (HD189.yaml); the appended key replaces it.
+{ sed '/^{}$/d' "$JAX_REPO/src/vulcan3/configs/$P.yaml"; echo "print_prog_num: 1000000000"; } > "$J/$P.yaml"
+read -r j_real j_user j_sys < <(cd "$J" && \
+  JAX_COMPILATION_CACHE_DIR="$J/xlacache" \
+  VULCAN3_NETWORK="$JAX_REPO/src/vulcan3/$NETWORK" \
+  VULCAN3_ATOM_LIST="$ATOMS" \
+  timed "$J/run.log" "$PY" -m vulcan3.cli --config "$J/$P.yaml")
+j_steps=$(grep -oE 'successfully run to steady-state with [0-9]+ steps' "$J/run.log" | grep -oE '[0-9]+' | head -1)
+j_ratio=$(awk "BEGIN{printf \"%.2f\", ($j_user+$j_sys)/$j_real}")
+printf '%-8s %-12s %8s %8s %8s %9s %7s\n' "$P" "VULCAN-JAX" "$j_real" "$j_user" "$j_sys" "$j_ratio" "${j_steps:-?}" | tee -a "$OUT/summary.txt"
 
-  # ---------------- the guard: only report a speedup if master actually got its core
-  if awk "BEGIN{exit !($m_ratio < $CPU_WALL_MIN)}"; then
-    {
-      echo "  !! TIMING REJECTED for $P: VULCAN 2.0 cpu/wall = $m_ratio < $CPU_WALL_MIN."
-      echo "     It waited instead of computing (throttling, sleep, or contention), so its"
-      echo "     $m_real s wall is not a measurement. Steps are still valid:"
-      echo "     VULCAN 2.0 ${m_steps:-?} steps vs VULCAN-JAX ${j_steps:-?} steps."
-    } | tee -a "$OUT/summary.txt"
-  else
-    awk "BEGIN{printf \"  speedup (wall): %.2fx   steps: %s vs %s\n\", $m_real/$j_real, \"${m_steps:-?}\", \"${j_steps:-?}\"}" \
-      | tee -a "$OUT/summary.txt"
-  fi
-done
+# ---------------- the guard: only report a speedup if master actually got its core
+if awk "BEGIN{exit !($m_ratio < $CPU_WALL_MIN)}"; then
+  {
+    echo "  !! TIMING REJECTED for $P: VULCAN 2.0 cpu/wall = $m_ratio < $CPU_WALL_MIN."
+    echo "     It waited instead of computing (throttling, sleep, or contention), so its"
+    echo "     $m_real s wall is not a measurement. Steps are still valid:"
+    echo "     VULCAN 2.0 ${m_steps:-?} steps vs VULCAN-JAX ${j_steps:-?} steps."
+  } | tee -a "$OUT/summary.txt"
+else
+  awk "BEGIN{printf \"  speedup (wall): %.2fx   steps: %s vs %s\n\", $m_real/$j_real, \"${m_steps:-?}\", \"${j_steps:-?}\"}" \
+    | tee -a "$OUT/summary.txt"
+fi
 
 echo
 echo "logs + summary: $OUT"

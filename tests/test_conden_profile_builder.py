@@ -261,7 +261,7 @@ def test_jvp_matches_finite_difference(spec):
 def test_zero_reaction_and_inactive_blocks_shapes():
     """use_condense with no live reactions/relax blocks packs zero-size or zero-filled arrays with stable shapes.
 
-    (the runner still builds a branch).
+    The runner still builds a branch.
     """
     cfg, var, atm = _fake_setup(condense_sp=(), use_relax=(), fix_species=())
     sp = conden.make_conden_spec(cfg, var, atm, SPECIES_IDX)

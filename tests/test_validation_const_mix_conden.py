@@ -36,11 +36,8 @@ def test_up_front_validation(overrides, error):
 
 
 def test_kinetics_set_matches_sat_set():
-    """The kinetics tier must stay a subset of the saturation tier.
-
-    And the only sat-only species must be H2S (drift guard between the two constants).
-    """
-    from vulcan3.atm_setup import _SUPPORTED_CONDENSABLES
+    """The kinetics tier stays a subset of the saturation tier, and the only sat-only species is H2S."""
+    from vulcan3._saturation import _SUPPORTED_CONDENSABLES
     from vulcan3.conden import SUPPORTED_CONDEN_KINETICS
 
     assert set(SUPPORTED_CONDEN_KINETICS) <= set(_SUPPORTED_CONDENSABLES)

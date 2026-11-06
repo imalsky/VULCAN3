@@ -44,8 +44,11 @@ def fake_oracle(tmp_path):
         (repo / rel).parent.mkdir(parents=True, exist_ok=True)
         if not (repo / rel).exists():
             (repo / rel).write_text("upstream\n")
-    # the declared code delta must find its OLD block exactly once
-    (repo / "op.py").write_text("def read_rate():\n" + orc.ORACLE_CODE_DELTAS["op.py"][0][0])
+    # every declared code delta must find its OLD block exactly once
+    for rel, deltas in orc.ORACLE_CODE_DELTAS.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text("def read_rate():\n" + "".join(old for old, _new, _tag in deltas))
+    (repo / "fastchem_vulcan" / "fastchem").write_text("built\n")  # so the copy does not build a FastChem
     _git_init = subprocess.run(["git", "init", "-q", str(repo)], capture_output=True, text=True, check=False)
     assert _git_init.returncode == 0, _git_init.stderr
     _git(repo, "config", "user.email", "t@example.invalid")
@@ -251,12 +254,12 @@ def test_the_oracle_workflow_matches_the_manifest():
         for rel in entry["select"].split():
             assert (ROOT / rel).is_file(), f"oracle.yml selects {rel}, which does not exist"
 
-    # Every family a test names must have an oracle.yml job.
-    used_in_tests = set()
-    for f in sorted((ROOT / "tests").glob("test_*.py")):
-        for fam in manifest:
-            if f'"{fam}"' in f.read_text():
-                used_in_tests.add(fam)
+    # Every family the manifest says a test uses must have an oracle.yml job that selects those tests. `used_by` is
+    # kept by hand and trusted: a new oracle test must add itself there.
+    used_in_tests = {family for family, spec in manifest.items() if spec.get("used_by")}
+    for entry in include:
+        unselected = sorted(set(manifest[entry["family"]]["used_by"]) - set(entry["select"].split()))
+        assert not unselected, f"{entry['family']} is used by {unselected}, which oracle.yml does not select"
     missing = sorted(used_in_tests - covered)
     assert not missing, (
         f"oracle families {missing} are used by tests but no oracle.yml job "

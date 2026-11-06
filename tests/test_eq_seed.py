@@ -434,9 +434,7 @@ def test_seed_setup_survives_being_built_inside_a_trace() -> None:
 
 
 def test_seed_lane_is_bitwise_the_solo_seed_at_any_batch_width() -> None:
-    """A lane's seed is the solo seed bit for bit at any `vmap` width, nested or under `jvp`.
-
-    And the `jvp` tangent is exactly zero.
+    """A lane's seed is the solo seed bit for bit at any `vmap` width, nested or under `jvp` (tangent exactly zero).
 
     Callers vmap the seed over lanes (vulcan-forward's batched prep,
     `run_queue`'s refill) and the solver amplifies a 1-ulp seed difference to

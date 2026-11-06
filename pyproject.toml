@@ -170,11 +170,6 @@ extend-ignore-names = [
 
 [tool.ruff.lint.per-file-ignores]
 # Scripts and command-line tools may print.
-# Facades: a split module keeps its path and re-exports what moved, for consumers and tests.
-"src/vulcan3/outer_loop.py" = ["F401"]
-"src/vulcan3/atm_setup.py" = ["F401"]
-"src/vulcan3/state.py" = ["F401"]
-"src/vulcan3/steady_state_grad.py" = ["F401"]
 "src/vulcan3/cli.py" = ["T20", "PLC0415"]
 "src/vulcan3/solver_fast.py" = ["T20", "PLC0415"]  # `python -m vulcan3.solver_fast` builds the kernel and prints the library's path
 # Lazy imports stay lazy on purpose: `import vulcan3` must not load jax_step or solver_fast ($VULCAN3_SOLVER), module cycles
@@ -197,7 +192,11 @@ addopts = ["-ra", "--tb=short", "--strict-markers", "--strict-config"]
 xfail_strict = true
 log_level = "INFO"
 testpaths = ["tests"]
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # tests.yml runs without the gitignored fixtures on purpose, and conftest announces what that skips.
+    "default:.*numerical-regression oracle:RuntimeWarning",
+]
 markers = [
     "slow: minutes or several GB; skipped unless VULCAN3_RUN_SLOW=1",
     "gpu: needs a GPU; runs locally, never in CI",
@@ -226,6 +225,7 @@ disallow_incomplete_defs = false
 # ndarray type parameters add nothing here: shapes and dtypes are in the comments beside each array.
 disallow_any_generics = false
 ignore_missing_imports = true
+untyped_calls_exclude = ["jax"]  # JAX leaves some public functions unannotated
 
 [[tool.mypy.overrides]]
 module = "vulcan3.*"

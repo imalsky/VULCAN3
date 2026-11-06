@@ -7,8 +7,8 @@ for H2_p/H_p/e, all_compose charge rows). The network is import-locked, so the
 activated network needs a fresh child process ($VULCAN3_NETWORK).
 
 Checks: (A) setup wired the ion path (ion_sp, ion_rate_index, charge_list
-without `e`, non-zero cross_Jion); (B) both cations grow from zero, so
-compute_Jion_jax fired inside the loop; (C) per-layer charge neutrality to
+without `e`, non-zero cross_Jion); (B) both cations grow from zero, and the
+loop moved their ion rates off setup's; (C) per-layer charge neutrality to
 ~1e-8 rel; (D) the run stays finite and advances in time.
 """
 
@@ -149,8 +149,12 @@ if not (Hp_max > 0.0):
     fail("no H photoionisation: H_p_max=%.3e (init %.3e)" % (Hp_max, ion0))
 if not (ion_max > ion0):
     fail("ions did not grow from init (ion0=%.3e ion_max=%.3e)" % (ion0, ion_max))
-print("B IONS H2_p_max=%.3e H_p_max=%.3e (init %.3e) -- compute_Jion_jax fired"
-      % (H2p_max, Hp_max, ion0))
+# Setup fills the ion rates too, so growing ions do not show the loop refreshed them; a moved rate does.
+for key in (("H2", 1), ("H", 1)):
+    row = md.ion_rate_index[key]
+    if np.array_equal(np.asarray(rs_out.rate.k)[row], np.asarray(rs.rate.k)[row]):
+        fail("the loop never refreshed the ion rate of %r" % (key,))
+print("B IONS H2_p_max=%.3e H_p_max=%.3e (init %.3e), ion rates refreshed" % (H2p_max, Hp_max, ion0))
 
 # ---------- Check C: charge neutrality (e == sum of cations) ----------
 e_dens = y[:, i_e]

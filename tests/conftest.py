@@ -182,7 +182,7 @@ def pytest_collection_finish():
         f"green:\n" + "\n".join(lines) + "\n\n"
         "Build them all with one command:\n"
         "    python tests/gen_fixtures.py --all\n"
-        "(then `--verify` checks them against tests/data/FIXTURES.json).\n\n"
+        "(then `--verify` checks them against this machine's manifest in tests/data).\n\n"
         "VULCAN3_ALLOW_MISSING_FIXTURES=1 accepts the reduced coverage. That "
         "is a DEVELOPER escape hatch: it must not be set in release CI, where "
         "the point is that these oracles ran."

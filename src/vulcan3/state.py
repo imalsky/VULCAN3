@@ -10,9 +10,8 @@ from __future__ import annotations
 import contextlib
 import copy
 import types
-import warnings
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import jax.numpy as jnp
 import numpy as np
@@ -25,6 +24,11 @@ from ._legacy_containers import (
 )
 from ._paths import resolve_data_path
 from .config import _FROZEN_ENV, default_config
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from .config import Config
 
 __all__ = [
     "TERM_CONVERGED",
@@ -46,7 +50,6 @@ __all__ = [
     "StepInputs",
     "legacy_view",
     "load_stellar_flux",
-    "pytree_from_store",
     "runstate_from_store",
 ]
 
@@ -84,7 +87,7 @@ class AtmInputs(NamedTuple):
 class RateInputs(NamedTuple):
     """Rate constants. `k[0]` is unused: reactions are 1-based throughout VULCAN."""
 
-    k: Any  # (nr+1, nz) rate constants of every reaction
+    k: jnp.ndarray  # (nr+1, nz) rate constants of every reaction
 
 
 class IniAbunOutputs(NamedTuple):
@@ -167,7 +170,7 @@ TERM_NONFINITE = 5
 class ParamInputs(NamedTuple):
     """Convergence + retry counters that cross the runner boundary."""
 
-    count: int
+    count: int  # type: ignore[assignment]  # master's name, which shadows tuple.count
     nega_count: int
     loss_count: int
     delta_count: int
@@ -248,22 +251,16 @@ class RunState(NamedTuple):
     atm: AtmInputs
     rate: RateInputs
     photo: PhotoInputs
-    # Runner-state slots. Default `None`: `pytree_from_store` fills only
-    # atm/rate/photo.
-    step: StepInputs | None = None
-    params: ParamInputs | None = None
-    atoms: AtomInputs | None = None
-    photo_runtime: PhotoRuntimeInputs | None = None
-    fix_species: FixSpeciesInputs | None = None
-    # Host-side static metadata + photo cross-section pytree. Both default
-    # to None for partial RunStates; `with_pre_loop_setup(cfg)` fills `metadata`, and
-    # `photo_static` when use_photo
-    # (`runstate_from_store` fills `metadata` only).
-    metadata: RunMetadata | None = None
-    photo_static: PhotoStaticInputs | None = None
+    step: StepInputs
+    params: ParamInputs
+    atoms: AtomInputs
+    photo_runtime: PhotoRuntimeInputs | None  # None with photolysis off
+    fix_species: FixSpeciesInputs
+    metadata: RunMetadata  # host-side static metadata
+    photo_static: PhotoStaticInputs | None  # None with photolysis off, or before setup attaches it
 
     @staticmethod
-    def with_pre_loop_setup(cfg: Any) -> RunState:
+    def with_pre_loop_setup(cfg: Config) -> RunState:
         """Build a fully-initialised `RunState` from a config.
 
         Runs the full pre-loop pipeline (atmosphere structure, rate constants
@@ -313,8 +310,8 @@ def load_stellar_flux(cfg: Any) -> tuple[float, float]:
     )
 
 
-def pytree_from_store(var: Any, atm: Any) -> RunState:
-    """Snapshot atm + rate + photo fields off a legacy (var, atm) into a typed RunState."""
+def _inputs_from_store(var: Any, atm: Any) -> tuple[AtmInputs, RateInputs, PhotoInputs]:
+    """Snapshot the atmosphere, rate and photo inputs off a legacy (var, atm)."""
     nr = int(chem_funs.nr)
     nz = int(atm.Tco.shape[0])
 
@@ -329,6 +326,7 @@ def pytree_from_store(var: Any, atm: Any) -> RunState:
         mu=jnp.asarray(atm.mu),
         g=jnp.asarray(atm.g),
         Hp=jnp.asarray(atm.Hp),
+        # Setup leaves Hpi unset with molecular diffusion off; nothing reads it then.
         Hpi=jnp.asarray(getattr(atm, "Hpi", np.zeros_like(np.asarray(atm.dzi)))),
         dz=jnp.asarray(atm.dz),
         dzi=jnp.asarray(atm.dzi),
@@ -351,32 +349,31 @@ def pytree_from_store(var: Any, atm: Any) -> RunState:
         raise ValueError(f"var.k_arr shape {k_dense.shape} != expected ({nr + 1}, {nz})")
     rate_inputs = RateInputs(k=jnp.asarray(k_dense))
 
-    sflux_top = getattr(var, "sflux_top", None)
+    sflux_top = getattr(var, "sflux_top", None)  # set only with photolysis on
     if sflux_top is None:
         sflux_top_arr = jnp.zeros((0,), dtype=jnp.float64)
     else:
         sflux_top_arr = jnp.asarray(sflux_top, dtype=jnp.float64).reshape(-1)
     photo_inputs = PhotoInputs(
         sflux_top=sflux_top_arr,
-        def_bin_min=float(getattr(var, "def_bin_min", 0.0)),
-        def_bin_max=float(getattr(var, "def_bin_max", 0.0)),
+        def_bin_min=float(var.def_bin_min),
+        def_bin_max=float(var.def_bin_max),
     )
-
-    return RunState(atm=atm_inputs, rate=rate_inputs, photo=photo_inputs)
-
-
-def _atom_dict_to_arr(d: Any, atom_order: Any) -> np.ndarray:
-    return np.asarray(
-        [float(d.get(a, 0.0)) for a in atom_order],
-        dtype=np.float64,
-    )
+    return atm_inputs, rate_inputs, photo_inputs
 
 
-def _atom_arr_to_dict(arr: Any, atom_order: Any) -> dict:
+def _atom_dict_to_arr(d: dict[str, float], atom_order: tuple[str, ...], name: str) -> np.ndarray:
+    missing = [a for a in atom_order if a not in d]
+    if missing:
+        raise ValueError(f"var.{name} has no value for {missing} (it has {sorted(d)}): run InitialAbun.ele_sum first.")
+    return np.asarray([float(d[a]) for a in atom_order], dtype=np.float64)
+
+
+def _atom_arr_to_dict(arr: np.ndarray, atom_order: tuple[str, ...]) -> dict[str, float]:
     return {a: float(arr[i]) for i, a in enumerate(atom_order)}
 
 
-# size-limit-ok: one RunState field per line
+# size-limit-ok: each RunState slot in turn, with the fix_species and photolysis branches
 def runstate_from_store(var: Any, atm: Any, para: Any) -> RunState:
     """Snapshot the full runner-input state of `(var, atm, para)`.
 
@@ -386,24 +383,22 @@ def runstate_from_store(var: Any, atm: Any, para: Any) -> RunState:
     """
     _cfg = default_config()
 
-    base = pytree_from_store(var, atm)
+    atm_inputs, rate_inputs, photo_inputs = _inputs_from_store(var, atm)
 
     nz = int(atm.Tco.shape[0])
     ni = int(np.asarray(var.y).shape[1])
 
     step = StepInputs(
         y=jnp.asarray(var.y, dtype=jnp.float64),
-        y_prev=jnp.asarray(
-            var.y if getattr(var, "y_prev", None) is None else var.y_prev,
-            dtype=jnp.float64,
-        ),
+        y_prev=jnp.asarray(var.y_prev, dtype=jnp.float64),
         ymix=jnp.asarray(var.ymix, dtype=jnp.float64),
         t=float(var.t),
         dt=float(var.dt),
-        longdy=float(getattr(var, "longdy", 1.0)),
-        longdydt=float(getattr(var, "longdydt", 1.0)),
+        longdy=float(var.longdy),
+        longdydt=float(var.longdydt),
     )
 
+    # A run that has not started has only `start_time` on its `para`: the counters read zero.
     params = ParamInputs(
         count=int(getattr(para, "count", 0)),
         nega_count=int(getattr(para, "nega_count", 0)),
@@ -426,19 +421,19 @@ def runstate_from_store(var: Any, atm: Any, para: Any) -> RunState:
     atom_order = tuple(a for a in _cfg.atom_list if a not in _cfg.loss_ex)
     atoms = AtomInputs(
         atom_order=atom_order,
-        atom_ini=jnp.asarray(_atom_dict_to_arr(getattr(var, "atom_ini", {}), atom_order)),
-        atom_loss=jnp.asarray(_atom_dict_to_arr(getattr(var, "atom_loss", {}), atom_order)),
-        atom_loss_prev=jnp.asarray(_atom_dict_to_arr(getattr(var, "atom_loss_prev", {}), atom_order)),
-        atom_sum=jnp.asarray(_atom_dict_to_arr(getattr(var, "atom_sum", {}), atom_order)),
+        atom_ini=jnp.asarray(_atom_dict_to_arr(var.atom_ini, atom_order, "atom_ini")),
+        atom_loss=jnp.asarray(_atom_dict_to_arr(var.atom_loss, atom_order, "atom_loss")),
+        atom_loss_prev=jnp.asarray(_atom_dict_to_arr(var.atom_loss_prev, atom_order, "atom_loss_prev")),
+        atom_sum=jnp.asarray(_atom_dict_to_arr(var.atom_sum, atom_order, "atom_sum")),
     )
 
-    if bool(_cfg.use_photo) and hasattr(var, "tau"):
+    if bool(_cfg.use_photo):
         photo_runtime = PhotoRuntimeInputs(
             tau=jnp.asarray(var.tau, dtype=jnp.float64),
             aflux=jnp.asarray(var.aflux, dtype=jnp.float64),
             sflux=jnp.asarray(var.sflux, dtype=jnp.float64),
             dflux_u=jnp.asarray(var.dflux_u, dtype=jnp.float64),
-            aflux_change=float(getattr(var, "aflux_change", 0.0)),
+            aflux_change=float(var.aflux_change),
         )
     else:
         photo_runtime = None
@@ -447,13 +442,15 @@ def runstate_from_store(var: Any, atm: Any, para: Any) -> RunState:
     if fix_species_cfg:
         fix_y_arr = np.zeros((len(fix_species_cfg), nz), dtype=np.float64)
         coldtrap = np.zeros((len(fix_species_cfg),), dtype=np.int32)
-        var_fix_y = getattr(var, "fix_y", {}) or {}
-        var_coldtrap = getattr(atm, "conden_min_lev", {}) or {}
+        # Setup starts the pin at zero: the freeze writes the carry's `fix_y` when it fires.
+        if params.fix_species_start:
+            raise ValueError(
+                "fix_species has already frozen in this (var, atm, para), and the legacy view does not carry the pin "
+                "(fix_y, the cold-trap levels), so a RunState built from it would pin those columns at zero. "
+                "Keep the RunState the run returned."
+            )
         for i, sp in enumerate(fix_species_cfg):
-            row = var_fix_y.get(sp)
-            if row is not None:
-                fix_y_arr[i] = np.asarray(row, dtype=np.float64)
-            coldtrap[i] = int(var_coldtrap.get(sp, 0))
+            coldtrap[i] = int(atm.conden_min_lev.get(sp, 0))
         fix_species = FixSpeciesInputs(
             fix_species=tuple(fix_species_cfg),
             fix_y=jnp.asarray(fix_y_arr),
@@ -466,82 +463,72 @@ def runstate_from_store(var: Any, atm: Any, para: Any) -> RunState:
             conden_min_lev=jnp.zeros((0,), dtype=jnp.int32),
         )
 
-    return base._replace(
+    return RunState(
+        atm=atm_inputs,
+        rate=rate_inputs,
+        photo=photo_inputs,
         step=step,
         params=params,
         atoms=atoms,
         photo_runtime=photo_runtime,
         fix_species=fix_species,
         metadata=_runmetadata_from_legacy(var, atm, para),
+        photo_static=None,
     )
 
 
 def _atm_metadata_from_atm(atm: Any) -> dict:
     return {
+        # Setup leaves Ti unset with molecular diffusion off; nothing reads it then.
         "Ti": jnp.asarray(getattr(atm, "Ti", atm.Tco), dtype=jnp.float64),
-        "gas_indx": tuple(getattr(atm, "gas_indx", []) or []),
-        "pref_indx": int(getattr(atm, "pref_indx", 0)),
-        "gs": float(getattr(atm, "gs", 0.0)),
-        "sat_p": dict(getattr(atm, "sat_p", {}) or {}),
-        "sat_mix": dict(getattr(atm, "sat_mix", {}) or {}),
-        "r_p": dict(getattr(atm, "r_p", {}) or {}),
-        "rho_p": dict(getattr(atm, "rho_p", {}) or {}),
-        "fix_sp_indx": dict(getattr(atm, "fix_sp_indx", {}) or {}),
+        "gas_indx": tuple(atm.gas_indx),
+        "pref_indx": int(atm.pref_indx),
+        "gs": float(atm.gs),
+        "sat_p": dict(atm.sat_p),
+        "sat_mix": dict(atm.sat_mix),
+        "r_p": dict(atm.r_p),
+        "rho_p": dict(atm.rho_p),
+        "fix_sp_indx": dict(atm.fix_sp_indx),
     }
 
 
 def _runmetadata_from_legacy(var: Any, atm: Any, para: Any) -> RunMetadata:
     """Snapshot host-side static metadata that doesn't fit the JAX pytrees."""
     atm_meta = _atm_metadata_from_atm(atm)
-    y_ini_src = getattr(var, "y_ini", None)
-    if y_ini_src is None:
-        y_ini_src = getattr(var, "y", None)
-    if y_ini_src is None:
-        nz = int(np.asarray(atm.Tco).shape[0])
-        y_ini_arr = jnp.zeros((nz, int(chem_funs.ni)), dtype=jnp.float64)
-    else:
-        y_ini_arr = jnp.asarray(np.asarray(y_ini_src), dtype=jnp.float64)
     return RunMetadata(
-        Rf=dict(getattr(var, "Rf", {}) or {}),
-        n_branch=dict(getattr(var, "n_branch", {}) or {}),
-        ion_branch=dict(getattr(var, "ion_branch", {}) or {}),
-        photo_sp=frozenset(getattr(var, "photo_sp", set()) or set()),
-        ion_sp=frozenset(getattr(var, "ion_sp", set()) or set()),
-        pho_rate_index=dict(getattr(var, "pho_rate_index", {}) or {}),
-        ion_rate_index=dict(getattr(var, "ion_rate_index", {}) or {}),
-        ion_br_ratio=dict(getattr(var, "ion_br_ratio", {}) or {}),
-        charge_list=tuple(getattr(var, "charge_list", []) or []),
-        conden_re_list=tuple(getattr(var, "conden_re_list", []) or []),
-        start_time=float(getattr(para, "start_time", 0.0)),
-        y_ini=y_ini_arr,
+        Rf=dict(var.Rf),
+        n_branch=dict(var.n_branch),
+        ion_branch=dict(var.ion_branch),
+        photo_sp=frozenset(var.photo_sp),
+        ion_sp=frozenset(var.ion_sp),
+        pho_rate_index=dict(var.pho_rate_index),
+        ion_rate_index=dict(var.ion_rate_index),
+        ion_br_ratio=dict(var.ion_br_ratio),
+        charge_list=tuple(var.charge_list),
+        conden_re_list=tuple(var.conden_re_list),
+        start_time=float(para.start_time),
+        y_ini=jnp.asarray(np.asarray(var.y_ini), dtype=jnp.float64),
         **atm_meta,
     )
 
 
 def _same_file(want: str, have: str, what: str) -> bool:
-    """Return True when `want` is `have` or a byte-identical copy of it.
-
-    An unreadable pair warns and counts as a match: the skip announces itself.
-    """
+    """Return True when `want` is `have` or a byte-identical copy of it; a missing file is a mismatch."""
     if want == have:
         return True
     try:
         with Path(want).open("rb") as _w, Path(have).open("rb") as _h:
             return _w.read() == _h.read()
     except FileNotFoundError:
-        return False  # the requested file is missing -> a mismatch
+        return False
     except OSError as exc:
-        warnings.warn(
-            f"{what} import-lock guard could not compare {want!r} with the "
-            f"import-time {have!r} ({type(exc).__name__}: {exc}); the check "
-            "was SKIPPED, not passed.",
-            RuntimeWarning,
-            stacklevel=3,
-        )
-        return True
+        raise ValueError(
+            f"{what}: the import-lock guard cannot compare {want!r} with the import-time {have!r} "
+            f"({type(exc).__name__}: {exc}). Make both readable."
+        ) from exc
 
 
-def _frozen_mismatch(cfg: Any) -> dict[str, tuple]:
+def _frozen_mismatch(cfg: Config) -> dict[str, tuple]:
     """Return the import-frozen knobs (`config._FROZEN_ENV`) on which `cfg` disagrees with the first `import vulcan3`.
 
     Returned as ``{knob: (requested, import-time)}``. A file knob matches a byte-identical copy at another path.
@@ -552,26 +539,22 @@ def _frozen_mismatch(cfg: Any) -> dict[str, tuple]:
     """
     from . import composition as _composition, jax_step as _jax_step
 
-    loaded = {
-        "network": chem_funs._NETWORK.network_path,
-        "com_file": _composition.COM_FILE_PATH,
-        "atom_list": _jax_step.IMPORT_ATOM_LIST,
-    }
-    out = {}
+    loaded: dict[str, str | Path] = {"network": chem_funs.NETWORK.network_path, "com_file": _composition.COM_FILE_PATH}
+    out: dict[str, tuple] = {}
     for knob in _FROZEN_ENV:
         if knob == "atom_list":
-            want, have = list(cfg.atom_list), list(loaded[knob])
-            same = want == have
+            want_atoms, have_atoms = list(cfg.atom_list), list(_jax_step.IMPORT_ATOM_LIST)
+            if want_atoms != have_atoms:
+                out[knob] = (want_atoms, have_atoms)
         else:
             want = str(Path(resolve_data_path(getattr(cfg, knob))).resolve())
             have = str(Path(loaded[knob]).resolve())
-            same = _same_file(want, have, knob)
-        if not same:
-            out[knob] = (want, have)
+            if not _same_file(want, have, knob):
+                out[knob] = (want, have)
     return out
 
 
-def _assert_frozen_knobs_match_import(cfg: Any) -> None:
+def _assert_frozen_knobs_match_import(cfg: Config) -> None:
     """Fail fast if `cfg` requests another network, com_file or atom_list.
 
     It must match the import-frozen one (`_frozen_mismatch`). ``make_config(...)`` cannot change them
@@ -591,7 +574,7 @@ def _assert_frozen_knobs_match_import(cfg: Any) -> None:
 
 
 @contextlib.contextmanager
-def _cfg_overlay(cfg: Any) -> Any:
+def _cfg_overlay(cfg: Config) -> Iterator[None]:
     """Overlay cfg's public attributes onto the process default config for setup.
 
     The pre-loop scratch containers, the ``atm_setup``/``ini_abun`` facades,
@@ -629,7 +612,7 @@ def _cfg_overlay(cfg: Any) -> Any:
             delattr(base, name)
 
 
-def _build_pre_loop_runstate_impl(cfg: Any) -> RunState:
+def _build_pre_loop_runstate_impl(cfg: Config) -> RunState:
     """Run the full pre-loop pipeline and return a populated RunState."""
     import time
 

@@ -213,9 +213,9 @@ def banded_solve(diag, sup, sub, b):
 
 
 def stage_defects(y, k_arr, dt, atm, net):
-    """Per-layer, per-atom defect of each Ros2 stage vector against its element identity.
+    """Per-layer, per-atom defect of each Ros2 stage vector against its element identity, and its repair bound.
 
-    And the bound the repair leaves it under. `max(_DEFECT_FLOOR * scale, REPAIR_ABS_FLOOR * c0 * n_tot)` with
+    The bound is `max(_DEFECT_FLOOR * scale, REPAIR_ABS_FLOOR * c0 * n_tot)` with
     `scale` the atom-weighted sum of the identity's terms (`c0 |k|`, `|T k|` contributions, `|b_tr|`). Returns (k1,
     k2, defect1, defect2, bound).
 

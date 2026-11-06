@@ -19,12 +19,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 from _helpers import load_adj_state, run_child
+from gen_fixtures import built_on
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "tests" / "data"
 W39B_FIXTURE = DATA / "adj_state_w39b.npz"
-_MANIFEST = DATA / "FIXTURES.json"
-BUILT_ON = json.loads(_MANIFEST.read_text()).get("platform_machine") if _MANIFEST.is_file() else None
+BUILT_ON = built_on("adj_state_w39b.npz")
 S_NETWORK = "thermo/SNCHO_photo_network_2025.txt"
 # W39b layers where H2S is a trace, not a reservoir (VMR <= 1.3e-9 on the
 # 2025-network fixture; 83-94 on the 2021 network)

@@ -18,7 +18,9 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import pytest
 
-from vulcan3.steady_state_grad import BodyTerms, _adjoint_scope_findings
+from vulcan3._adjoint_audit import _adjoint_scope_findings
+from vulcan3.config import load_config
+from vulcan3.steady_state_grad import BodyTerms
 
 # The refresh feedback is unconditional, so every case carries it.
 ALWAYS = ("atm_refresh_feedback", "info")
@@ -170,8 +172,9 @@ CASES = [
 
 
 def _run(cfg_kw, state_kw, terms, photo_recompute_k):
+    cfg = load_config("default", **{"use_photo": False, **cfg_kw})
     return _adjoint_scope_findings(
-        SimpleNamespace(**cfg_kw),
+        cfg,
         final_state=None if state_kw is None else SimpleNamespace(**state_kw),
         photo_recompute_k=photo_recompute_k,
         body_terms=terms,
@@ -184,9 +187,9 @@ def _run(cfg_kw, state_kw, terms, photo_recompute_k):
     ids=[c[0] for c in CASES],
 )
 def test_scope_findings_match_expected_severities(cfg_kw, state_kw, terms, photo_k, expected):
-    """Each configuration emits the expected codes at the expected severity, no more and no fewer.
+    """Each configuration emits the expected codes at the expected severity, no more, no fewer and none twice.
 
-    And no code twice: an extra "error" blocks a valid gradient, a missing one ships a wrong gradient, and a
+    An extra "error" blocks a valid gradient, a missing one ships a wrong gradient, and a
     duplicate code makes a downstream `dict(findings)` silently drop one.
     """
     got = sorted((f["code"], f["severity"]) for f in _run(cfg_kw, state_kw, terms, photo_k))

@@ -1,4 +1,4 @@
-"""Column structure and transport coefficients at setup: mean mass, hydrostatic scans, settling and molecular diffusion.
+"""Column structure and transport at setup: mean mass, hydrostatic scans, settling, moldiff, boundary fluxes.
 
 The scans stay apart from `atm_refresh`: folding them moved bits (notes "Do not retry", Bit-moving refactors).
 
@@ -7,13 +7,16 @@ Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, l
 
 from __future__ import annotations
 
+import logging
 import warnings
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
+from ._paths import resolve_data_path
 from ._tp_kzz import surface_gravity
 from .atm_refresh import hydrostatic_step, recompute_vm_jax
 from .phy_const import BAR_CGS, Navo, kb
@@ -29,9 +32,13 @@ __all__ = [
     "compute_settling_velocity",
     "mol_diff_jax",
     "mu_dz_g_jax",
+    "read_bc_flux",
     "settling_coeff_array",
     "settling_velocity_jax",
 ]
+
+
+logger = logging.getLogger(__name__)
 
 
 def compute_mean_mass(ymix: jnp.ndarray, ms_arr: jnp.ndarray) -> jnp.ndarray:
@@ -41,7 +48,7 @@ def compute_mean_mass(ymix: jnp.ndarray, ms_arr: jnp.ndarray) -> jnp.ndarray:
 
 def _scan_up_mu_dz_g(
     pref_indx: int,
-    gs: float,
+    gs: float | jnp.ndarray,
     Rp: float,
     Tco: jnp.ndarray,
     mu: jnp.ndarray,
@@ -74,7 +81,7 @@ def _scan_up_mu_dz_g(
 
 def _scan_down_mu_dz_g(
     pref_indx: int,
-    gs: float,
+    gs: float | jnp.ndarray,
     Rp: float,
     Tco: jnp.ndarray,
     mu: jnp.ndarray,
@@ -104,7 +111,7 @@ def _scan_down_mu_dz_g(
 
 
 def mu_dz_g_jax(
-    pref_indx: int, gs: jnp.ndarray, Rp: Any, Tco: jnp.ndarray, mu: jnp.ndarray, pico: jnp.ndarray, nz: int
+    pref_indx: int, gs: float | jnp.ndarray, Rp: Any, Tco: jnp.ndarray, mu: jnp.ndarray, pico: jnp.ndarray, nz: int
 ) -> Any:
     """Hydrostatic height integration on the JAX graph, anchored at `pref_indx`.
 
@@ -141,7 +148,7 @@ def compute_mu_dz_g(
     ms_arr: np.ndarray,
     pico: np.ndarray,
     Tco: np.ndarray,
-) -> dict[str, np.ndarray | int]:
+) -> dict[str, np.ndarray | int | float]:
     """Build (mu, g, gs, Hp, dz, dzi, zco, zmco, pref_indx, [Ti, Hpi]).
 
     Host wrapper over :func:`mu_dz_g_jax`: it picks the discrete `pref_indx`
@@ -164,7 +171,7 @@ def compute_mu_dz_g(
 
     gz, Hp, dz, zco, zmco, dzi, Ti, Hpi = mu_dz_g_jax(pref_indx, gs, float(cfg.Rp), Tco_j, mu_j, pico_j, nz)
 
-    out: dict[str, np.ndarray | int] = {
+    out: dict[str, np.ndarray | int | float] = {
         "mu": np.asarray(mu_j),
         "g": np.asarray(gz),
         "gs": gs,
@@ -183,15 +190,13 @@ def compute_mu_dz_g(
 
 # Cloutman dynamic-viscosity polynomial (na, a, b) per atm_base
 # (build_atm.py:589-599). CO2 is not tabulated; falls back to N2.
-_VISCOSITY_TABLE: Mapping[str, tuple[float, float, float]] = {
+VISCOSITY_TABLE: Mapping[str, tuple[float, float, float]] = {
     "N2": (1.52, 1.186e-5, 86.54),
     "H2": (1.67, 1.936e-6, 2.187),
     "CO2": (1.52, 1.186e-5, 86.54),
     "H2O": (1.5, 1.6e-5, 0.0),
     "O2": (1.46, 2.294e-5, 164.4),
 }
-
-VISCOSITY_TABLE = _VISCOSITY_TABLE  # the public name; `_VISCOSITY_TABLE` is deprecated (docs/api.md)
 
 
 def settling_velocity_jax(
@@ -237,9 +242,9 @@ def compute_settling_velocity(
     atm_base = cfg.atm_base
     if atm_base == "CO2":
         warnings.warn("NO CO2 viscosity yet! (using N2 instead)", stacklevel=2)
-    if atm_base not in _VISCOSITY_TABLE:
+    if atm_base not in VISCOSITY_TABLE:
         raise OSError(f"No viscosity polynomial for atm_base={atm_base!r}")
-    na, a, b = _VISCOSITY_TABLE[atm_base]
+    na, a, b = VISCOSITY_TABLE[atm_base]
     settle_coeff = settling_coeff_array(cfg, species_list, rho_p, r_p)
     vs = settling_velocity_jax(na, a, b, jnp.asarray(Tco), jnp.asarray(g), jnp.asarray(settle_coeff))
     return np.asarray(vs, dtype=np.float64)
@@ -330,7 +335,7 @@ def mol_diff_jax(
     """Molecular diffusion on the JAX graph: (Dzz, Dzz_cen, vm).
 
     Shared by the host setup path (:func:`compute_mol_diff`) and the
-    on-graph `atm_jax._mol_diff`. Callers gate
+    on-graph `atm_jax.mol_diff`. Callers gate
     `use_moldiff` themselves. `Dzz` is on the cell interfaces (nz-1, ni),
     `Dzz_cen` the cell-centered companion kept for the `.vul` diagnostic
     surface, `vm` the interface-centered advective (drift) component.
@@ -404,3 +409,46 @@ def compute_mol_diff(
         "Dzz_cen": np.asarray(Dzz_cen),
         "vm": np.asarray(vm),
     }
+
+
+def _parse_bc_file(path: str) -> list[list[str]]:
+    """Read a BC text file into token rows; skip comments and blank lines."""
+    rows: list[list[str]] = []
+    with Path(resolve_data_path(path)).open() as f:
+        for line in f:
+            if not line.startswith("#") and line.strip():
+                rows.append(line.split())
+    return rows
+
+
+def _bc_species_index(sp: str, species_list: list[str], path: str) -> int:
+    """Return a boundary-flux row's species index, refusing a species outside the network, as upstream does."""
+    if sp not in species_list:
+        raise ValueError(f"{path}: boundary-flux row names {sp!r}, which is not in the network; remove the row.")
+    return species_list.index(sp)
+
+
+def read_bc_flux(cfg: Any, species_list: list[str]) -> dict[str, np.ndarray]:
+    """Build (top_flux, bot_flux, bot_vdep, bot_fix_sp).
+
+    use_topflux and use_botflux each fill their section from a file. bot_fix_sp
+    stays zero: OuterLoop pins the `use_fix_sp_bot` dict entries itself.
+    """
+    ni = len(species_list)
+    out = {
+        "top_flux": np.zeros(ni, dtype=np.float64),
+        "bot_flux": np.zeros(ni, dtype=np.float64),
+        "bot_vdep": np.zeros(ni, dtype=np.float64),
+        "bot_fix_sp": np.zeros(ni, dtype=np.float64),
+    }
+    if bool(cfg.use_topflux):
+        logger.info("Using the prescribed constant top flux.")
+        for tokens in _parse_bc_file(cfg.top_BC_flux_file):
+            out["top_flux"][_bc_species_index(tokens[0], species_list, cfg.top_BC_flux_file)] = float(tokens[1])
+    if bool(cfg.use_botflux):
+        logger.info("Using the prescribed constant bottom flux.")
+        for tokens in _parse_bc_file(cfg.bot_BC_flux_file):
+            i = _bc_species_index(tokens[0], species_list, cfg.bot_BC_flux_file)
+            out["bot_flux"][i] = float(tokens[1])
+            out["bot_vdep"][i] = float(tokens[2])
+    return out

@@ -78,10 +78,9 @@ def fast(request, monkeypatch):
                 f"{jax.default_backend()!r}: its cases run only on a CUDA device "
                 "(JAX_PLATFORMS=cuda)"
             )
-        try:
-            fast_mod.build()
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            pytest.skip(f"C++ kernel not built: {e}")
+        if shutil.which(os.environ.get("CXX", "c++")) is None:
+            pytest.skip("no C++ compiler on PATH to build the ffi kernel")
+        fast_mod.build()  # a compile error is a failure, not a missing prerequisite
     monkeypatch.setattr(fast_mod, "BACKEND", request.param)
     return fast_mod
 
@@ -251,9 +250,9 @@ def _kernel_run(device, d, s, c, r):
 
 
 def _assert_close(got, ref, rtol, name, same_nonfinite=True):
-    """`got` is finite where `ref` is, within rtol * max |ref| there.
+    """Check `got` is finite where `ref` is, within rtol * max |ref| there; return the normwise difference.
 
-    And (`same_nonfinite`) holds `ref`'s inf/nan values elsewhere; returns the normwise difference.
+    With `same_nonfinite` it also holds `ref`'s inf/nan values elsewhere.
     """
     fin = np.isfinite(ref)
     np.testing.assert_array_equal(np.isfinite(got), fin, err_msg=name)
@@ -268,8 +267,8 @@ def _assert_close(got, ref, rtol, name, same_nonfinite=True):
 def test_cuda_kernel_matches_cpu_kernel(nz, ni, kind):
     """Raw factor and solve (one rhs and a stack on the same factors) of the CUDA kernel against the CPU kernel.
 
-    (`_kernel_case`). On `tie` the smaller row must win on both; on `singular` both kernels must put inf/nan in the
-    same places, and the same values there in the first layer (beyond it the Gauss-Jordan inverse of the singular
+    Cases are `_kernel_case`. On `tie` the smaller row must win on both; on `singular` both kernels must put inf/nan in
+    the same places, and the same values there in the first layer (beyond it the Gauss-Jordan inverse of the singular
     block is non-finite everywhere, as the CPU kernel's, but not with the same inf/nan mix; a numpy emulation reads
     two infs for nans in lu, all-nan solutions on both). Permutations are equal in every layer, the first layer's lu
     within KERNEL_RTOL, the rest of lu and the solutions within GJ_KERNEL_RTOL.
@@ -416,10 +415,7 @@ np.savez(out, **res)
 
 @pytest.fixture(scope="module")
 def buffer_variants(tmp_path_factory):
-    """Per network, each child's output, runs[buffers].
-
-    Or the reason the two-buffer kernels cannot run on this device.
-    """
+    """Per network, each child's output, runs[buffers], or the reason the two-buffer kernels cannot run here."""
     runs = {}
 
     def run(net):
@@ -468,9 +464,9 @@ def _buffer_runs(net, buffer_variants):
     [(net, f"dt{dt:g}") for net in _BUFFER_NETS for dt in BUFFER_DTS] + [("HD189", "tie"), ("HD189", "singular")],
 )
 def test_one_buffer_kernels_are_bitwise_the_two_buffer_ones(net, case, buffer_variants):
-    """Factor (lu, perm) and a three-rhs solve on shared factors.
+    """The factor (lu, perm) and a three-rhs solve (x) of the one-buffer kernels against the two-buffer ones.
 
-    (x) of the one-buffer kernels against the two-buffer ones: the real stage-1 blocks of both networks at the run's
+    Cases: the real stage-1 blocks of both networks at the run's
     dt, 1e6 and dt_max, and `_kernel_case`'s tie and singular blocks.
     """
     runs = _buffer_runs(net, buffer_variants)
@@ -484,8 +480,8 @@ def test_one_buffer_kernels_are_bitwise_the_two_buffer_ones(net, case, buffer_va
 def test_gauss_jordan_factor_on_real_blocks(net, case, buffer_variants):
     """The CUDA kernel against the CPU kernel on the real stage-1 blocks.
 
-    (the two-buffer child; the one-buffer one is bitwise it). Beyond the first layer the Schur complements carry the
-    Gauss-Jordan inverse, so the solution is judged by its residual with check_real_blocks' bar: no worse than
+    This is the two-buffer child; the one-buffer one is bitwise it. Beyond the first layer the Schur complements carry
+    the Gauss-Jordan inverse, so the solution is judged by its residual with check_real_blocks' bar: no worse than
     max(2x the CPU kernel's, 10x LAPACK gbsv's). The first layer's lu and the permutations are compared in the
     printout only.
     """
@@ -756,7 +752,7 @@ else:
 def test_cuda_build_stamp_covers_arch_and_nvcc(change, tmp_path, monkeypatch):
     """`build(cuda=True)` redoes a GPU library built for another arch or with another nvcc.
 
-    And the loader's check (the sources only: a GPU job's JAX process need not have nvcc) still accepts it. A
+    The loader's check (the sources only: a GPU job's JAX process need not have nvcc) still accepts it. A
     stand-in nvcc writes the stamp it is given.
     """
     nvcc = tmp_path / "nvcc"

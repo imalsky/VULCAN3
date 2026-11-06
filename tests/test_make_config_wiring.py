@@ -15,6 +15,7 @@ def test_grid_and_runner_overrides_reach_setup_and_runner_without_leakage():
     import vulcan3
     import vulcan3.legacy_io as op
     from vulcan3 import op_jax, outer_loop
+    from vulcan3._build_statics import build_statics
 
     # The process default config is what state._cfg_overlay identity-compares
     # against for its no-op fast path.
@@ -42,7 +43,7 @@ def test_grid_and_runner_overrides_reach_setup_and_runner_without_leakage():
     var, atm, _para = legacy_view(rs)
     integ = outer_loop.OuterLoop(op_jax.Ros2JAX(), op.Output(), cfg=cfg)
     assert integ._cfg is cfg
-    statics = integ._build_statics(var, atm)
+    statics = build_statics(integ, var, atm)
     assert int(statics.count_max) == 37, f"count_max override did not reach the runner: {int(statics.count_max)}"
 
     # (3) zero leakage: the global module is exactly as it was before the call.
@@ -157,9 +158,9 @@ def test_import_locked_overrides_fail_fast(overrides, pattern, tmp_path):
 
 
 def test_save_cfg_serializes_active_cfg(tmp_path, monkeypatch):
-    """Output(cfg=cfg).save_cfg writes the ACTIVE cfg's values (so make_config runs are reproducible).
+    """Output(cfg=cfg).save_cfg writes the ACTIVE cfg's values under dname, whatever the cwd.
 
-    Not a copy of the packaged vulcan_cfg.py, and it writes under dname even when the cwd is somewhere else.
+    Not a copy of the packaged vulcan_cfg.py: make_config runs are reproducible.
     """
     import vulcan3
     from vulcan3 import legacy_io
@@ -183,7 +184,7 @@ def test_clip_fn_degenerate_layer_stays_finite():
     """
     import jax.numpy as jnp
 
-    from vulcan3.outer_loop import _make_clip_fn
+    from vulcan3._step_control import _make_clip_fn
 
     # 3 species; in the gas-mask branch the last column is a non-gas condensate.
     gas_mask = jnp.array([True, True, False])
@@ -202,3 +203,25 @@ def test_clip_fn_degenerate_layer_stays_finite():
         assert bool(jnp.all(jnp.isfinite(ymix_new))), (
             f"clip produced non-finite ymix (non_gas_present={non_gas_present})"
         )
+
+
+def test_import_lock_refuses_a_file_it_cannot_read(tmp_path, monkeypatch):
+    """An unreadable pair is not a match: the guard cannot say the file is the import-time one."""
+    from pathlib import Path
+
+    import pytest
+
+    from vulcan3.state import _same_file
+
+    want, have = tmp_path / "want", tmp_path / "have"
+    want.write_text("a")
+    have.write_text("b")
+    assert not _same_file(str(want), str(have), "network")
+    assert not _same_file(str(tmp_path / "missing"), str(have), "network")
+
+    def denied(*_args, **_kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "open", denied)
+    with pytest.raises(ValueError, match="cannot compare"):
+        _same_file(str(want), str(have), "network")

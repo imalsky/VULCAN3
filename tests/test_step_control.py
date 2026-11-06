@@ -13,7 +13,7 @@ import numpy as np
 
 
 def test_estimate_counts_a_species_the_step_creates():
-    from vulcan3.outer_loop import _make_aggregate_delta_fn
+    from vulcan3._step_control import _make_aggregate_delta_fn
 
     agg = _make_aggregate_delta_fn(1e-22, 1e-30, False, jnp.zeros((1, 2), dtype=bool))
     ymix_old = jnp.asarray([[1.0, 0.0]])  # species 1 absent before the step
@@ -28,7 +28,7 @@ def test_estimate_counts_a_species_the_step_creates():
 
 
 def test_clip_keeps_values_below_nega_cut_negative():
-    from vulcan3.outer_loop import _clip_prologue
+    from vulcan3._step_control import _clip_prologue
 
     y = jnp.asarray([[5.0, 0.5, -0.5, -2.0]])
     y_clip, _, _ = _clip_prologue(y, pos_cut=1.0, nega_cut=-1.0)
@@ -39,8 +39,8 @@ def test_shipped_cut_rejects_a_too_negative_step():
     from types import SimpleNamespace
 
     from vulcan3._loop_body import _decide_step
+    from vulcan3._step_control import _clip_prologue
     from vulcan3.config import load_config
-    from vulcan3.outer_loop import _clip_prologue
 
     cfg = load_config("default")
     statics = SimpleNamespace(
@@ -69,10 +69,12 @@ def test_shipped_cut_rejects_a_too_negative_step():
     d = decide(0.5 * cfg.nega_cut)
     assert bool(d.accept)
     assert float(d.y_post_clip[0, 1]) == 0.0
+    # HD189 photo off's worst trial (notes "Forward mode"): the shipped cut has to accept it.
+    assert bool(decide(-1075.0).accept)
 
 
 def test_condensing_clip_keeps_a_nan_gas_sum_nan():
-    from vulcan3.outer_loop import _make_clip_fn
+    from vulcan3._step_control import _make_clip_fn
 
     clip = _make_clip_fn(True, jnp.asarray([True, True, False]), 0.0, -1.0)
     _, ymix, _, _ = clip(jnp.asarray([[jnp.nan, 1.0, 2.0]]))

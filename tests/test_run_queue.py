@@ -35,7 +35,7 @@ from test_vmap_while_loop import (
     _pin_cfg,
 )
 
-from vulcan3.outer_loop import _ATM_ARRAY_FIELDS
+from vulcan3._carry import _ATM_ARRAY_FIELDS
 
 # The bound test_vmap_while_loop holds batched-vs-solo to; a refilled lane
 # differs from the plain batch for the same reason (cadence, not fixed point).
@@ -46,10 +46,7 @@ TISO = (900.0, 1000.0, 1100.0, 1200.0, 1300.0)
 
 
 def _take_jobs(jobs, sl):
-    """Slice a (state, atm) job pair on the job axis (the AtmStatic toggle flags are Python scalars.
-
-    And must never be indexed).
-    """
+    """Slice a (state, atm) job pair on the job axis; the AtmStatic toggle flags are Python scalars, never indexed."""
     st, atm = jobs
     return (
         jax.tree_util.tree_map(lambda x: x[sl], st),
@@ -137,9 +134,9 @@ def test_queue_without_refill_is_the_batch(ref_batch, lockstep):
 
 @pytest.mark.slow
 def test_queue_jvp_without_refill_is_the_batch_jvp():
-    """The queue stops the gradient of its certificate-only lane fields.
+    """The queue stops the gradient of its certificate-only lane fields (`_carry._QUEUE_STOP_FIELDS`).
 
-    (`outer_loop._QUEUE_STOP_FIELDS`: they steer predicates, never y). With no refill a jvp through the queue must
+    They steer predicates, never y. With no refill a jvp through the queue must
     equal the jvp through the lockstep batch bitwise on the CPU, primal and tangent: a stopped field that fed y
     would zero part of the tangent. A small column keeps the two forward-mode programs cheap.
     """

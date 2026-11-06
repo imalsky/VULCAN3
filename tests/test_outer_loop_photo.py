@@ -23,7 +23,9 @@ def test_photo_branch_matches_python_photo_path():
     vulcan_cfg = default_config()
 
     import vulcan3.legacy_io as op
-    from vulcan3 import op_jax, outer_loop
+    from vulcan3 import op_jax, outer_loop, photo as _photo_mod
+    from vulcan3._loop_branches import _make_photo_branch
+    from vulcan3._pack_state import unpack_state
     from vulcan3.state import RunState, legacy_view, runstate_from_store
 
     # --- Build HD189 reference state with the photo pre-loop (as
@@ -54,10 +56,10 @@ def test_photo_branch_matches_python_photo_path():
 
     # --- Path B: photo branch inside the JAX runner ---
     integ = outer_loop.OuterLoop(solver, output)
-    integ._ensure_runner(var_B, data_atm)
+    integ.ensure_runner(var_B, data_atm)
     rs_entry = runstate_from_store(var_B, data_atm, data_para)._replace(photo_static=rs.photo_static)
-    init_state = integ._pack_state_from_runstate(rs_entry)
-    photo_branch = outer_loop._make_photo_branch(integ._photo_static)
+    init_state = integ.pack_state(rs_entry)
+    photo_branch = _make_photo_branch(integ._photo_static)
     final_state = photo_branch(init_state)
 
     # Regression: the in-runner photo branch must use the dynamic dz carried
@@ -67,7 +69,7 @@ def test_photo_branch_matches_python_photo_path():
     dz_scale = jnp.linspace(0.95, 1.05, init_state.dz.shape[0])
     dynamic_state = init_state._replace(dz=init_state.dz * dz_scale)
     dynamic_final = photo_branch(dynamic_state)
-    tau_dynamic_ref = outer_loop._photo_mod.compute_tau_jax(
+    tau_dynamic_ref = _photo_mod.compute_tau_jax(
         dynamic_state.y,
         dynamic_state.dz,
         integ._photo_static.photo_data,
@@ -88,7 +90,7 @@ def test_photo_branch_matches_python_photo_path():
 
     # J_sp through the production .vul writer (every branch plus the (sp, 0)
     # totals, op.py:2764, 2783) against compute_J's.
-    rs_B = integ._unpack_state_to_runstate(final_state, rs_entry)
+    rs_B = unpack_state(integ, final_state, rs_entry)
     J_sp_B = op._synthesize_save_dicts(rs_B, vulcan_cfg)[0]["J_sp"]
     for key, ref in data_var.J_sp.items():
         assert key in J_sp_B, f"J_sp[{key}] missing from the writer"

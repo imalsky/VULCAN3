@@ -35,7 +35,7 @@ repos:
     rev: "v2.4.0"
     hooks:
       - id: mypy
-        # Manual: 157 findings are left after the first annotation pass, so this reports and does not block a commit.
+        # Manual: findings are left where the JAX and NumPy stubs return Any (notes "Cleanup proofs"), so this reports.
         stages: [manual]
         files: ^src/
         args: []

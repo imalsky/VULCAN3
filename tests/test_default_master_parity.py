@@ -290,19 +290,34 @@ def _atom_dict(data: dict) -> dict[str, float]:
     }
 
 
-def test_audit_refuses_a_contaminated_oracle() -> None:
-    """The audit refuses an oracle checkout carrying VULCAN-JAX's own code (auditing against it is circular)."""
-    from tools.audit_master_parity import _check_oracle_is_pristine
+def test_audit_refuses_any_oracle_but_a_clean_clone_at_the_pin(tmp_path, monkeypatch) -> None:
+    from tools.audit_master_parity import _ORACLE_FAMILY, _check_oracle_is_pristine, main
 
-    with tempfile.TemporaryDirectory(prefix="fake_oracle_") as tmp:
-        contaminated = Path(tmp)
-        (contaminated / "op.py").write_text("stall_window = getattr(vulcan_cfg, 'conv_stall_window', 200)\n")
-        errors = _check_oracle_is_pristine(contaminated)
+    errors = _check_oracle_is_pristine(tmp_path)
+    assert len(errors) == 1
+    assert "not a git checkout" in errors[0]
 
-    assert errors, "the guard did not flag a checkout containing conv_stall_window"
-    assert any("conv_stall_window" in e for e in errors)
-    # An unversioned copy is also flagged: provenance cannot be established.
-    assert any("no .git" in e for e in errors)
+    def git(*args):
+        return subprocess.run(["git", "-C", str(tmp_path), *args], capture_output=True, text=True, check=True).stdout
+
+    git("init", "-q")
+    (tmp_path / "op.py").write_text("upstream\n")
+    git("add", "-A")
+    git("-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-qm", "base")
+    errors = _check_oracle_is_pristine(tmp_path)
+    assert len(errors) == 1
+    assert "not the pinned" in errors[0]
+    monkeypatch.setenv("VULCAN_MASTER_DIR", str(tmp_path))
+    assert main([]) == 1  # the command-line entry refuses it too
+
+    monkeypatch.setattr(
+        "yaml.safe_load", lambda _text: {"oracles": {_ORACLE_FAMILY: {"commit": git("rev-parse", "HEAD").strip()}}}
+    )
+    assert _check_oracle_is_pristine(tmp_path) == []
+    (tmp_path / "op.py").write_text("edited\n")
+    errors = _check_oracle_is_pristine(tmp_path)
+    assert len(errors) == 1
+    assert "dirty" in errors[0]
 
 
 def test_audit_master_parity_against_pinned_oracle() -> None:
@@ -479,7 +494,7 @@ def test_conden_fix_species_pin_matches_master() -> None:
 
     On the trigger step master snapshots `fix_y` from the post-solve y BEFORE
     the H2O relaxation (op.py:871-873, then op.py:898-902 relaxes inside the
-    same block), so `_activate_fix_species` must run before `conden_branch`.
+    same block), so `activate_fix_species` must run before `conden_branch`.
     Snapshotting the post-relax y pins a reservoir the relax has already
     drained, and the pin then holds that column for the rest of the run.
     """

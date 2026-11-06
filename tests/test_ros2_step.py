@@ -65,7 +65,7 @@ def main() -> None:
         jnp.asarray(k_arr),
         jnp.float64(data_var.dt),
         atm_static,
-        chem_funs._NET_JAX,
+        chem_funs.NET_JAX,
     )
 
     # generous; the integrator self-corrects

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 
@@ -10,11 +10,14 @@ from . import atm_refresh as _atm_refresh_mod, conden as _conden_mod, photo as _
 from .phy_const import UNDERFLOW_DENOM
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from ._carry import JaxIntegState, ProfileVars, _PhotoStatic
+    from .jax_step import AtmStatic
 
 
 # size-limit-ok: the photolysis chain, in program order
-def _make_photo_branch(photo_static: _PhotoStatic) -> Any:
+def _make_photo_branch(photo_static: _PhotoStatic) -> Callable[[JaxIntegState], JaxIntegState]:
     """Build the in-loop photo branch closure.
 
     Computes tau / aflux / J inside the JIT'd body and writes the
@@ -122,7 +125,7 @@ def _make_photo_branch(photo_static: _PhotoStatic) -> Any:
     return photo_branch
 
 
-def _splice_conden(conden_static: Any, pv: ProfileVars) -> Any:
+def _splice_conden(conden_static: _conden_mod.CondenStatic, pv: ProfileVars) -> _conden_mod.CondenStatic:
     """Return the baked `CondenStatic` with this lane's per-profile arrays (see ProfileVars).
 
     Its other fields stay baked and must be batch-constant. nh3_conden_top is a 0-d int32 only compared against
@@ -140,7 +143,7 @@ def _splice_conden(conden_static: Any, pv: ProfileVars) -> Any:
     )
 
 
-def _splice_step_atm(atm_static: Any, s: JaxIntegState, use_vm_mol: bool, kb: float, Navo: float) -> Any:
+def _splice_step_atm(atm_static: AtmStatic, s: JaxIntegState, use_vm_mol: bool, kb: float, Navo: float) -> AtmStatic:
     """Return the step's `AtmStatic`: the carry's refreshed geometry (op.py:905-907) and hybrid vm_mol phase.
 
     Under `use_vm_mol`, also the vm recomputed from them.
@@ -161,7 +164,7 @@ def _splice_step_atm(atm_static: Any, s: JaxIntegState, use_vm_mol: bool, kb: fl
     return atm
 
 
-def _make_conden_branch(conden_static: _conden_mod.CondenStatic) -> Any:
+def _make_conden_branch(conden_static: _conden_mod.CondenStatic) -> Callable[[JaxIntegState], JaxIntegState]:
     """Build the in-loop conden closure.
 
     Operates on the post-Ros2/post-clip s.y/s.ymix. Updates the conden

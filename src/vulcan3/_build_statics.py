@@ -2,23 +2,26 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 import numpy as np
 
 from . import atm_refresh as _atm_refresh_mod, conden as _conden_mod, photo as _photo_mod, phy_const as _phy_const
 from ._carry import _PhotoStatic, _Statics
-from .chem_funs import _NETWORK
+from .chem_funs import NETWORK
+
+if TYPE_CHECKING:
+    from .outer_loop import OuterLoop
 
 # Condensates pinned over the whole column once fix_species fires: master's list (exoclime@80f75b9 op.py:878).
 _WHOLE_COLUMN_CONDENSATES = {"H2O_l_s", "H2SO4_l", "NH3_l_s", "S8_l_s"}
 
 
 # size-limit-ok: packs one long NamedTuple, one field per line
-def build_statics(integ: Any, var: Any, atm: Any) -> _Statics:
+def build_statics(integ: OuterLoop, var: Any, atm: Any) -> _Statics:
     """Pack scalar config + per-run arrays into the closure inputs."""
-    ni = _NETWORK.ni
+    ni = NETWORK.ni
     atom_ini_arr = np.asarray(
         [float(var.atom_ini[a]) for a in integ._atom_order],
         dtype=np.float64,
@@ -31,8 +34,8 @@ def build_statics(integ: Any, var: Any, atm: Any) -> _Statics:
     # conver_ignore species are zeroed in the longdy reduction (op.py:1045-1046).
     conver_ignore_np = np.zeros(ni, dtype=bool)
     for sp in integ._cfg.conver_ignore:
-        if sp in _NETWORK.species_idx:
-            conver_ignore_np[_NETWORK.species_idx[sp]] = True
+        if sp in NETWORK.species_idx:
+            conver_ignore_np[NETWORK.species_idx[sp]] = True
 
     # condense_zero_conv (op.py:1048-1049): when use_condense, the
     # non_gas_sp columns are zeroed in longdy.
@@ -40,17 +43,17 @@ def build_statics(integ: Any, var: Any, atm: Any) -> _Statics:
     cond_zero_conv_np = np.zeros((nz, ni), dtype=bool)
     if integ._cfg.use_condense:
         for sp in integ._cfg.non_gas_sp:
-            cond_zero_conv_np[:, _NETWORK.species_idx[sp]] = True
+            cond_zero_conv_np[:, NETWORK.species_idx[sp]] = True
 
     # The ion masks are zeros when use_ion is off; the body's Python
     # `if statics.use_ion:` skips them at trace time.
     use_ion = bool(integ._cfg.use_ion)
     if use_ion:
-        charge_list = list(getattr(var, "charge_list", []))
+        charge_list = list(var.charge_list)
         charge_np = np.zeros(ni, dtype=np.float64)
         for sp in charge_list:
-            charge_np[_NETWORK.species_idx[sp]] = integ._compo_charge[_NETWORK.species_idx[sp]]
-        e_idx = _NETWORK.species_idx["e"]
+            charge_np[NETWORK.species_idx[sp]] = integ._compo_charge[NETWORK.species_idx[sp]]
+        e_idx = NETWORK.species_idx["e"]
         # Exclude 'e' from the charge column so `e[:] = -dot(y, charge_arr)`
         # is consistent (op.py:3001 zeros e first).
         charge_np[e_idx] = 0.0
@@ -58,7 +61,7 @@ def build_statics(integ: Any, var: Any, atm: Any) -> _Statics:
         charge_np = np.zeros(ni, dtype=np.float64)
         e_idx = 0
 
-    fix_sp_bot_cfg = dict(integ._cfg.use_fix_sp_bot or {})
+    fix_sp_bot_cfg = dict(integ._cfg.use_fix_sp_bot)
     # use_sat_surfaceH2O pins bottom H2O at the surface saturation that
     # setup computed (build_atm.py:227-228; applied every step, op.py:2945).
     if integ._cfg.use_condense and integ._cfg.use_sat_surfaceH2O and "H2O" in integ._cfg.condense_sp:
@@ -66,7 +69,7 @@ def build_statics(integ: Any, var: Any, atm: Any) -> _Statics:
     use_fix_sp_bot = bool(fix_sp_bot_cfg)
     if use_fix_sp_bot:
         fix_sp_bot_idx = np.asarray(
-            [_NETWORK.species_idx[sp] for sp in fix_sp_bot_cfg],
+            [NETWORK.species_idx[sp] for sp in fix_sp_bot_cfg],
             dtype=np.int32,
         )
         fix_sp_bot_mix = np.asarray(
@@ -79,17 +82,17 @@ def build_statics(integ: Any, var: Any, atm: Any) -> _Statics:
 
     use_fix_H2He = bool(integ._cfg.use_fix_H2He)
     if use_fix_H2He:
-        h2_idx = int(_NETWORK.species_idx["H2"])
-        he_idx = int(_NETWORK.species_idx["He"])
+        h2_idx = int(NETWORK.species_idx["H2"])
+        he_idx = int(NETWORK.species_idx["He"])
     else:
         h2_idx = -1
         he_idx = -1
 
-    fix_species_cfg = list(integ._cfg.fix_species or [])
+    fix_species_cfg = list(integ._cfg.fix_species)
     use_fix_species = bool(integ._cfg.use_condense and fix_species_cfg)
     if use_fix_species:
         fix_species_idx = np.asarray(
-            [_NETWORK.species_idx[sp] for sp in fix_species_cfg],
+            [NETWORK.species_idx[sp] for sp in fix_species_cfg],
             dtype=np.int32,
         )
         fix_species_wholecol = np.asarray(
@@ -178,20 +181,20 @@ def build_statics(integ: Any, var: Any, atm: Any) -> _Statics:
     )
 
 
-def gas_mask(integ: Any, atm: Any) -> np.ndarray:
+def gas_mask(integ: OuterLoop, atm: Any) -> np.ndarray:
     """(ni,) gas-species mask.
 
     `atm.gas_indx` when `non_gas_sp` is set, else all True.
     """
     if not integ._cfg.non_gas_sp:
-        return np.ones(_NETWORK.ni, dtype=bool)
-    mask = np.zeros(_NETWORK.ni, dtype=bool)
+        return np.ones(NETWORK.ni, dtype=bool)
+    mask = np.zeros(NETWORK.ni, dtype=bool)
     mask[np.asarray(atm.gas_indx, dtype=int)] = True
     return mask
 
 
 # size-limit-ok: packs one long NamedTuple, one field per line
-def build_photo_static(integ: Any, var: Any, atm: Any) -> _PhotoStatic | None:
+def build_photo_static(integ: OuterLoop, var: Any, atm: Any) -> _PhotoStatic | None:
     """Pack photo cross sections + scalar configs into a `_PhotoStatic`.
 
     Returns None if `use_photo=False` (the runner skips the photo branch
@@ -211,7 +214,7 @@ def build_photo_static(integ: Any, var: Any, atm: Any) -> _PhotoStatic | None:
 
     photo_data = odesolver._photo_data
     if photo_data is None:
-        photo_data = _photo_mod.photo_data_from_static(photo_static, list(_NETWORK.species))
+        photo_data = _photo_mod.photo_data_from_static(photo_static, list(NETWORK.species))
         odesolver._photo_data = photo_data
     photo_J_data = odesolver._photo_J_data
     if photo_J_data is None:
@@ -277,7 +280,7 @@ def build_photo_static(integ: Any, var: Any, atm: Any) -> _PhotoStatic | None:
     )
 
 
-def build_refresh_static(integ: Any, atm: Any) -> _atm_refresh_mod.AtmRefreshStatic:
+def build_refresh_static(integ: OuterLoop, atm: Any) -> _atm_refresh_mod.AtmRefreshStatic:
     """Pack the static inputs to `atm_refresh.update_mu_dz_jax`.
 
     Captures the T-P profile, planetary constants, species masses, and
@@ -311,7 +314,7 @@ def build_refresh_static(integ: Any, atm: Any) -> _atm_refresh_mod.AtmRefreshSta
     )
 
 
-def build_conden_static(integ: Any, var: Any, atm: Any, gas_mask_jnp: Any) -> _conden_mod.CondenStatic | None:
+def build_conden_static(integ: OuterLoop, var: Any, atm: Any, gas_mask_jnp: Any) -> _conden_mod.CondenStatic | None:
     """Pack the conden tables into a `CondenStatic`.
 
     None when `use_condense=False`; the runner then omits the conden branch.
@@ -328,7 +331,7 @@ def build_conden_static(integ: Any, var: Any, atm: Any, gas_mask_jnp: Any) -> _c
     # Single-source: static metadata from make_conden_spec; every
     # T/structure-dependent array from the same build_conden_profile the
     # on-graph rebuild uses.
-    spec = _conden_mod.make_conden_spec(integ._cfg, var, atm, _NETWORK.species_idx)
+    spec = _conden_mod.make_conden_spec(integ._cfg, var, atm, NETWORK.species_idx)
     prof = _conden_mod.build_conden_profile(
         spec,
         jnp.asarray(atm.Tco, dtype=jnp.float64),

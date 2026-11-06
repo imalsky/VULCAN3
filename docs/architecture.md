@@ -4,15 +4,15 @@
 
 `OuterLoop` (one JIT-compiled `lax.while_loop`) drives `jax_step.jax_ros2_step`, which calls the generated chemistry RHS, the
 analytical Jacobian and the block solve. `state.RunState.with_pre_loop_setup(cfg)` runs setup, and `legacy_io.Output.save_out`
-writes a `.vul` pickle. A module keeps its path when its code moves: the old module re-exports the names.
+writes a `.vul` pickle.
 
 | Module | Holds |
 |---|---|
-| `outer_loop` | `OuterLoop`; re-exports the private modules below |
-| `_carry` | the carry and closure pytrees, field lists, batch axes |
-| `_convergence`, `_termination` | the convergence test and certificate; the termination predicate and ring statistics |
-| `_step_control` | step size, clip, aggregate truncation error |
-| `_loop_body`, `_loop_after_step`, `_loop_branches`, `_loop_env` | one step, in named parts, and what it closes over |
+| `outer_loop` | `OuterLoop` |
+| `_carry` | the carry and closure pytrees, what the step closes over, field lists, batch axes |
+| `_convergence` | the ring lookback, longdy, the convergence test and certificate, the stop test |
+| `_step_control` | clip, aggregate truncation error, adaptive rtol, next step size |
+| `_loop_body`, `_loop_branches` | one trial step, in program order; its photolysis and condensation branches |
 | `_runners`, `_runner_jvp`, `_runner_queue` | solo, chunk and batch; forward mode; queue and compaction |
 | `_build_statics`, `_pack_state` | setup into the runner's inputs; `RunState` to carry and back |
 | `steady_state_grad`, `_adjoint_core`, `_adjoint_audit` | public sensitivities; the solve; the scope audit |
@@ -54,5 +54,5 @@ Each row is deliberate.
 ## Known exceptions
 
 - `state._cfg_overlay` writes a caller's config over the process default during setup, and `_CFG = default_config()` is read in
-  seven modules. Threading `cfg` through setup is a separate job.
+  eight modules. Threading `cfg` through setup is a separate job.
 - `tests/conftest.py` must snapshot that default around every test for the same reason.

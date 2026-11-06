@@ -7,6 +7,8 @@ Evidence for these items is in `notes.md` (this repo's, unless another repo is n
 3. [decision] The arm64 full tier fails `test_fast_on_real_w39b_blocks[fast]`: on the W39b 2025-network fixture the matrix-free step's primal under `jvp` is not bitwise the plain step's (bitwise on x86-64).
 4. [owed] Re-baseline after the C25-C29 data and step-control fixes: the arm64 fixture manifest, the arm64 gate reading and the oracle comparisons (`oracle.yml`).
 5. [owed] Rebuild the CUDA kernel on the NAS and check `ffi` on a GH200: the code cleanup changed the kernel sources, and its proof of `ffi` ran on CPU only.
+6. [decision] Confirm or replace the collision limit C30 in the oracle copy: `oracle.yml` passes `test_gibbs` and the HD189 19-step case only because the copy now applies the limit too, so no oracle checks its effect.
+7. [decision] Step control at `dt_min`: since C29 a forced accept keeps the previous state, so a column whose trial fails at the floor repeats the same trial until the step cap. WASP-39b cold chunks at rtol 0.05 hit it (vulcan-retrieval's production test fails).
 
 ## 1. vulcan3 on PyPI
 
@@ -17,8 +19,7 @@ https://pypi.org/simple/`, and the 2026-10-16 install tests took `psutil 8.0.0`,
 the maintainer's pypi.org account. Commands: `uv build --out-dir <dir> .` in this
 repo, then `uv run --with twine twine upload <dir>/*`. Publishing all four packages
 on PyPI would let the READMEs drop the TestPyPI index. The 0.18.0 TestPyPI release
-and its tag were made in a session whose record is not on daw; vulcan-retrieval's
-todo lists confirming them. Done when the name is claimed (and, if decided, the
+and its tag have no record on daw; vulcan-retrieval's todo lists confirming them. Done when the name is claimed (and, if decided, the
 packages are published).
 
 ## 2. GH200 bitwise check of the Jacobian power change
@@ -68,3 +69,29 @@ mode's transpose was removed; the optimized CPU program stayed equal apart from 
 was not run. Needs the maintainer's NAS login. Steps, after the commits are pushed: `git pull`,
 `python -m vulcan3.solver_fast --cuda`, then the kernel test job on a GH200. Done when
 the rebuilt library loads and the job passes.
+
+## 6. The collision limit in the oracle copy
+
+Evidence: notes "Parity ledger" C30. Pinned VULCAN 2 has no limit. Without a delta on the oracle copy, `test_gibbs` reads
+reverse k 0.90 against its 1e-8 bar (18 of 390 reverse rows on the test's HD189 column) and the 19-step case 1.07e-5
+against its 5e-9 bar; both pass before C30 (`e91db66`). So this is a real difference from VULCAN, not stale wiring. The code
+takes option (a) below: `tests/oracle.py::ORACLE_CODE_DELTAS` applies the limit in the copy's `rev_rate`, as for C20, no bar
+changed. `tests/test_collision_limit.py` is then the only check of the limit's effect, and the delta's arithmetic is a
+second copy of `rates_jax.apply_collision_limit`. Choose: (a) keep it; (b) hold those two tests another way, with no changed
+bar; (c) change C30. No record says which the maintainer wants. Done when the choice is recorded in notes "Decided by the
+maintainer, not to be re-opened".
+
+## 7. A column frozen at `dt_min`
+
+Measured on CPU: the WASP-39b draw in vulcan-retrieval's
+`test_production_case_assembles_and_evaluates_one_finite_likelihood` exits stage 2 at the step
+cap with `t` = 5001 x `dt_min` and max|dy/y| 2e-16; S4 at the bottom layer has an error ratio
+of 0.081 against rtol 0.05. Before C29 the same column leaves the floor, and the current code
+with only this fallback reverted (`_loop_body`, `keep_prev`) certifies it in 607 stage 2 steps.
+Three of eight cold draws solved froze, all with high total sulfur; a share of 17 to 23 % of
+cold prior draws is an estimate. The HPC pin (`2441e6c`) predates C29, so production has not
+met this; the next pin move would. The survey's rtol 0.2 is probably clear (unverified).
+Choose: change how a floor force-accept behaves when it cannot progress; or change the guess
+(a sulfur increment that respects each species' order, or a stepped stage 2); or stop a stuck
+lane early. C29 has reasons of its own (HD189 photo off). Done when the choice is made and the
+test passes without a changed bar.

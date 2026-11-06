@@ -1,7 +1,7 @@
 """On-graph molecular-diffusion inputs.
 
 `make_physical_inputs` bridges a host setup (cfg, var, atm) into the
-differentiable `PhysicalInputs` leaves and the static `AtmSpec`; `_mol_diff`
+differentiable `PhysicalInputs` leaves and the static `AtmSpec`; `mol_diff`
 rebuilds (Dzz, Dzz_cen, vm) from them with `atm_setup.mol_diff_jax`, the body
 the host setup runs. The hydrostatic column on the graph is
 `atm_setup.mu_dz_g_jax` (`atm_refresh.update_mu_dz_jax` in the loop).
@@ -39,7 +39,7 @@ class PhysicalInputs(NamedTuple):
 
 
 class AtmSpec(NamedTuple):
-    """Static, non-differentiated configuration for `_mol_diff` and the settling velocity.
+    """Static, non-differentiated configuration for `mol_diff` and the settling velocity.
 
     Discrete host-side choices (species identities, background gas, transport toggles) plus the per-species constant
     arrays. Close over it; do not trace through it.
@@ -57,7 +57,7 @@ class AtmSpec(NamedTuple):
     use_settling: bool
 
 
-def _mol_diff(phys: PhysicalInputs, spec: AtmSpec, n_0: jnp.ndarray, gz: Any, Hp: jnp.ndarray, dz: jnp.ndarray) -> Any:
+def mol_diff(phys: PhysicalInputs, spec: AtmSpec, n_0: jnp.ndarray, gz: Any, Hp: jnp.ndarray, dz: jnp.ndarray) -> Any:
     """Molecular diffusion on the graph: (Dzz, Dzz_cen, vm).
 
     The body is `atm_setup.mol_diff_jax`, the same one the host setup path
@@ -84,7 +84,7 @@ def _mol_diff(phys: PhysicalInputs, spec: AtmSpec, n_0: jnp.ndarray, gz: Any, Hp
     )
 
 
-mol_diff = _mol_diff  # the public name; `_mol_diff` is deprecated (docs/api.md)
+_mol_diff = mol_diff  # deprecated (docs/api.md)
 
 
 def make_physical_inputs(cfg: Any, var: Any, atm: Any, species_list: list[str]) -> tuple[PhysicalInputs, AtmSpec]:
@@ -116,8 +116,8 @@ def make_physical_inputs(cfg: Any, var: Any, atm: Any, species_list: list[str]) 
         settle_coeff = settling_coeff_array(
             cfg,
             list(species_list),
-            getattr(atm, "rho_p", {}),
-            getattr(atm, "r_p", {}),
+            atm.rho_p,
+            atm.r_p,
         )
     else:
         settle_coeff = np.zeros(ni, dtype=np.float64)

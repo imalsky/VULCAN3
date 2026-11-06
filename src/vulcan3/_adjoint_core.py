@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -25,7 +25,6 @@ __all__ = [
     "LGMRES_OUTER_K",
     "LGMRES_RTOL",
     "N_SOLVES_DEFAULT",
-    "PHOTO_RECOMPUTE_AUTO",
     "SOLVER_MAP",
     "BodyTerms",
     "PhotoRecomputeArg",
@@ -33,38 +32,59 @@ __all__ = [
 
 SOLVER_MAP = "renorm"
 
-PHOTO_RECOMPUTE_AUTO = "auto"
-
-PhotoRecomputeArg = Callable[[jnp.ndarray], jnp.ndarray] | Literal["auto"] | None
+PhotoRecomputeArg = Callable[[jnp.ndarray], jnp.ndarray] | None
 
 BODY_MAP_DT = 1e7
 
+# Hard guard: above this the implicit step goes near-singular; refuse rather than return a silently divergent gradient.
 _BODY_MAP_DT_MAX = 1e10
 
+# Ensemble size: the returned gradient is the mean over this many solves with ulp-perturbed RHS twins (deterministic,
+# seeded); twin disagreement is reported as info["ensemble_spread"], the magnitude error bar. n_solves=1 is one
+# unperturbed solve with no spread estimate.
 N_SOLVES_DEFAULT = 3
 
+# Relative RHS perturbation for ensemble twins: large enough to decorrelate the Krylov trajectories of a semi-converged
+# solve, ~13 orders below the gradient signal so the exact solution is unchanged.
 _TWIN_PERTURB = 1e-13
 
+# Entries in the ranked reports: the ensemble spread and pair sums (top reactions by |mean|), the audit's worst cells.
 _TOP_K = 10
 
+# Warn above this ensemble spread (max over the top reactions by |mean| of (max-min)/|mean|): the twins disagree on the
+# reactions one would report; treat magnitudes as ranking weights.
 _SPREAD_WARN = 0.15
 
+# scipy.sparse.linalg.lgmres inner Krylov dimension (the HD189 calibration in
+# tests/test_steady_state_reaction_sensitivity.py).
 LGMRES_INNER_M = 250
 
+# Augmentation vectors carried across restarts; the LGMRES knob that fixes restarted-GMRES oscillation on this
+# indefinite operator.
 LGMRES_OUTER_K = 40
 
+# Outer LGMRES iterations (scipy `maxiter`, each up to `inner_m` inner steps) per warm-start cycle; the solve is chunked
+# into cycles with per-cycle x0 warm-start (the validated configuration).
 LGMRES_MAXITER = 4
 
+# Number of warm-start cycles (the HD189 calibration).
 LGMRES_CYCLES = 8
 
+# Relative-residual target; tighter buys nothing once finite-tolerance state mismatch dominates.
 LGMRES_RTOL = 1e-12
 
+# Warn above this median relative LGMRES residual across the ensemble (the median ignores a single wandering twin).
 _ADJOINT_RESID_WARN = 0.2
 
+# Warn above this body-map fixed-point error: y_star is off the steady-state manifold of the chosen map.
 _FP_ERR_WARN = 1e-2
 
+# Minimum |R_jj| of the unit-column QR in _conserved_null_basis; below it the atom columns are (near-)dependent and the
+# basis is refused.
 _NULL_BASIS_RANK_TOL = 1e-10
 
+# Production sits ~3 orders below this; O(1) means a deflated direction is not null (e.g. open boundary fluxes) and the
+# deflation is corrupting the solve.
 _NULL_QUALITY_WARN = 1e-3
 
 
@@ -159,7 +179,7 @@ def _clip_dead_mask(G: Any, cfg: Any) -> np.ndarray:
     """Cells where the runner's per-step zero-clip would not be the identity.
 
     Applied to a candidate post-step state `G` (number density, cm^-3), the
-    same rule as `outer_loop._clip_prologue`:
+    same rule as `_step_control._clip_prologue`:
 
         y < pos_cut and y >= nega_cut          -> 0     (small/negative cut)
 
@@ -359,6 +379,12 @@ def _lgmres_solve(matvec: Callable[[np.ndarray], np.ndarray], bvec: np.ndarray) 
         if info == 0:
             # Converged; cycles exist to continue an unconverged solve.
             break
+    if not np.isfinite(r_best):
+        raise RuntimeError(
+            f"the adjoint solve produced no finite residual in {LGMRES_CYCLES} LGMRES cycles (last {r:g}, "
+            f"|b| {bnorm:g}): the operator or right-hand side is non-finite, so there is no solution to return. "
+            "Check y_star, k_arr and the loss cotangent for NaN."
+        )
     return x_best
 
 
@@ -387,12 +413,12 @@ def _host_network(net: Any) -> Any:
     """
     from . import chem_funs
 
-    host = chem_funs._NETWORK
+    host = chem_funs.NETWORK
     if net.nr != host.nr:
         raise ValueError(
             f"net has {net.nr} reactions but the import-locked network "
             f"{host.network_path} has {host.nr}. The adjoint linearizes the "
-            "import-time codegen RHS: pass chem_funs._NET_JAX, and select "
+            "import-time codegen RHS: pass chem_funs.NET_JAX, and select "
             "another network with $VULCAN3_NETWORK before the first import."
         )
     return host
@@ -411,22 +437,19 @@ def _resolve_photo_recompute_k(
 ) -> Callable[[jnp.ndarray], jnp.ndarray] | None:
     """Resolve the public photo-feedback argument for sensitivity calls.
 
-    A callable is used as given. "auto" and None both mean no photolysis
-    feedback, which is exact only when `k_arr` has no active photolysis rows;
-    with active rows, refuse rather than return a frozen-photolysis adjoint.
+    A callable is used as given. None means no photolysis feedback, which is exact only when `k_arr` has no active
+    photolysis rows; with active rows, refuse rather than return a frozen-photolysis adjoint.
     """
     if callable(photo_recompute_k):
         return photo_recompute_k
-    if photo_recompute_k is not None and photo_recompute_k != PHOTO_RECOMPUTE_AUTO:
-        raise ValueError(
-            f"photo_recompute_k must be a callable, {PHOTO_RECOMPUTE_AUTO!r} or None; got {photo_recompute_k!r}."
-        )
+    if photo_recompute_k is not None:
+        raise ValueError(f"photo_recompute_k must be a callable or None; got {photo_recompute_k!r}.")
     if not _active_photolysis_rows(k_arr, net):
         return None
     raise ValueError(
-        f"photo_recompute_k={photo_recompute_k!r} on a column with active "
+        "photo_recompute_k=None on a column with active "
         "photolysis rows would freeze J and omit dJ/dy (11% on W39b OH+H2). "
-        "Pass photo_recompute_k=make_photo_recompute_k(integ._photo_static, "
+        "Pass photo_recompute_k=make_photo_recompute_k(integ.photo_static, "
         "final_state)."
     )
 

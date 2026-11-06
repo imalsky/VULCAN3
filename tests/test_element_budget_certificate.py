@@ -80,13 +80,14 @@ def test_certificate_requires_the_column_element_budget(drain, scale, reason, wh
     import vulcan3
     import vulcan3.legacy_io as op
     from vulcan3 import op_jax, outer_loop
+    from vulcan3.chem_funs import NETWORK
     from vulcan3.ini_abun import column_atoms
     from vulcan3.state import RunState
 
     c = _cfg()
     integ = outer_loop.OuterLoop(op_jax.Ros2JAX(), op.Output(cfg=c), cfg=c)
     state, atm_static = integ.prepare_runstate(RunState.with_pre_loop_setup(c))
-    ch4 = outer_loop._NETWORK.species_idx["CH4"]
+    ch4 = NETWORK.species_idx["CH4"]
     started_from = column_atoms((state.y * scale).at[:, ch4].multiply(drain), state.dz, integ._compo_arr)
     now = column_atoms(state.y, state.dz, integ._compo_arr)
     seeded = _candidate(state, c, budget_err=now / started_from - 1.0)

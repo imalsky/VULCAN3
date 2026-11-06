@@ -10,20 +10,12 @@ examples/grad_reverse_example.py.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from ._carry import JaxIntegState
-from .conden import (
-    CondenStatic,
-    apply_h2o_relax_jax,
-    apply_nh3_relax_jax,
-    update_conden_rates,
-)
-from .jax_step import jax_ros2_step
 from .phy_const import UNDERFLOW_DENOM as _UNDERFLOW_DENOM
 
 if TYPE_CHECKING:
@@ -32,25 +24,9 @@ if TYPE_CHECKING:
     from .chem import NetworkArrays
     from .jax_step import AtmStatic
 
-# --- Solver-map / LGMRES knobs (adjoint-only constants) ---
-
-from ._adjoint_audit import (
-    _AUDIT_DEFECT_ERROR,
-    _AUDIT_LOSS_FOOTPRINT_FRAC,
-    _AUDIT_MIN_YMIX,
-    _STALE_GEOMETRY_RTOL,
-    _adjoint_scope_findings,
-    audit_adjoint_scope,
-)
+from ._adjoint_audit import audit_adjoint_scope
 from ._adjoint_core import (
-    _ADJOINT_RESID_WARN,
-    _BODY_MAP_DT_MAX,
-    _FP_ERR_WARN,
-    _NULL_BASIS_RANK_TOL,
-    _NULL_QUALITY_WARN,
-    _SPREAD_WARN,
     _TOP_K,
-    _TWIN_PERTURB,
     BODY_MAP_DT,
     LGMRES_CYCLES,
     LGMRES_INNER_M,
@@ -58,21 +34,11 @@ from ._adjoint_core import (
     LGMRES_OUTER_K,
     LGMRES_RTOL,
     N_SOLVES_DEFAULT,
-    PHOTO_RECOMPUTE_AUTO,
     SOLVER_MAP,
     BodyTerms,
     PhotoRecomputeArg,
-    _active_photolysis_rows,
     _adjoint_solve_core,
     _check_body_dt,
-    _clip_dead_mask,
-    _conserved_null_basis,
-    _guard_unmodeled_processes,
-    _host_network,
-    _lgmres_solve,
-    _make_body_map,
-    _resolve_photo_recompute_k,
-    _safe_inv_y,
     _topk_ensemble_spread,
     _warn_poor_convergence,
 )
@@ -86,7 +52,6 @@ __all__ = [
     "LGMRES_OUTER_K",
     "LGMRES_RTOL",
     "N_SOLVES_DEFAULT",
-    "PHOTO_RECOMPUTE_AUTO",
     "SOLVER_MAP",
     "BodyTerms",
     "PhotoRecomputeArg",
@@ -110,80 +75,14 @@ __all__ = [
 # the lowest-residual, low-spread solution.
 BODY_MAP_DT_CANDIDATES = (3e6, 1e7, 3e7, 1e8)
 
-# Hard guard: above this the implicit step goes near-singular; refuse rather
-# than return a silently divergent gradient.
-
-# Ensemble size: the returned gradient is the mean over this many solves with
-# ulp-perturbed RHS twins (deterministic, seeded); twin disagreement is
-# reported as info["ensemble_spread"], the magnitude error bar.
-# n_solves=1 is one unperturbed solve with no spread estimate.
-
-# Relative RHS perturbation for ensemble twins: large enough to decorrelate
-# the Krylov trajectories of a semi-converged solve, ~13 orders below the
-# gradient signal so the exact solution is unchanged.
-
-# Entries in the ranked reports: the ensemble spread and pair sums (top
-# reactions by |mean|) and the audit's worst cells.
-
-# Warn above this ensemble spread (max over the top reactions by |mean| of
-# (max-min)/|mean|): the twins disagree on the reactions one would report;
-# treat magnitudes as ranking weights.
-
-# scipy.sparse.linalg.lgmres inner Krylov dimension (the HD189 calibration in
-# tests/test_steady_state_reaction_sensitivity.py).
-
-# Augmentation vectors carried across restarts; the LGMRES knob that fixes
-# restarted-GMRES oscillation on this indefinite operator.
-
-# Outer LGMRES iterations (scipy `maxiter`, each up to `inner_m` inner steps) per warm-start cycle;
-# the solve is chunked into cycles with
-# per-cycle x0 warm-start (the validated configuration).
-
-# Number of warm-start cycles (the HD189 calibration).
-
-# Relative-residual target; tighter buys nothing once finite-tolerance state
-# mismatch dominates.
-
-# Warn above this median relative LGMRES residual across the ensemble
-# (median is robust to a single wandering twin).
-
-# Warn above this body-map fixed-point error: y_star is off the steady-state
-# manifold of the chosen map.
-
-# Minimum |R_jj| of the unit-column QR in _conserved_null_basis; below it the
-# atom columns are (near-)dependent and the basis is refused.
-
-# audit_adjoint_scope ignores cells below this mixing ratio in the per-cell
-# defect scan: numerical dust with meaningless relative defect, far below any
-# loss species (trace radicals sit ~1e-12..1e-8).
-
-# Per-cell defect above which the audit finding is an ERROR: an O(1) move
-# under one probe step means the iterated map includes a process (pin, conden
-# clamp, charge balance) the body map lacks. Between _FP_ERR_WARN and this is
-# a WARNING (slow trace cells of a healthy column land here).
-
-# audit_adjoint_scope's "loss footprint": cells whose log-space cotangent
-# magnitude |y* dL/dy| is within this fraction of the maximum -- the cells the
-# loss actually reads, where a fixed-point defect directly biases the gradient.
-
-# audit_adjoint_scope: a spliced refresh field (g, dzi, Hpi, top_flux, vs)
-# must match the converged carry to float noise.
-
+# steady_state_input_sensitivity: warn when rebuild(p0) reproduces the converged (k_arr, atm) only to this relative
+# level (rates_jax matches the host build to ~5e-14; anything above float noise is a subtly different map).
 _REBUILD_CONSISTENCY_WARN = 1e-8
-# steady_state_input_sensitivity: warn when rebuild(p0) reproduces the
-# converged (k_arr, atm) only to this relative level (rates_jax matches the
-# host build to ~5e-14; anything above float noise is a subtly different map).
-
+# ...and refuse above this: the adjoint would be linearized against a visibly different map.
 _REBUILD_CONSISTENCY_ERR = 1e-3
-# ...and refuse above this: the adjoint would be linearized against a visibly
-# different map and the gradient would be silently wrong.
 
 
-# Production sits ~3 orders below this; O(1) means a deflated direction is not
-# null (e.g. open boundary fluxes) and the deflation is corrupting the solve.
-
-
-# size-limit-ok: mostly the numpy-style parameter docs
+# size-limit-ok: parameter docs, the input checks, then one adjoint solve and its report
 def steady_state_reaction_sensitivity(
     loss_fn: Callable[[jnp.ndarray], jnp.ndarray],
     y_star: jnp.ndarray,
@@ -194,7 +93,7 @@ def steady_state_reaction_sensitivity(
     compo_array: jnp.ndarray,
     dz: jnp.ndarray,
     body_dt: float = BODY_MAP_DT,
-    photo_recompute_k: PhotoRecomputeArg = PHOTO_RECOMPUTE_AUTO,
+    photo_recompute_k: PhotoRecomputeArg = None,
     body_terms: BodyTerms | None = None,
     n_solves: int = N_SOLVES_DEFAULT,
     return_info: bool = False,
@@ -247,7 +146,7 @@ def steady_state_reaction_sensitivity(
         On photo-on columns pass `make_photo_recompute_k(integ.photo_static,
         final_state)`, a `k(y) -> k_arr` recompute so the state operator
         carries `dJ/dy` (WASP-39b OH+H2 11% -> 0.2%); it costs an RT solve per
-        Krylov matvec. `"auto"` (default) and `None` mean no photolysis
+        Krylov matvec. `None` (default) means no photolysis
         feedback and raise on a column with active photolysis rows (no
         frozen-photolysis adjoint).
     body_terms
@@ -356,7 +255,18 @@ def steady_state_reaction_sensitivity(
     return dL_dlnk, info
 
 
-# size-limit-ok: mostly the numpy-style parameter docs
+def _worst_rel(a: Any, b: Any) -> float:
+    """Return the largest cell-wise relative difference; inf for mismatched shapes or a non-finite entry."""
+    a_np = np.asarray(a, dtype=np.float64)
+    b_np = np.asarray(b, dtype=np.float64)
+    if a_np.shape != b_np.shape:
+        return float("inf")
+    denom = np.maximum(np.maximum(np.abs(a_np), np.abs(b_np)), _UNDERFLOW_DENOM)
+    rel = np.abs(a_np - b_np) / denom
+    return float(np.max(rel)) if np.isfinite(rel).all() else float("inf")
+
+
+# size-limit-ok: parameter docs, the rebuild consistency check, then one adjoint solve and its map
 def steady_state_input_sensitivity(
     loss_fn: Callable[[jnp.ndarray], jnp.ndarray],
     y_star: jnp.ndarray,
@@ -369,7 +279,7 @@ def steady_state_input_sensitivity(
     compo_array: jnp.ndarray,
     dz: jnp.ndarray,
     body_dt: float = BODY_MAP_DT,
-    photo_recompute_k: PhotoRecomputeArg = PHOTO_RECOMPUTE_AUTO,
+    photo_recompute_k: PhotoRecomputeArg = None,
     body_terms: BodyTerms | None = None,
     n_solves: int = N_SOLVES_DEFAULT,
     return_info: bool = False,
@@ -456,14 +366,6 @@ def steady_state_input_sensitivity(
     # rebuild(p0) must reproduce the map the state converged under.
     k0, atm0 = rebuild(p0)
 
-    def _worst_rel(a: Any, b: Any) -> float:
-        a_np = np.asarray(a, dtype=np.float64)
-        b_np = np.asarray(b, dtype=np.float64)
-        if a_np.shape != b_np.shape:
-            return float("inf")
-        denom = np.maximum(np.maximum(np.abs(a_np), np.abs(b_np)), _UNDERFLOW_DENOM)
-        return float(np.max(np.abs(a_np - b_np) / denom))
-
     consistency = {"k_arr": _worst_rel(k0, k_arr)}
     for name, ref in atm._asdict().items():
         cand = getattr(atm0, name)
@@ -471,7 +373,7 @@ def steady_state_input_sensitivity(
             consistency[name] = 0.0 if cand == ref else float("inf")
         else:
             consistency[name] = _worst_rel(cand, ref)
-    worst_name = max(consistency, key=consistency.get)
+    worst_name = max(consistency, key=consistency.__getitem__)
     worst = consistency[worst_name]
     if worst > _REBUILD_CONSISTENCY_ERR:
         raise ValueError(
@@ -544,7 +446,7 @@ def make_photo_recompute_k(runner_photo_static: Any, converged_state: Any) -> An
     ----------
     runner_photo_static
         The runner's internal `_PhotoStatic` (`OuterLoop.photo_static` after
-        `_ensure_runner`), not the public `PhotoStaticInputs` pytree.
+        `ensure_runner`), not the public `PhotoStaticInputs` pytree.
     converged_state
         A converged `JaxIntegState`; supplies the frozen geometry (`dz`, `pv`
         T-cross sections, prior `dflux_u` -- its second-order self-recursion
@@ -555,7 +457,7 @@ def make_photo_recompute_k(runner_photo_static: Any, converged_state: Any) -> An
     recompute_k : Callable[[y], k_arr]
         `y (nz, ni) -> k_arr (nr+1, nz)` with photolysis rows = J(y).
     """
-    from .outer_loop import _make_photo_branch  # lazy: keep the module acyclic
+    from ._loop_branches import _make_photo_branch  # lazy: keep the module acyclic
 
     photo_branch = _make_photo_branch(runner_photo_static)
 
@@ -617,7 +519,7 @@ def make_body_terms(integ: Any, converged_state: Any, atm_static: Any) -> Any:
 
     # --- the runner's own atm splice: converged geometry, live vm, and the
     # hybrid vm_mol phase it converged on (a hybrid run ends in phase 1) ---
-    from .outer_loop import _splice_conden, _splice_step_atm  # lazy: acyclic
+    from ._loop_branches import _splice_conden, _splice_step_atm  # lazy: acyclic
 
     atm_step = _splice_step_atm(
         atm_static, s, bool(st.use_vm_mol), integ._refresh_static.kb, integ._refresh_static.Navo

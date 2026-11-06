@@ -7,9 +7,12 @@ from typing import TYPE_CHECKING, NamedTuple
 from .jax_step import AtmStatic
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import jax.numpy as jnp
 
-    from . import photo as _photo_mod
+    from . import atm_refresh as _atm_refresh_mod, photo as _photo_mod
+    from .chem import NetworkArrays
 
 __all__ = ["ATM_STATIC_BATCH_AXES", "JaxIntegState", "ProfileVars"]
 
@@ -287,6 +290,25 @@ class _Statics(NamedTuple):
     save_evo_n_max: int
 
 
+class RunnerEnv(NamedTuple):
+    """What every part of the step closes over: built once per runner, read at trace time.
+
+    A branch is None when its process is off.
+    """
+
+    net: NetworkArrays
+    statics: _Statics
+    non_gas_present: bool
+    gas_indx_mask: jnp.ndarray  # (ni,) bool
+    start_conden_time: float  # s
+    stop_conden_time: float  # s
+    refresh_static: _atm_refresh_mod.AtmRefreshStatic
+    clip_fn: Callable[[jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]]
+    agg_delta_fn: Callable[[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray | None, jnp.ndarray], jnp.ndarray]
+    photo_branch: Callable[[JaxIntegState], JaxIntegState] | None
+    conden_branch: Callable[[JaxIntegState], JaxIntegState] | None
+
+
 # Carry leaves the body appends to one slot at a time. The convergence ring is
 # written at `(accept_count-1) % conv_step`, the save_evolution buffer at the
 # pre-step `evo_idx`.
@@ -319,37 +341,10 @@ _PHOTO_FIELDS = (
     "aflux_change",
 )
 
-# in_axes for vmapping the batched runner over AtmStatic: array leaves batch
-# on axis 0; the four toggle flags broadcast (None) -- identical within a
-# (nz, toggle-combo) batch and consumed only as traced values, never in a
-# Python `if`.
-_ATM_STATIC_BATCH_AXES = AtmStatic(
-    Kzz=0,
-    Dzz=0,
-    dzi=0,
-    vz=0,
-    Hpi=0,
-    Ti=0,
-    Tco=0,
-    g=0,
-    ms=0,
-    alpha=0,
-    M=0,
-    vm=0,
-    vs=0,
-    top_flux=0,
-    bot_flux=0,
-    bot_vdep=0,
-    gas_indx_mask=0,
-    diff_esc_mask=0,
-    use_vm_mol=None,
-    use_settling=None,
-    use_topflux=None,
-    use_botflux=None,
-)
+# in_axes for vmapping the batched runner over AtmStatic: array leaves batch on axis 0; the toggle flags broadcast
+# (None), identical within a (nz, toggle-combo) batch and consumed only as traced values, never in a Python `if`.
+_ATM_TOGGLES = ("use_vm_mol", "use_settling", "use_topflux", "use_botflux")
+ATM_STATIC_BATCH_AXES = AtmStatic._make(None if f in _ATM_TOGGLES else 0 for f in AtmStatic._fields)
 
 # The AtmStatic fields that carry the batch axis, in AtmStatic order.
-_ATM_ARRAY_FIELDS = tuple(f for f in AtmStatic._fields if getattr(_ATM_STATIC_BATCH_AXES, f) == 0)
-
-# Public name; the underscored one is deprecated and goes after one release.
-ATM_STATIC_BATCH_AXES = _ATM_STATIC_BATCH_AXES
+_ATM_ARRAY_FIELDS = tuple(f for f in AtmStatic._fields if getattr(ATM_STATIC_BATCH_AXES, f) == 0)

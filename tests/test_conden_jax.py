@@ -113,10 +113,7 @@ def _nh3_case(seed):
 
 
 def test_update_conden_rates():
-    """Scatter, sign split, and the use_relax short-circuit.
-
-    (coeff=0 gives an all-zero rate) over two condensation reactions.
-    """
+    """Scatter, sign split, and the use_relax short-circuit (coeff=0 gives a zero rate) over two reactions."""
     import vulcan3.conden as _conden_mod
 
     rng = np.random.default_rng(42)
@@ -283,10 +280,7 @@ def test_apply_nh3_relax_jax():
 
 
 def test_nh3_conden_top_traced_scalar_bitwise():
-    """A 0-d int32 `nh3_conden_top`.
-
-    (the batched ProfileVars form) must be BITWISE identical to the Python-int closure form under jit.
-    """
+    """A 0-d int32 `nh3_conden_top`, the batched ProfileVars form, is bitwise the Python-int closure form under jit."""
     import vulcan3.conden as _conden_mod
 
     y, ymix, n_0, Dg, sat = _nh3_case(11)
@@ -330,10 +324,7 @@ def test_nh3_conden_top_traced_scalar_bitwise():
 
 
 def test_nh3_conden_top_vmap_per_lane():
-    """Vmap over a batch where ONLY `nh3_conden_top` differs per lane must match per-lane single calls.
-
-    (the mechanism run_batch relies on).
-    """
+    """Vmap over lanes differing only in `nh3_conden_top` matches single calls, which run_batch relies on."""
     import vulcan3.conden as _conden_mod
 
     y, ymix, n_0, Dg, sat = _nh3_case(23)

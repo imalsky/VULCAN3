@@ -17,9 +17,12 @@ import math
 import os
 import re
 import runpy
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+_ORACLE_FAMILY = "vulcan2_ncho"
 
 # Gravity is authored as Mp/Rp on the JAX side and lands 1 ULP from master's gs; compare
 # it to master's explicit `gs` with a relative tolerance, not exact equality.
@@ -337,50 +340,25 @@ def _compare_runtime_data(master_root: Path, jax_root: Path) -> list[str]:
     return errors
 
 
-# VULCAN-JAX-only identifiers: an oracle containing any of them is not
-# pristine upstream, and comparing against it is circular.
-_JAX_ONLY_MARKERS = (
-    "conv_stall_window",
-    "longdy_seen_min",
-    "count_since_new_min",
-    "wall_clock_max",
-)
-
-
 def _check_oracle_is_pristine(master_root: Path) -> list[str]:
-    """Refuse to audit against a checkout carrying VULCAN-JAX's own code.
+    """Refuse any checkout but a clean clone at the pinned commit: a parity result from anything else cites nothing."""
+    import yaml
 
-    Returns error strings (not warnings): a contaminated oracle produces
-    silently wrong "parity" results, which is worse than no audit.
-    """
-    errors: list[str] = []
-    for rel in (
-        "op.py",
-        "store.py",
-        "vulcan_cfg.py",
-        "cfg_examples/vulcan_cfg_HD189.py",
-    ):
-        path = master_root / rel
-        if not path.exists():
-            continue
-        try:
-            text = path.read_text(errors="replace")
-        except OSError:
-            continue
-        hits = sorted({m for m in _JAX_ONLY_MARKERS if m in text})
-        if hits:
-            errors.append(
-                f"{rel}: contains VULCAN-JAX-only identifier(s) {', '.join(hits)} "
-                "-- this checkout is not pristine upstream VULCAN, so a parity "
-                "result from it would be circular. Use a clean clone at the "
-                "commit pinned in tests/science_sources.yaml."
-            )
-    if not (master_root / ".git").exists():
-        errors.append(
-            f"{master_root} has no .git: it is an unversioned copy whose "
-            "provenance cannot be established. Do not cite it as upstream."
-        )
-    return errors
+    manifest = Path(__file__).resolve().parent.parent / "tests" / "science_sources.yaml"
+    want = yaml.safe_load(manifest.read_text())["oracles"][_ORACLE_FAMILY]["commit"]
+    head = subprocess.run(
+        ["git", "-C", str(master_root), "rev-parse", "HEAD"], capture_output=True, text=True, check=False
+    )
+    if head.returncode != 0:
+        return [f"{master_root} is not a git checkout ({head.stderr.strip()}): clone it at {want}."]
+    if head.stdout.strip() != want:
+        return [f"{master_root} is at {head.stdout.strip()}, not the pinned {want} (tests/science_sources.yaml)."]
+    status = subprocess.run(
+        ["git", "-C", str(master_root), "status", "--porcelain"], capture_output=True, text=True, check=True
+    ).stdout
+    if status:
+        return [f"{master_root} is dirty, so it is not what the pin names:\n{status}"]
+    return []
 
 
 def audit(master_root: Path, jax_root: Path) -> list[str]:

@@ -19,8 +19,12 @@ if TYPE_CHECKING:
 __all__ = ["RuntimeConfigError", "rate_temp_range_exposure", "validate_runtime_config"]
 
 
+# Knobs read as lists or mappings throughout setup and the runner: `null` in a config is not "empty".
+_LIST_KNOBS = ("condense_sp", "non_gas_sp", "fix_species", "T_cross_sp", "scat_sp", "use_fix_sp_bot")
+
+
 class RuntimeConfigError(ValueError, RuntimeError):
-    """A config the runtime refuses. Also a RuntimeError, which callers caught before this type existed."""
+    """A config the runtime refuses."""
 
 
 def _validate_abundance_preset(cfg: Any) -> list[str]:
@@ -88,7 +92,7 @@ def _validate_network_assets(cfg: Any) -> list[str]:
     # 1. Photo species need a cross-section file.
     if bool(cfg.use_photo):
         cross_folder = resolve_data_path(cfg.cross_folder)
-        for sp in chem_funs._NETWORK.photo_sp:
+        for sp in chem_funs.NETWORK.photo_sp:
             cross_csv = cross_folder / sp / f"{sp}_cross.csv"
             if not cross_csv.exists():
                 errors.append(
@@ -214,11 +218,11 @@ def _validate_condensation(cfg: Any) -> list[str]:
     if not bool(cfg.use_condense):
         return []
 
-    from .atm_setup import _SUPPORTED_CONDENSABLES
+    from ._saturation import _SUPPORTED_CONDENSABLES
     from .conden import SUPPORTED_CONDEN_KINETICS
 
     errors: list[str] = []
-    condense_sp = list(cfg.condense_sp or [])
+    condense_sp = list(cfg.condense_sp)
 
     if not condense_sp:
         errors.append(
@@ -270,6 +274,9 @@ def validate_runtime_config(cfg: Any) -> None:  # noqa: C901 (one refusal per kn
     asset paths resolve as the run resolves them (`resolve_data_path`: the
     current directory first, then the package data).
     """
+    none_lists = [key for key in _LIST_KNOBS if getattr(cfg, key) is None]
+    if none_lists:
+        raise RuntimeConfigError(f"{none_lists} are None: set an empty list or mapping, or drop the keys.")
     errors: list[str] = []
     species = set(chem_funs.spec_list)
 
@@ -284,7 +291,7 @@ def validate_runtime_config(cfg: Any) -> None:  # noqa: C901 (one refusal per kn
     if bool(cfg.use_ion) and not bool(cfg.use_photo):
         errors.append("use_ion=True requires use_photo=True in VULCAN3.")
 
-    fix_sp = list(cfg.fix_species or [])
+    fix_sp = list(cfg.fix_species)
     if fix_sp and not bool(cfg.use_condense):
         errors.append("fix_species is set but use_condense=False; this configuration is inconsistent.")
     if fix_sp:
@@ -371,9 +378,7 @@ def validate_runtime_config(cfg: Any) -> None:  # noqa: C901 (one refusal per kn
 def rate_temp_range_exposure(net: Any, Tco: jnp.ndarray) -> dict:
     """Count thermal rows evaluated outside their documented T ranges on `Tco`.
 
-    Advisory only (no rate is altered). jwst-transit-authority's
-    `forward.run_model` calls it; nothing in this package does, so vulture
-    and a dead-code sweep miss that caller.
+    Advisory only (no rate is altered). For consumers: jwst-transit-authority's `forward.run_model` calls it.
 
     Coverage per row is the UNION of its documented ranges (lenient: a
     Lindemann row's k0 and k_inf windows are OR'd, so this undercounts).

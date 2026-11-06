@@ -12,6 +12,7 @@ def _check_gradient():
     import jax.numpy as jnp
     import numpy as np
 
+    from vulcan3._pack_state import classify_end_case
     from vulcan3.config import load_config
     from vulcan3.legacy_io import Output
     from vulcan3.op_jax import Ros2JAX
@@ -37,7 +38,7 @@ def _check_gradient():
     plus, state_plus = run((1 + eps) * static.Kzz)
     minus, state_minus = run((1 - eps) * static.Kzz)
     for final in (nominal, state_plus, state_minus):
-        assert integ._classify_end_case(final) == 1, "FD/JVP column did not converge"
+        assert classify_end_case(final) == 1, "FD/JVP column did not converge"
     fd = np.asarray((plus - minus) / (2 * eps))
     tangent = np.asarray(tangent)
     assert np.isfinite(fd).all()

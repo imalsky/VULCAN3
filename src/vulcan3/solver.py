@@ -39,7 +39,9 @@ class BlockThomasDiagFactors(NamedTuple):
     sub_d: jnp.ndarray
 
 
-def factor_block_thomas_diag_offdiag(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> Any:
+def factor_block_thomas_diag_offdiag(
+    diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray
+) -> BlockThomasDiagFactors:
     """Factor a diagonal-offdiag block-tridiagonal system once for reuse.
 
     Both Ros2 stages share the factors. The per-layer pivoted LU keeps error
@@ -76,7 +78,7 @@ def factor_block_thomas_diag_offdiag(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_
     )
 
 
-def solve_block_thomas_diag_offdiag(factors: BlockThomasDiagFactors, rhs: jnp.ndarray) -> Any:
+def solve_block_thomas_diag_offdiag(factors: BlockThomasDiagFactors, rhs: jnp.ndarray) -> jnp.ndarray:
     """Solve a diagonal-offdiag block-tridiagonal system for a new RHS."""
     rhs0 = rhs[0]
 

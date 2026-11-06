@@ -35,7 +35,7 @@ def test_projection_conserves_atoms_on_reservoir_rows_only(hd189_state):
 
     # Active for the HD189 default: atoms H/O/C/N, all four reservoirs present.
     assert jax_step._CHEM_PROJECTION_ENABLED
-    net = chem_funs._NETWORK
+    net = chem_funs.NETWORK
     atom_counts = atom_count_matrix(net, _ATOMS)
     reservoir_idx = [net.species_idx[sp] for sp in _RESERVOIRS]
     var, atm = hd189_state.var, hd189_state.atm
@@ -62,13 +62,13 @@ def _hd189_step_inputs(state):
     y = np.asarray(data_var.y, dtype=np.float64)
     nz, ni = y.shape
     atm_static = jax_step.make_atm_static(data_atm, ni, nz, cfg=cfg)
-    return y, np.asarray(data_var.k_arr, dtype=np.float64), atm_static, chem_funs._NET_JAX
+    return y, np.asarray(data_var.k_arr, dtype=np.float64), atm_static, chem_funs.NET_JAX
 
 
 def test_stage_vectors_satisfy_the_per_layer_element_identity(monkeypatch, hd189_state):
     """Both Ros2 stage vectors satisfy `c0 a^T k - a^T T k = a^T b_tr` in every layer at every dt.
 
-    And with transport off a step changes no layer's element content by more than REPAIR_ABS_FLOOR of its density.
+    With transport off a step changes no layer's element content by more than REPAIR_ABS_FLOOR of its density.
     The identity bar is set by the correction tridiagonal's conditioning (~T/c0), not by roundoff.
     """
     import jax

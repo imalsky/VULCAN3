@@ -31,9 +31,9 @@ from vulcan3.phy_const import Navo, kb
 
 @dataclass
 class DiffusionCoeffs:
-    """Per-layer eddy (scalar, shape (nz,)) + molecular (per-species, shape.
+    """Per-layer eddy and molecular coefficients for `diff[j] = A*y[j] + B*y[j+1] + C*y[j-1]`.
 
-    (nz, ni)) coefficients for  diff[j] = A*y[j] + B*y[j+1] + C*y[j-1].
+    Eddy arrays are scalar per layer, (nz,); molecular ones per species, (nz, ni).
 
     Boundary handling: C[0] = 0, B[nz-1] = 0 (zero-flux unless overridden by
     use_topflux / use_botflux). Net coefficient on y[j, i] is

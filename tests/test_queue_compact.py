@@ -49,7 +49,7 @@ import pytest
 from _helpers import stack_atm_statics, stack_integ_states
 from test_vmap_while_loop import _build_integ, _build_rs, _pin_cfg
 
-from vulcan3.outer_loop import _queue_compact_rungs
+from vulcan3._runner_queue import _queue_compact_rungs
 
 TISO = (900.0, 1000.0, 1100.0, 1200.0, 1300.0)
 # Per-job step caps (the carry's count_max_dyn) so the lanes end at different
@@ -204,8 +204,8 @@ def test_compaction_matches_photo_on():
     off, n_off = integ.run_queue(_ident, jobs, n_lanes=3, out_fn=_whole, chunk=1)
     on, n_on = integ.run_queue(_ident, jobs, n_lanes=3, out_fn=_whole, chunk=1, compact=(2, 1))
     assert int(n_on) == int(n_off)
-    # vacuity of the photolysis inside the run: the two profiles' fields differ
-    assert not np.array_equal(np.asarray(off.aflux[0]), np.asarray(off.aflux[1]))
+    # Setup fills the flux too: only the loop's refresh can have moved it.
+    assert not np.array_equal(np.asarray(off.aflux[0]), np.asarray(sA.aflux))
     _assert_trees_close(off, on, "photo on, 3 -> 2 -> 1 lanes")
 
 

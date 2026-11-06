@@ -3,8 +3,9 @@
 The rate build is one implementation shared by setup and gradients (parity
 against master is `test_gibbs.py`, and against the legacy
 chain `test_read_rate.py`). What is only testable here is that the tangents
-survive: a non-finite jvp w.r.t. T or w.r.t. an Arrhenius coefficient would
-silently wreck every T-profile / rate-uncertainty sensitivity.
+are right: a non-finite jvp w.r.t. T or w.r.t. an Arrhenius coefficient would
+silently wreck every T-profile / rate-uncertainty sensitivity, and a severed
+one would read as zero.
 """
 
 from __future__ import annotations
@@ -15,9 +16,25 @@ import numpy as np
 import pytest
 
 RTOL = 1e-12  # the same rate expression evaluated two ways
+FD_RTOL = 1e-5  # a forward-mode tangent against a central difference
+FD_ROUNDOFF = 1e-9  # the difference's own roundoff, relative to the rate
+# JAX's tangent of `kf / K` holds K**-2, which underflows above K ~ 1e154: such a reverse rate (k < 1e-150 cm3/s, nil
+# against any density) has a zero tangent. Measured on the cool column below, at k 1e-166 to 1e-232.
+NIL_RATE = 1e-150
 
 
-def test_rate_build_tangents_are_finite(hd189_state):
+def _check_tangent(fn, x, dx, eps):
+    """`jvp(fn)(x)[dx]` matches a central difference cell by cell, and is not zero everywhere."""
+    k, dk = jax.jvp(fn, (x,), (dx,))
+    fd = (np.asarray(fn(x + eps * dx)) - np.asarray(fn(x - eps * dx))) / (2.0 * eps)
+    k, dk = np.asarray(k), np.asarray(dk)
+    assert np.all(np.isfinite(dk))
+    assert np.any(dk != 0.0), "every tangent is zero: the graph is cut"
+    bad = (np.abs(dk - fd) > FD_RTOL * np.abs(dk) + FD_ROUNDOFF * np.abs(k)) & (np.abs(k) > NIL_RATE)
+    assert not bad.any(), f"{int(bad.sum())} cells off, first {np.argwhere(bad)[0]}"
+
+
+def test_rate_build_tangents_match_finite_differences(hd189_state):
     from vulcan3.config import default_config
 
     vulcan_cfg = default_config()
@@ -28,69 +45,48 @@ def test_rate_build_tangents_are_finite(hd189_state):
     atm = hd189_state.atm
     network = net_mod.parse_network(str(resolve_data_path(vulcan_cfg.network)))
 
-    T = np.asarray(atm.Tco, dtype=np.float64)
-    M = np.asarray(atm.M, dtype=np.float64)
-    nasa9, _ = load_nasa9(network.species, rates_jax._thermo_dir(vulcan_cfg.network))
-    remove_list = getattr(vulcan_cfg, "remove_list", None)
+    T = jnp.asarray(atm.Tco, dtype=jnp.float64)
+    M = jnp.asarray(atm.M, dtype=jnp.float64)
+    nasa9, _ = load_nasa9(network.species, rates_jax.thermo_dir(vulcan_cfg.network))
+    remove_list = vulcan_cfg.remove_list
 
-    # Forward-mode AD w.r.t. a uniform T shift must be finite (this is the whole
-    # point: T -> k on the graph).
     def k_of_T(Tj):
-        return rates_jax.build_rate_array(network, Tj, jnp.asarray(M), nasa9, remove_list=remove_list)
+        return rates_jax.build_rate_array(network, Tj, M, nasa9, remove_list=remove_list)
 
-    _, dk = jax.jvp(k_of_T, (jnp.asarray(T),), (jnp.ones_like(jnp.asarray(T)),))
-    assert bool(jnp.all(jnp.isfinite(dk))), "non-finite jvp of rates_jax wrt T"
+    _check_tangent(k_of_T, T, jnp.ones_like(T), 1e-3)
 
-    # The same, on a cool column where the three Moses+2005 caps fire (the cap
-    # branch is a `where`, so its tangent has to be checked separately). The
-    # cap formulas themselves are pinned in test_read_rate.py.
-    T_cool = np.full_like(T, 250.0)
+    # The same on a cool column where the three Moses+2005 caps fire: the cap branch is a `where`, so its tangent is
+    # checked separately. The cap formulas themselves are pinned in test_read_rate.py.
+    T_cool = jnp.full_like(T, 250.0)
 
     def k_capped_of_T(Tj):
-        return rates_jax.build_rate_array(
-            network,
-            Tj,
-            jnp.asarray(M),
-            nasa9,
-            remove_list=remove_list,
-            use_lowT_caps=True,
-        )
+        return rates_jax.build_rate_array(network, Tj, M, nasa9, remove_list=remove_list, use_lowT_caps=True)
 
-    kf = rates_jax.compute_forward_k(network, jnp.asarray(T_cool), jnp.asarray(M))
-    kf_capped = rates_jax.apply_lowT_caps(network, kf, jnp.asarray(T_cool), jnp.asarray(M))
+    kf = rates_jax.compute_forward_k(network, T_cool, M)
+    kf_capped = rates_jax.apply_lowT_caps(network, kf, T_cool, M)
     changed = np.nonzero(np.any(np.asarray(kf_capped) != np.asarray(kf), axis=1))[0]
     assert changed.size >= 1, "lowT caps did not fire at 250 K"
+    _check_tangent(k_capped_of_T, T_cool, jnp.ones_like(T_cool), 1e-3)
 
-    _, dkc = jax.jvp(k_capped_of_T, (jnp.asarray(T_cool),), (jnp.ones_like(jnp.asarray(T_cool)),))
-    assert bool(jnp.all(jnp.isfinite(dkc))), "non-finite jvp of capped rates_jax wrt T"
-
-    # Arrhenius rate-coefficient overrides: passing the network's own `a` matches
-    # the default build, and a jvp w.r.t. `a` is finite (rate-uncertainty path).
+    # Arrhenius coefficient overrides: passing the network's own `a` matches the default build, and the rate-uncertainty
+    # tangent matches a difference.
     a0 = jnp.asarray(np.asarray(network.a, dtype=np.float64))
-    k_ovr = np.asarray(rates_jax.compute_forward_k(network, jnp.asarray(T), jnp.asarray(M), a=a0))
-    k_def = np.asarray(rates_jax.compute_forward_k(network, jnp.asarray(T), jnp.asarray(M)))
+    k_ovr = np.asarray(rates_jax.compute_forward_k(network, T, M, a=a0))
+    k_def = np.asarray(rates_jax.compute_forward_k(network, T, M))
     onz = np.abs(k_def) > 0
     assert np.abs(k_ovr[onz] - k_def[onz]).max() / np.abs(k_def[onz]).max() < RTOL
 
     def k_of_a(av):
-        return rates_jax.build_rate_array(
-            network,
-            jnp.asarray(T),
-            jnp.asarray(M),
-            nasa9,
-            remove_list=remove_list,
-            rate_coeffs={"a": av},
-        )
+        return rates_jax.build_rate_array(network, T, M, nasa9, remove_list=remove_list, rate_coeffs={"a": av})
 
-    _, dka = jax.jvp(k_of_a, (a0,), (a0,))
-    assert bool(jnp.all(jnp.isfinite(dka))), "non-finite jvp of rates_jax wrt Arrhenius a"
+    _check_tangent(k_of_a, a0, a0, 1e-6)
 
 
 @pytest.mark.parametrize(("T", "Pr"), [(1000.0, 0.1), (1500.0, 0.1), (1000.0, 1.0), (1500.0, 10.0)])
 def test_troe_oh_ch3_is_visscher_moses_eq14(T, Pr):
-    """The OH+CH3+M row follows Visscher & Moses 2011 eqs 13-14.
+    """The OH+CH3+M row follows Visscher & Moses 2011 eqs 13-14, with the eq 24-26 fits.
 
-    (log10 Troe width; upstream op.py:204-205 uses ln) with the eq 24-26 fits. The only guard against a
+    The Troe width is in log10; upstream op.py:204-205 uses ln. The only guard against a
     transcription error: the oracle comparison carries the same declared correction on its side.
     """
     from vulcan3 import rates_jax
@@ -108,8 +104,8 @@ def test_troe_oh_ch3_is_visscher_moses_eq14(T, Pr):
 def test_lindemann_with_zero_k_inf_is_the_zero_rate_limit():
     """`k_inf == 0` on a falloff row is the zero-rate limit: the row reads exactly 0, with a finite tangent.
 
-    Not the guard value's low-pressure `arr / (1 + arr*M)`. A mis-shaped M raises instead of broadcasting the bottom
-    layer's density over the column.
+    The guard value's low-pressure `arr / (1 + arr*M)` would not. A mis-shaped M raises instead of broadcasting the
+    bottom layer's density over the column.
     """
     from vulcan3 import network as net_mod, rates_jax
     from vulcan3._paths import resolve_data_path

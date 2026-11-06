@@ -18,6 +18,8 @@ from pathlib import Path
 
 import numpy as np
 
+_PRESSURE_RTOL = 1e-12  # the same grid written by two runs, so only roundoff apart
+
 
 def _load(path):
     with Path(path).open("rb") as f:
@@ -36,8 +38,8 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     p, sp_r, y_r = _load(args.ref)
     p_t, sp_t, y_t = _load(args.test)
-    if not np.allclose(p, p_t, rtol=1e-12):
-        raise SystemExit("the two outputs are on different pressure grids")
+    if p.shape != p_t.shape or not np.allclose(p, p_t, rtol=_PRESSURE_RTOL, atol=0.0):
+        raise SystemExit(f"the two outputs are on different pressure grids: {p} bar against {p_t} bar")
     worst = 0.0
     print(f"{'species':8s} {'max|dlog10|':>12s} {'at bar':>10s} {'cells':>6s}")
     for s in args.species.split(","):
@@ -45,7 +47,13 @@ def main(argv=None) -> int:
             print(f"{s:8s} {'not in both networks':>30s}")
             continue
         a, b = y_r[:, sp_r.index(s)], y_t[:, sp_t.index(s)]
+        if not (np.isfinite(a).all() and np.isfinite(b).all()):
+            raise SystemExit(
+                f"{s}: non-finite mixing ratio, {np.isfinite(a).sum()} and {np.isfinite(b).sum()} finite cells"
+            )
         m = (a > args.floor) & (b > args.floor)
+        if not m.any():
+            raise SystemExit(f"{s}: no cell above --floor {args.floor} in both outputs, so nothing to compare")
         d = np.where(m, np.abs(np.log10(np.where(m, a, 1.0)) - np.log10(np.where(m, b, 1.0))), 0.0)
         k = int(np.argmax(d))
         worst = max(worst, float(d[k]))

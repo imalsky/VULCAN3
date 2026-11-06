@@ -15,83 +15,37 @@ from __future__ import annotations
 import functools
 import logging
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from . import (
-    _build_statics,
-    _pack_state,
-    atm_refresh as _atm_refresh_mod,
-    chem_funs as _chem_funs,
-    conden as _conden_mod,
-    photo as _photo_mod,
-    phy_const as _phy_const,
-    state as _state_mod,
-)
-from ._carry import (
-    _ATM_ARRAY_FIELDS,
-    _ATM_STATIC_BATCH_AXES,
-    _CONV_RING_FIELDS,
-    _EVO_RING_FIELDS,
-    _LANE_AXIS,
-    _PHOTO_FIELDS,
-    _QUEUE_STOP_FIELDS,
-    ATM_STATIC_BATCH_AXES,
-    JaxIntegState,
-    ProfileVars,
-    _PhotoStatic,
-    _Statics,
-)
-from ._convergence import (
-    _SLOPE_MIN_CAP,
-    _SLOPE_MIN_FLOOR,
-    _SLOPE_MIN_HP_FRAC,
-    _branches,
-    _certified,
-    _convergence_ok,
-    _longdy_reduce,
-    _slope_min,
-    certificate_failures,
-    conv_normal,
-)
-from ._loop_branches import (
-    _make_conden_branch,
-    _make_photo_branch,
-    _splice_conden,
-    _splice_step_atm,
-)
-from ._runner_queue import _QUEUE_REFILL_CHUNK, _QUEUE_REFILL_EVERY, _queue_compact_rungs
+from . import _build_statics, _pack_state, state as _state_mod
+from ._carry import ATM_STATIC_BATCH_AXES, JaxIntegState, ProfileVars, _PhotoStatic, _Statics
+from ._convergence import certificate_failures, conv_normal
+from ._runner_queue import _QUEUE_REFILL_CHUNK, _queue_compact_rungs
 from ._runners import make_runner
-from ._step_control import (
-    _clip_prologue,
-    _make_aggregate_delta_fn,
-    _make_clip_fn,
-    _step_size,
-)
+from .chem_funs import NET_JAX, NETWORK
 from .config import DT_MAX_S, default_config
-from .ini_abun import column_atoms
-from .jax_step import AtmStatic, jax_ros2_step, make_atm_static
-from .phy_const import UNDERFLOW_DENOM
+from .jax_step import AtmStatic, make_atm_static
 from .runtime_validation import validate_runtime_config
-from .state import (
-    TERM_CONVERGED,
-    TERM_NONFINITE,
-    TERM_RUNNING,
-    TERM_RUNTIME,
-    TERM_STEP_COUNT,
-)
+from .state import TERM_CONVERGED
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    from . import atm_refresh as _atm_refresh_mod, conden as _conden_mod
+    from .config import Config
+    from .legacy_io import Output
+    from .op_jax import Ros2JAX
+    from .state import RunState
 
 __all__ = ["ATM_STATIC_BATCH_AXES", "JaxIntegState", "OuterLoop", "ProfileVars", "certificate_failures", "conv_normal"]
 
 logger = logging.getLogger(__name__)
 
-# The network chem_funs parsed at import: one parse per process. After editing
-# the config `network`, restart Python to pick it up.
-_NETWORK = _chem_funs._NETWORK
-_NET_JAX = _chem_funs._NET_JAX
+_ATM_STATIC_BATCH_AXES = ATM_STATIC_BATCH_AXES  # deprecated (docs/api.md)
 
 
 class OuterLoop:
@@ -101,12 +55,14 @@ class OuterLoop:
     ring-buffered convergence, and adaptive rtol.
     """
 
-    def __init__(self, odesolver: Any, output: Any, cfg: Any = None) -> None:
+    def __init__(self, odesolver: Ros2JAX, output: Output, cfg: Config | None = None) -> None:
         # cfg defaults to the process default (the CLI);
         # load_config() users pass their own namespace so every runtime knob
         # reads from the cfg the RunState was built with (setup counterpart:
         # state._cfg_overlay). The import-locked knobs (network, com_file,
-        # atom_list) are the ones cfg cannot change here.
+        # atom_list) are the ones cfg cannot change here: `NETWORK` is the
+        # network chem_funs parsed at import, so a changed `network` needs a
+        # new Python process.
         self._cfg = cfg if cfg is not None else default_config()
         if float(self._cfg.dt_max) > DT_MAX_S:
             raise ValueError(
@@ -117,7 +73,7 @@ class OuterLoop:
         self.output = output
         self.odesolver = odesolver
 
-        self._species = list(_NETWORK.species)
+        self._species = list(NETWORK.species)
 
         # Atom ordering captured once at init; dict<->array conversion relies on it.
         self._atom_order = [a for a in self._cfg.atom_list if a not in self._cfg.loss_ex]
@@ -127,7 +83,7 @@ class OuterLoop:
 
         compo = composition.compo
         compo_row = composition.compo_row
-        ni_ = _NETWORK.ni
+        ni_ = NETWORK.ni
         compo_np = np.zeros((ni_, len(self._atom_order)), dtype=np.float64)
         for i, sp in enumerate(self._species):
             r_i = compo_row.index(sp)
@@ -146,60 +102,52 @@ class OuterLoop:
         # Lazy runner cache; populated on first call and reused thereafter.
         # The closure pins the config read at build time; there is no reset --
         # a changed config means a new runner object.
-        self._runner = None
-        self._runner_chunk = None
-        self._make_runner_jvp = None
+        self._runner: Callable[[JaxIntegState, AtmStatic], JaxIntegState] | None = None
+        self._runner_chunk: Callable[[JaxIntegState, AtmStatic, jnp.ndarray], JaxIntegState] | None = None
+        self._make_runner_jvp: Callable[[tuple[bool, ...], tuple[bool, ...]], Callable] | None = None
         # `integ(rs, chunk=N)` stores the last finished chunk here as a
         # RunState when Ctrl+C stops the run.
-        self.interrupted_runstate = None
-        self._runner_jvp_cache = {}
+        self.interrupted_runstate: RunState | None = None
+        self._runner_jvp_cache: dict[tuple, Callable] = {}
         # Un-jitted freeze-on-done while_loop over a vmapped step (the
         # batched path), and its jax.jit wrapper (`run_batch`). Both ride the
         # same (nz, toggle-combo) closure as `_runner`.
-        self._runner_batch = None
-        self._vrunner = None
+        self._runner_batch: Callable[[JaxIntegState, AtmStatic], JaxIntegState] | None = None
+        self._vrunner: Callable[[JaxIntegState, AtmStatic], JaxIntegState] | None = None
         # Same closure with a job queue above the lanes (`run_queue`), and
         # its jit cache, keyed in `run_queue`.
-        self._runner_queue = None
-        self._vrunner_queue = {}
-        self._statics = None
-        self._photo_static = None
-        self._refresh_static = None
-        self._conden_static = None
+        self._runner_queue: Callable | None = None
+        self._vrunner_queue: dict[tuple, Callable] = {}
+        self._statics: _Statics | None = None
+        self._photo_static: _PhotoStatic | None = None
+        self._refresh_static: _atm_refresh_mod.AtmRefreshStatic | None = None
+        self._conden_static: _conden_mod.CondenStatic | None = None
         # First batched photo profile's TOA stellar flux; prepare_runstate
         # rejects later profiles with a different star (see the guard there).
-        self._sflux_top_ref = None
+        self._sflux_top_ref: np.ndarray | None = None
 
-    def _build_statics(self, var: Any, atm: Any) -> _Statics:
-        """Pack scalar config + per-run arrays into the closure inputs."""
-        return _build_statics.build_statics(self, var, atm)
-
-    def _gas_mask(self, atm: Any) -> np.ndarray:
-        """(ni,) gas-species mask."""
-        return _build_statics.gas_mask(self, atm)
-
-    def _ensure_runner(self, var: Any, atm: Any) -> None:
+    def ensure_runner(self, var: Any, atm: Any) -> None:
         """Build the JIT'd runner on the first call; cached for subsequent."""
         if self._runner is not None:
             return
 
         nz = atm.Tco.shape[0]
-        ni = _NETWORK.ni
+        ni = NETWORK.ni
 
-        gas_mask_jnp = jnp.asarray(self._gas_mask(atm))
+        gas_mask_jnp = jnp.asarray(_build_statics.gas_mask(self, atm))
 
         # condense_zero_mask (nz, ni) -- True where delta is zeroed; all False
         # unless use_condense (condense_sp + non_gas_sp).
         cond_mask_np = np.zeros((nz, ni), dtype=bool)
         if self._cfg.use_condense:
             for sp in self._cfg.condense_sp + self._cfg.non_gas_sp:
-                if sp in _NETWORK.species_idx:
-                    cond_mask_np[:, _NETWORK.species_idx[sp]] = True
+                if sp in NETWORK.species_idx:
+                    cond_mask_np[:, NETWORK.species_idx[sp]] = True
 
-        self._statics = self._build_statics(var, atm)
-        self._photo_static = self._build_photo_static(var, atm)
-        self._refresh_static = self._build_refresh_static(atm)
-        self._conden_static = self._build_conden_static(var, atm, gas_mask_jnp)
+        self._statics = _build_statics.build_statics(self, var, atm)
+        self._photo_static = _build_statics.build_photo_static(self, var, atm)
+        self._refresh_static = _build_statics.build_refresh_static(self, atm)
+        self._conden_static = _build_statics.build_conden_static(self, var, atm, gas_mask_jnp)
         (
             self._runner,
             self._runner_chunk,
@@ -207,7 +155,7 @@ class OuterLoop:
             self._runner_queue,
             self._make_runner_jvp,
         ) = make_runner(
-            _NET_JAX,
+            NET_JAX,
             self._statics,
             bool(self._cfg.non_gas_sp),
             gas_mask_jnp,
@@ -220,8 +168,10 @@ class OuterLoop:
             conden_static=self._conden_static,
         )
 
-    # size-limit-ok: most of the length is the tangent contract in the docstring
-    def run_jvp(self, state: Any, atm_static: Any, dstate: Any, datm: Any) -> Any:
+    # size-limit-ok: the tangent contract, then the leaf bookkeeping of the one call to the jvp runner
+    def run_jvp(
+        self, state: JaxIntegState, atm_static: AtmStatic, dstate: Any, datm: Any
+    ) -> tuple[JaxIntegState, Any, jnp.ndarray, jnp.ndarray]:
         """Forward-mode integration certified on the tangent.
 
         `dstate` / `datm` mirror `state` / `atm_static` leaf for leaf, as
@@ -246,13 +196,13 @@ class OuterLoop:
         integrates the primal D times.
         """
 
-        def _mask(dtree: Any, tree: Any) -> Any:
+        def _mask(dtree: Any, tree: Any) -> tuple[bool, ...]:
             leaves = jax.tree_util.tree_leaves(tree)
             dleaves = jax.tree_util.tree_leaves(dtree)
             if len(leaves) != len(dleaves):
                 raise ValueError(f"tangent tree has {len(dleaves)} leaves, primal {len(leaves)}")
 
-            def _is_float(x: Any) -> Any:
+            def _is_float(x: Any) -> bool:
                 return (
                     getattr(x, "dtype", None) is not None
                     and x.dtype != jax.dtypes.float0
@@ -271,12 +221,16 @@ class OuterLoop:
                 )
             return act
 
+        if self._make_runner_jvp is None:
+            raise RuntimeError(
+                "run_jvp called before the runner was built; call prepare_runstate on at least one profile first."
+            )
         act_s, act_a = _mask(dstate, state), _mask(datm, atm_static)
         key = (act_s, act_a)
         if key not in self._runner_jvp_cache:
             self._runner_jvp_cache[key] = self._make_runner_jvp(act_s, act_a)
 
-        def pick(dtree: Any, act: Any) -> Any:
+        def pick(dtree: Any, act: tuple[bool, ...]) -> list[jnp.ndarray]:
             return [d for d, a in zip(jax.tree_util.tree_leaves(dtree), act, strict=False) if a]
 
         ds_act, da_act = pick(dstate, act_s), pick(datm, act_a)
@@ -296,55 +250,24 @@ class OuterLoop:
         leaves, tdef = jax.tree_util.tree_flatten(final)
         it = iter(dfinal_active)
         # float0 placeholders keep the primal's shape; nothing reads them.
-        dfinal = tdef.unflatten(
+        dfinal = jax.tree_util.tree_unflatten(
+            tdef,
             [
                 next(it) if a else np.zeros(np.shape(x), dtype=jax.dtypes.float0)
                 for x, a in zip(leaves, act_s, strict=False)
-            ]
+            ],
         )
         return final, dfinal, tangent_longdy, tangent_ok
 
-    def _build_photo_static(self, var: Any, atm: Any) -> _PhotoStatic | None:
-        """Pack photo cross sections + scalar configs into a `_PhotoStatic`."""
-        return _build_statics.build_photo_static(self, var, atm)
-
-    def _build_refresh_static(self, atm: Any) -> _atm_refresh_mod.AtmRefreshStatic:
+    def build_refresh_static(self, atm: Any) -> _atm_refresh_mod.AtmRefreshStatic:
         """Pack the static inputs to `atm_refresh.update_mu_dz_jax`."""
         return _build_statics.build_refresh_static(self, atm)
 
-    def _build_conden_static(self, var: Any, atm: Any, gas_mask_jnp: Any) -> _conden_mod.CondenStatic | None:
-        """Pack the conden tables into a `CondenStatic`."""
-        return _build_statics.build_conden_static(self, var, atm, gas_mask_jnp)
-
-    def _initial_photo_carry_from_runstate(self, rs: Any) -> dict:
-        """Build the initial photo carry from `rs.rate.k` and `rs.photo_runtime` (placeholders when photo is off)."""
-        return _pack_state.initial_photo_carry(self, rs)
-
-    def _initial_atm_carry_from_runstate(self, rs: Any) -> dict:
-        """Build the initial atm-refresh carry from a RunState slice."""
-        return _pack_state.initial_atm_carry(rs)
-
-    def _initial_conv_carry_from_runstate(self, rs: Any) -> dict:
-        """Build the initial conv-history carry from a RunState slice."""
-        return _pack_state.initial_conv_carry(self, rs)
-
-    def _profile_vars_from_runstate(self, rs: Any) -> ProfileVars:
-        """Snapshot this profile's per-profile constants into a `ProfileVars`."""
-        return _pack_state.profile_vars(self, rs)
-
-    def _pack_state_from_runstate(self, rs: Any) -> JaxIntegState:
+    def pack_state(self, rs: RunState) -> JaxIntegState:
         """Build the initial JaxIntegState from a fully-populated RunState."""
         return _pack_state.pack_state(self, rs)
 
-    def _unpack_state_to_runstate(self, state: JaxIntegState, rs_entry: Any) -> Any:
-        """Build a fresh `RunState` from the runner's final JaxIntegState."""
-        return _pack_state.unpack_state(self, state, rs_entry)
-
-    def _classify_end_case(self, state: JaxIntegState) -> Any:
-        """Classify end-of-run (op.py:1069-1085) from the in-loop reason."""
-        return _pack_state.classify_end_case(state)
-
-    def _report_end(self, rs: Any, final: Any) -> None:
+    def _report_end(self, rs: RunState, final: JaxIntegState) -> None:
         """End-of-run report (op.py:1069-1085 and op.stop).
 
         print_prog, then print_end_msg (end_case 1) or print_unconverged_msg, which states the reason (2 / 3 / 5),
@@ -385,38 +308,37 @@ class OuterLoop:
                 "element_budget_tol: .inf to stop on VULCAN 2's criteria."
             )
 
-    # Public names of the internals consumers need. The underscored names are deprecated (docs/api.md) and go after
-    # one release.
-    ensure_runner = _ensure_runner
-    pack_state = _pack_state_from_runstate
-    build_refresh_static = _build_refresh_static
+    # Deprecated (docs/api.md).
+    _ensure_runner = ensure_runner
+    _pack_state_from_runstate = pack_state
+    _build_refresh_static = build_refresh_static
 
     @property
-    def runner(self) -> Any:
+    def runner(self) -> Callable[[JaxIntegState, AtmStatic], JaxIntegState] | None:
         """The compiled `runner(state, atm_static) -> state`; None before `prepare_runstate`."""
         return self._runner
 
     @property
-    def config(self) -> Any:
+    def config(self) -> Config:
         """The `Config` this runner was built with."""
         return self._cfg
 
     @property
-    def compo_arr(self) -> Any:
+    def compo_arr(self) -> np.ndarray:
         """Per-species atom counts, shape (ni, n_atoms)."""
         return self._compo_arr
 
     @property
-    def photo_static(self) -> Any:
+    def photo_static(self) -> _PhotoStatic | None:
         """The runner's baked photolysis tables, or None with photolysis off."""
         return self._photo_static
 
     @property
-    def statics(self) -> Any:
-        """The runner's closure inputs (`_Statics`)."""
+    def statics(self) -> _Statics | None:
+        """The runner's closure inputs, or None before `ensure_runner`."""
         return self._statics
 
-    def __call__(self, rs: Any, chunk: int | None = None) -> Any:
+    def __call__(self, rs: RunState, chunk: int | None = None) -> RunState:
         """Integrate a fresh `RunState` to convergence or a cap and return a new `RunState`.
 
         Raise `ValueError` if `rs` has already run (`params.count > 0`). The caps are runtime and step count.
@@ -443,11 +365,11 @@ class OuterLoop:
             final = self._runner(init_state, atm_static)
         else:
             final = self._run_chunked(init_state, atm_static, rs, int(chunk))
-        rs_out = self._unpack_state_to_runstate(final, rs)
+        rs_out = _pack_state.unpack_state(self, final, rs)
         self._report_end(rs_out, final)
         return rs_out
 
-    def _run_chunked(self, state: Any, atm_static: Any, rs: Any, chunk: int) -> Any:
+    def _run_chunked(self, state: JaxIntegState, atm_static: AtmStatic, rs: RunState, chunk: int) -> JaxIntegState:
         """Drive `runner_chunk` until a chunk ends short of its target.
 
         Only a real termination does that (a run that ends exactly on a target returns from the next call after
@@ -479,10 +401,10 @@ class OuterLoop:
                         ),
                     )
         except KeyboardInterrupt:
-            self.interrupted_runstate = self._unpack_state_to_runstate(state, rs)
+            self.interrupted_runstate = _pack_state.unpack_state(self, state, rs)
             raise
 
-    def prepare_runstate(self, rs: Any) -> Any:
+    def prepare_runstate(self, rs: RunState) -> tuple[JaxIntegState, AtmStatic]:
         """Build `(init_state, atm_static)` for one RunState.
 
         Builds the runner closure on the first call (later calls reuse it; nz is not checked).
@@ -497,16 +419,15 @@ class OuterLoop:
         validate_runtime_config(self._cfg)
         var, atm, _ = _state_mod.legacy_view(rs)
         # Wire a pre-built PhotoStaticInputs onto the solver so
-        # _build_photo_static doesn't rebuild from the legacy_view shim
+        # build_photo_static doesn't rebuild from the legacy_view shim
         # (which does not carry the var.cross* dict surface).
-        if rs.photo_static is not None and self.odesolver._photo_static is None:
-            self.odesolver._photo_static = rs.photo_static
-        elif rs.photo_static is not None:
+        ps, baked = rs.photo_static, self.odesolver._photo_static
+        if ps is not None and baked is None:
+            self.odesolver._photo_static = ps
+        elif ps is not None and baked is not None:
             # The closure bakes the first profile's star + wavelength grid;
             # only T-dependent cross sections ride per lane (ProfileVars).
             # Reject any other difference instead of using lane 0's star.
-            baked = self.odesolver._photo_static
-            ps = rs.photo_static
             same = (
                 int(ps.nbin) == int(baked.nbin)
                 and int(ps.din12_indx) == int(baked.din12_indx)
@@ -520,7 +441,7 @@ class OuterLoop:
                     "this profile's photo statics do not match the first "
                     "profile's."
                 )
-        self._ensure_runner(var, atm)
+        self.ensure_runner(var, atm)
         # The refresh closure bakes the first profile's `pref_indx` (it sizes
         # a `jnp.arange`, so it cannot ride ProfileVars); reject a lane that
         # differs instead of silently anchoring it at lane 0's layer.
@@ -531,19 +452,19 @@ class OuterLoop:
                 f"{int(atm.pref_indx)}, the runner was built with {baked_pref}; "
                 "bucket profiles by pref_indx before batching."
             )
-        ni = _NETWORK.ni
+        ni = NETWORK.ni
         nz = int(rs.atm.Tco.shape[0])
         atm_static = make_atm_static(atm, ni, nz, cfg=self._cfg)
-        init_state = self._pack_state_from_runstate(rs)
+        init_state = self.pack_state(rs)
         return init_state, atm_static
 
-    def run_batch(self, states_batched: Any, atm_static_batched: Any) -> Any:
+    def run_batch(self, states_batched: JaxIntegState, atm_static_batched: AtmStatic) -> JaxIntegState:
         """Integrate a whole batch of profiles in one vmapped device call.
 
         `states_batched` / `atm_static_batched` are the stacked outputs of
         `prepare_runstate` (leading batch axis on every array leaf; the four
         AtmStatic toggle flags broadcast). Returns the batched final `JaxIntegState`; read per-lane
-        `termination_reason` / `ymix` by indexing the lane axis. Requires `_ensure_runner` to have run (via
+        `termination_reason` / `ymix` by indexing the lane axis. Requires `ensure_runner` to have run (via
         `prepare_runstate`) for this batch's (nz, toggle-combo).
 
         Lanes run with freeze-on-done: each profile's converged result
@@ -563,14 +484,14 @@ class OuterLoop:
 
     def run_queue(
         self,
-        init_fn: Any,
+        init_fn: Callable[[Any], tuple[JaxIntegState, AtmStatic]],
         jobs: Any,
         n_lanes: int,
-        out_fn: Any,
+        out_fn: Callable[[JaxIntegState], Any],
         *,
         chunk: int = _QUEUE_REFILL_CHUNK,
-        compact: Any = None,
-    ) -> Any:
+        compact: Sequence[int] | None = None,
+    ) -> tuple[Any, jnp.ndarray]:
         """Integrate `n_jobs` independent profiles on `n_lanes` lanes with refill.
 
         `init_fn(job) -> (JaxIntegState, AtmStatic)` builds one job's initial
