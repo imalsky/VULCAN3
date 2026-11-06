@@ -60,8 +60,10 @@ def test_count_capped_run_conv_ring_and_termination():
 
     # ---- 2. longdy / longdydt populated ----
     longdy, longdydt = rs_out.step.longdy, rs_out.step.longdydt
-    assert np.isfinite(longdy) and longdy > 0, longdy
-    assert np.isfinite(longdydt) and longdydt > 0, longdydt
+    assert np.isfinite(longdy), longdy
+    assert longdy > 0, longdy
+    assert np.isfinite(longdydt), longdydt
+    assert longdydt > 0, longdydt
 
     # ---- 3. Single-shot termination via count_max ----
     assert int(rs_out.params.count) == vulcan_cfg.count_max + 1
@@ -71,5 +73,7 @@ def test_count_capped_run_conv_ring_and_termination():
     for atom, loss in zip(rs_out.atoms.atom_order, np.asarray(rs_out.atoms.atom_loss), strict=False):
         assert abs(loss) <= MAX_ATOM_LOSS, f"atom_loss[{atom}] = {loss:.3e}"
     t, dt = float(rs_out.step.t), float(rs_out.step.dt)
-    assert dt > 0 and math.isfinite(dt), dt
-    assert t > 0 and math.isfinite(t), t
+    assert dt > 0, dt
+    assert math.isfinite(dt), dt
+    assert t > 0, t
+    assert math.isfinite(t), t

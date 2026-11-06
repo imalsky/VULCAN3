@@ -24,7 +24,9 @@ def test_conden_gates_use_entry_time_t(marker) -> None:
     idx = text.find(marker)
     assert idx >= 0, f"could not locate {marker!r} in _loop_body.py"
     line = text[text.rfind("\n", 0, idx) : text.find("\n", idx)]
-    assert "s.t" in line and "t_next" not in line, (
+    message = (
         f"gate must compare entry-time `s.t`, not `t_next`. Found: {line!r}. "
         f"See op.py:856: master gates on `var.t` before save_step advances it."
     )
+    assert "s.t" in line, message
+    assert "t_next" not in line, message

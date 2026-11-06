@@ -14,12 +14,13 @@ from __future__ import annotations
 import argparse
 import pickle
 import sys
+from pathlib import Path
 
 import numpy as np
 
 
 def _load(path):
-    with open(path, "rb") as f:
+    with Path(path).open("rb") as f:
         d = pickle.load(f)
     return (np.asarray(d["atm"]["pco"]) / 1e6, list(d["variable"]["species"]), np.asarray(d["variable"]["ymix"]))
 

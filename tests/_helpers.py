@@ -175,6 +175,7 @@ def run_self(test_file, *args, network: str, atom_list: str, cwd) -> None:
         text=True,
         capture_output=True,
         timeout=SELF_RUN_TIMEOUT_S,
+        check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
 

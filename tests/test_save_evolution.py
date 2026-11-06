@@ -45,7 +45,8 @@ def test_save_evolution_snapshots_and_vul_round_trip():
 
     y_time = np.asarray(rs_out.step.y_evo)
     t_time = np.asarray(rs_out.step.t_evo)
-    assert y_time.ndim == 3 and y_time.shape[0] == expected_n, y_time.shape
+    assert y_time.ndim == 3, y_time.shape
+    assert y_time.shape[0] == expected_n, y_time.shape
     assert t_time.shape == (expected_n,), t_time.shape
     assert np.isfinite(y_time).all()
     assert np.isfinite(t_time).all()

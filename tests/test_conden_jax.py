@@ -14,14 +14,13 @@ condensation integration is out of scope here (HD189 has use_condense=False).
 from __future__ import annotations
 
 import jax
-import numpy as np
 
 # KERNEL_RTOL = 1e-13 needs float64.
-jax.config.update("jax_enable_x64", True)
-import jax.numpy as jnp  # noqa: E402
-from _helpers import relerr  # noqa: E402
+import jax.numpy as jnp
+import numpy as np
+from _helpers import relerr
 
-from vulcan3.phy_const import UNDERFLOW_DENOM  # noqa: E402
+from vulcan3.phy_const import UNDERFLOW_DENOM
 
 KERNEL_RTOL = 1e-13
 

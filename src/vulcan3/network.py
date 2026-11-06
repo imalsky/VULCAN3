@@ -9,6 +9,7 @@ import re
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -263,7 +264,7 @@ def _enter_section(st: _ParseState, section: str, network_path: str, lineno: int
         st.photo_indx = st.parser_i
 
 
-def _collapse_side(side, species_idx: dict[str, int]) -> dict[int, float]:
+def _collapse_side(side: Any, species_idx: dict[str, int]) -> dict[int, float]:
     """Collapse one side of a reaction to species index -> stoichiometry, without M."""
     collapsed: dict[int, float] = {}
     for stoich, sp in side:

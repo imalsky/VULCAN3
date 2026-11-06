@@ -56,7 +56,7 @@ class DiffusionCoeffs:
 
 
 # size-limit-ok: an explicit reference to upstream, with one branch per scheme
-def build_diffusion_coeffs(y: np.ndarray, atm, cfg, mode: str = "auto") -> DiffusionCoeffs:
+def build_diffusion_coeffs(y: np.ndarray, atm, cfg, mode: str = "auto") -> DiffusionCoeffs:  # noqa: C901 (one branch per scheme)
     """Build A, B, C coefficients for the current state and atmosphere.
 
     Args:

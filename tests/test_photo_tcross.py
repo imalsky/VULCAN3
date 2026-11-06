@@ -12,7 +12,8 @@ import numpy as np
 import pytest
 
 
-def main() -> int:
+@pytest.mark.strict_isolation
+def test_photo_tcross_rates():
     import vulcan3.legacy_io as op
     from vulcan3 import op_jax, outer_loop
     from vulcan3.state import RunState
@@ -41,9 +42,3 @@ def main() -> int:
     count = int(rs_out.params.count)
     assert np.all(np.isfinite(np.asarray(rs_out.step.y))), "non-finite y after T_cross_sp run"
     assert count >= 12, f"run did not progress (count={count})"
-    return 0
-
-
-@pytest.mark.strict_isolation
-def test_main():
-    assert main() == 0

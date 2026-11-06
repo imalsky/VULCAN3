@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from ._loop_env import RunnerEnv
 
 
-def _tangent_conv(statics: _Statics, s_next: JaxIntegState, ds_next: JaxIntegState):
+def _tangent_conv(statics: _Statics, s_next: JaxIntegState, ds_next: JaxIntegState) -> Any:
     """Return the primal's longdy reduction on the tangent.
 
     `dy - dy_lookback` over `y`, on the cells the primal certifies on. Per cell and absolute, so the tangent
@@ -31,7 +31,7 @@ def _tangent_conv(statics: _Statics, s_next: JaxIntegState, ds_next: JaxIntegSta
     indx = lookback_index(statics, s_next, s_next.accept_count)
     dt_lookback = jnp.maximum(s_next.t - s_next.t_time_ring[indx], UNDERFLOW_DENOM)
 
-    def one_dir(dy, dy_ring):
+    def one_dir(dy: Any, dy_ring: Any) -> Any:
         tangent_longdy, _ = _longdy_reduce(
             s_next.y,
             s_next.ymix,
@@ -48,7 +48,7 @@ def _tangent_conv(statics: _Statics, s_next: JaxIntegState, ds_next: JaxIntegSta
     return jax.vmap(one_dir)(ds_next.y, ds_next.y_time_ring)
 
 
-def _make_jvp_step(env: RunnerEnv, active_state, active_atm):
+def _make_jvp_step(env: RunnerEnv, active_state: Any, active_atm: Any) -> Any:
     """One `jax.jvp` of `body_fn`, vmapped over a leading direction axis D.
 
     `active_*` flag, per flattened leaf of the state and AtmStatic, the
@@ -59,15 +59,15 @@ def _make_jvp_step(env: RunnerEnv, active_state, active_atm):
     computed once for all D directions.
     """
 
-    def _merge(flat, leaves, active):
+    def _merge(flat: Any, leaves: Any, active: Any) -> Any:
         nxt = iter(flat)
         return [next(nxt) if a else x for x, a in zip(leaves, active, strict=False)]
 
-    def _step(s, atm_static, ds_active, datm_active):
+    def _step(s: JaxIntegState, atm_static: Any, ds_active: Any, datm_active: Any) -> Any:
         s_def = jax.tree_util.tree_structure(s)
         a_leaves, a_def = jax.tree_util.tree_flatten(atm_static)
 
-        def f(s_act, a_act):
+        def f(s_act: Any, a_act: Any) -> Any:
             s_in = s_def.unflatten(_merge(s_act, jax.tree_util.tree_leaves(s), active_state))
             a_in = a_def.unflatten(_merge(a_act, a_leaves, active_atm))
             o_leaves = jax.tree_util.tree_leaves(body_fn(env, s_in, a_in))
@@ -91,7 +91,7 @@ def _make_jvp_step(env: RunnerEnv, active_state, active_atm):
     return _step
 
 
-def make_runner_jvp(env: RunnerEnv, active_state, active_atm):
+def make_runner_jvp(env: RunnerEnv, active_state: Any, active_atm: Any) -> Any:
     """Build the forward-mode runner: integrates (state, tangent) together.
 
     Stops only when the tangent has settled by the primal's own rule.
@@ -107,8 +107,8 @@ def make_runner_jvp(env: RunnerEnv, active_state, active_atm):
     _step = _make_jvp_step(env, active_state, active_atm)
 
     @jax.jit
-    def runner_jvp(state, atm_static, dstate_active, datm_active):
-        def body(carry):
+    def runner_jvp(state: Any, atm_static: Any, dstate_active: Any, datm_active: Any) -> Any:
+        def body(carry: Any) -> Any:
             s, ds_active, tangent_longdy, tangent_longdydt = carry
             s_next, dact_out, ds_next = _step(s, atm_static, ds_active, datm_active)
             tangent_longdy_new, tangent_longdydt_new = _tangent_conv(statics, s_next, ds_next)
@@ -120,7 +120,7 @@ def make_runner_jvp(env: RunnerEnv, active_state, active_atm):
                 jnp.where(accepted, tangent_longdydt_new, tangent_longdydt),
             )
 
-        def cond(carry):
+        def cond(carry: Any) -> Any:
             s, _ds, tangent_longdy, tangent_longdydt = carry
             real_term, _ = real_terminate(
                 statics, s, jnp.all(two_branch(statics, tangent_longdy, tangent_longdydt, _slope_min(s)))

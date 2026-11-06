@@ -5,11 +5,12 @@ Public names: `conv_normal`, `certificate_failures`. Rules: notes "Certificates"
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 import numpy as np
 
+from ._carry import JaxIntegState
 from .phy_const import UNDERFLOW_DENOM
 
 if TYPE_CHECKING:
@@ -29,7 +30,7 @@ _SLOPE_MIN_FLOOR = 1e-10
 
 # The convergence certificate. `c` is the runner's `_Statics` or a config:
 # both carry yconv_cri, yconv_min, slope_cri and flux_cri under these names.
-def _slope_min(s: JaxIntegState):
+def _slope_min(s: JaxIntegState) -> Any:
     slope_min = jnp.minimum(
         jnp.min(s.pv.Kzz / (_SLOPE_MIN_HP_FRAC * s.Hp[:-1]) ** 2),
         jnp.float64(_SLOPE_MIN_CAP),
@@ -37,14 +38,14 @@ def _slope_min(s: JaxIntegState):
     return jnp.maximum(slope_min, jnp.float64(_SLOPE_MIN_FLOOR))
 
 
-def _branches(longdy, longdydt, slope_min, c):
+def _branches(longdy: jnp.ndarray, longdydt: jnp.ndarray, slope_min: Any, c: Any) -> Any:
     """(tight, loose): (yconv_cri, slope_cri) and (yconv_min, slope_min)."""
     tight = (longdy < jnp.float64(c.yconv_cri)) & (longdydt < jnp.float64(c.slope_cri))
     loose = (longdy < jnp.float64(c.yconv_min)) & (longdydt < slope_min)
     return tight, loose
 
 
-def _convergence_ok(s: JaxIntegState, c):
+def _convergence_ok(s: JaxIntegState, c: Any) -> Any:
     """Convergence predicate shared by `_real_terminate`, the certificate candidate and the hybrid phase-flip.
 
     `slope_min` is recomputed from the live Hp (atm refresh moves it). Same
@@ -55,7 +56,7 @@ def _convergence_ok(s: JaxIntegState, c):
     return (tight | loose) & (s.aflux_change < jnp.float64(c.flux_cri))
 
 
-def _certified(s: JaxIntegState, c):
+def _certified(s: JaxIntegState, c: Any) -> Any:
     """`_convergence_ok` AND the geometry and element-budget terms.
 
     `geom_ok` / `budget_ok` are written by the body on the candidate step (see there): the refreshed geometry agreed
@@ -64,7 +65,7 @@ def _certified(s: JaxIntegState, c):
     return _convergence_ok(s, c) & s.geom_ok & s.budget_ok
 
 
-def conv_normal(final: JaxIntegState, cfg):
+def conv_normal(final: JaxIntegState, cfg: Any) -> Any:
     """Return the runner's convergence certificate on a carry, e.g. its exit state.
 
     The terms `_real_terminate` ends a run on, read with `cfg`'s thresholds:
@@ -84,7 +85,7 @@ def conv_normal(final: JaxIntegState, cfg):
     return ok, branch
 
 
-def certificate_failures(final: JaxIntegState, cfg, atom_order):
+def certificate_failures(final: JaxIntegState, cfg: Any, atom_order: Any) -> Any:
     """`(term, value, threshold)` for each certificate term the exit carry fails; empty when `conv_normal` holds.
 
     `budget_ok` / `geom_ok` are written only on a candidate step, so the
@@ -112,17 +113,17 @@ def certificate_failures(final: JaxIntegState, cfg, atom_order):
 
 
 def _longdy_reduce(
-    y,
-    ymix,
-    y_old,
-    n_0,
+    y: jnp.ndarray,
+    ymix: jnp.ndarray,
+    y_old: Any,
+    n_0: jnp.ndarray,
     *,
-    atol,
-    mtol_conv,
-    ignore_mask=None,
-    condense_mask=None,
-    diff=None,
-):
+    atol: Any,
+    mtol_conv: Any,
+    ignore_mask: Any = None,
+    condense_mask: Any = None,
+    diff: Any = None,
+) -> Any:
     """Return the `longdy` convergence reduction as (longdy, ratio).
 
     `diff` replaces `y - y_old` while every mask still reads the primal

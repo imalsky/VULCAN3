@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -21,22 +22,22 @@ _NETWORK = chem_funs._NETWORK  # the one parse per process
 class Ros2JAX:
     """Photo wrapper holding lazy PhotoData/PhotoJData caches."""
 
-    def __init__(self, photo_static=None):
+    def __init__(self, photo_static: Any = None) -> None:
         self._photo_static = photo_static
         self._photo_data = None
         self._photo_J_data = None
         self._photo_ion_data = None
 
     @property
-    def photo_static(self):
+    def photo_static(self) -> Any:
         """The pre-built photolysis tables, or None; the old name `_photo_static` is deprecated (docs/api.md)."""
         return self._photo_static
 
     @photo_static.setter
-    def photo_static(self, value):
+    def photo_static(self, value: Any) -> None:
         self._photo_static = value
 
-    def _ensure_photo_static(self, var, atm):
+    def _ensure_photo_static(self, var: Any, atm: Any) -> Any:
         """Build (or refresh) and return the cached `PhotoStaticInputs` for `(var, atm)`."""
         if self._photo_static is None:
             from . import photo_setup as _photo_setup
@@ -46,7 +47,7 @@ class Ros2JAX:
             self._photo_static = self._photo_static.with_din12_indx(int(var.sflux_din12_indx))
         return self._photo_static
 
-    def compute_tau(self, var, atm):
+    def compute_tau(self, var: Any, atm: Any) -> None:
         """Compute optical depth and write to `var.tau`."""
         if self._photo_data is None:
             static = self._ensure_photo_static(var, atm)
@@ -58,7 +59,7 @@ class Ros2JAX:
         )
         var.tau = np.asarray(tau_j, dtype=np.float64)
 
-    def compute_flux(self, var, atm):
+    def compute_flux(self, var: Any, atm: Any) -> None:
         """Two-stream Eddington RT. Reads var.dflux_u from prior call."""
         static = self._ensure_photo_static(var, atm)
         ag0 = float(_phy_const.ag0)
@@ -87,7 +88,7 @@ class Ros2JAX:
             var.aflux_change = 0.0
 
     @staticmethod
-    def _fill_J(var, jdata, sp_list, n_branch, rate_index):
+    def _fill_J(var: Any, jdata: Any, sp_list: Any, n_branch: Any, rate_index: Any) -> Any:
         """Return the (species, branch) J dict (branch 0 = total) and write var.k_arr."""
         J_jax = _photo_mod.compute_J_jax(jnp.asarray(var.aflux), jdata)
         nz_ = var.aflux.shape[0]
@@ -100,21 +101,21 @@ class Ros2JAX:
                 var.k_arr[ridx, :] = J[(sp, nbr)] * _CFG.f_diurnal
         return J
 
-    def compute_J(self, var, atm):
+    def compute_J(self, var: Any, atm: Any) -> None:
         """Photolysis rates per (species, branch). Writes to var.J_sp + var.k_arr."""
         if self._photo_J_data is None:
             static = self._ensure_photo_static(var, atm)
             self._photo_J_data = _photo_mod.photo_J_data_from_static(static)
         var.J_sp = self._fill_J(var, self._photo_J_data, var.photo_sp, var.n_branch, var.pho_rate_index)
 
-    def compute_Jion(self, var, atm):
+    def compute_Jion(self, var: Any, atm: Any) -> None:
         """Photo-ionisation rates per (species, branch). Writes to var.Jion_sp + var.k_arr."""
         if self._photo_ion_data is None:
             static = self._ensure_photo_static(var, atm)
             self._photo_ion_data = _photo_mod.photo_ion_data_from_static(static)
         var.Jion_sp = self._fill_J(var, self._photo_ion_data, var.ion_sp, var.ion_branch, var.ion_rate_index)
 
-    def naming_solver(self, para):
+    def naming_solver(self, para: Any) -> None:
         """Log the molecular-diffusion line and stamp `para.solver_str` (op.py:3078-3088)."""
         if _CFG.use_moldiff:
             logger.info("Include molecular diffusion.")

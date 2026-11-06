@@ -16,7 +16,7 @@ Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, l
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -63,7 +63,7 @@ _LOWT_CAP_CONST = (  # (rxn, T_max, k_cap)
 )
 
 
-def _thermo_dir(network_file) -> Path:
+def _thermo_dir(network_file: Any) -> Path:
     """`thermo/` beside the network file, else the packaged one.
 
     The rate build and the equilibrium seed read one NASA-9 table from one place.
@@ -77,11 +77,11 @@ def _thermo_dir(network_file) -> Path:
 thermo_dir = _thermo_dir  # the public name; `_thermo_dir` is deprecated (docs/api.md)
 
 
-def _arrhenius(a, n, E, T):
+def _arrhenius(a: Any, n: Any, E: Any, T: jnp.ndarray) -> Any:
     return a * T**n * jnp.exp(-E / T)
 
 
-def _troe_OH_CH3(T, M):
+def _troe_OH_CH3(T: jnp.ndarray, M: jnp.ndarray) -> Any:
     """Hardcoded Troe form for OH + CH3 + M -> CH3OH + M.
 
     Visscher & Moses 2011 eqs 13-14 (log10 width; upstream op.py:204-205 uses ln) with the eq 24-26 fits of Jasper
@@ -95,7 +95,7 @@ def _troe_OH_CH3(T, M):
     return k0 / (1.0 + k0 * M / kinf) * ff
 
 
-def _col(x):
+def _col(x: Any) -> Any:
     """(nr+1,) network array -> (nr+1, 1) jnp float column for broadcasting."""
     return jnp.asarray(np.asarray(x, dtype=np.float64))[:, None]
 
@@ -105,12 +105,12 @@ def compute_forward_k(
     T: jnp.ndarray,
     M: jnp.ndarray,
     *,
-    a=None,
-    n=None,
-    E=None,
-    a_inf=None,
-    n_inf=None,
-    E_inf=None,
+    a: Any = None,
+    n: int | None = None,
+    E: Any = None,
+    a_inf: Any = None,
+    n_inf: Any = None,
+    E_inf: Any = None,
 ) -> jnp.ndarray:
     """Vectorized forward rates. T, M are (nz,) arrays -> (nr+1, nz).
 
@@ -132,7 +132,7 @@ def compute_forward_k(
     T = jnp.asarray(T)[None, :]  # (1, nz)
     M = jnp.asarray(M)[None, :]
 
-    def _ovr(val, default):
+    def _ovr(val: Any, default: Any) -> Any:
         return _col(default) if val is None else jnp.asarray(val)[:, None]
 
     a, n, E = _ovr(a, net.a), _ovr(n, net.n), _ovr(E, net.E)
@@ -202,7 +202,7 @@ def apply_lowT_caps(net: Network, k_fwd: jnp.ndarray, T: jnp.ndarray, M: jnp.nda
     return k
 
 
-def gibbs_sp_vector(coeffs, T: jnp.ndarray) -> jnp.ndarray:
+def gibbs_sp_vector(coeffs: Any, T: jnp.ndarray) -> jnp.ndarray:
     """g_sp/(RT) per species per layer. coeffs (ni,2,10), T (nz,) -> (ni,nz).
 
     `coeffs` may be a NumPy array (the static thermo) or a JAX array/tracer:
@@ -213,7 +213,7 @@ def gibbs_sp_vector(coeffs, T: jnp.ndarray) -> jnp.ndarray:
     a_low, a_high = c[:, 0, :], c[:, 1, :]
     Tg = jnp.asarray(T)[None, :]
 
-    def _g(a):
+    def _g(a: Any) -> Any:
         return (
             -a[:, 0:1] / Tg**2
             + a[:, 1:2] * jnp.log(Tg) / Tg
@@ -289,7 +289,7 @@ def fill_reverse_k(net: Network, k_fwd: jnp.ndarray, K_eq: jnp.ndarray) -> jnp.n
 K_COLL = 1e-9  # cm3 s^-1: the collision limit of apply_collision_limit (notes "Parity ledger")
 
 
-def apply_collision_limit(net: Network, k: jnp.ndarray, M: jnp.ndarray) -> jnp.ndarray:
+def apply_collision_limit(net: Network, k: Any, M: jnp.ndarray) -> jnp.ndarray:
     """Scale each thermal forward / reverse pair by c = min(1, K_COLL / q) (notes "Parity ledger"; not in master).
 
     q is the larger of the two directions' bimolecular-equivalent rates, k M^(three-body) M^(m - 2) with m the slot's
@@ -311,7 +311,7 @@ def apply_collision_limit(net: Network, k: jnp.ndarray, M: jnp.ndarray) -> jnp.n
     return k * scale
 
 
-def apply_remove_list(net: Network, k, remove_list: Iterable[int] | None):
+def apply_remove_list(net: Network, k: Any, remove_list: Iterable[int] | None) -> Any:
     """Zero the rows in `remove_list`.
 
     No auto-pairing: passing a lone forward leaves its reverse intact.
@@ -336,7 +336,7 @@ def build_rate_array(
     T: jnp.ndarray,
     M: jnp.ndarray,
     nasa9_coeffs: np.ndarray,
-    remove_list=None,
+    remove_list: Any = None,
     use_lowT_caps: bool = False,
     rate_coeffs: dict | None = None,
 ) -> jnp.ndarray:
@@ -399,7 +399,7 @@ def _assert_reversible_thermo_present(net: Network, present: np.ndarray) -> None
         )
 
 
-def setup_var_k(cfg, var, atm) -> Network:
+def setup_var_k(cfg: Any, var: Any, atm: Any) -> Network:
     """Parse network, load NASA-9 coeffs, freeze `var.k_arr`. Returns the Network.
 
     The host half of the setup contract: it resolves the files and pins the
@@ -425,7 +425,7 @@ def setup_var_k(cfg, var, atm) -> Network:
     return network
 
 
-def apply_photo_remove(cfg, var, network: Network) -> None:
+def apply_photo_remove(cfg: Any, var: Any, network: Network) -> None:
     """Re-apply `cfg.remove_list` after the photolysis rows of `var.k_arr` were overwritten.
 
     `compute_J` and `compute_Jion` write those rows.

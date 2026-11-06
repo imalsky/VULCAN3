@@ -1,11 +1,10 @@
-"""The default solver path (`vulcan3.solver_fast`, `VULCAN3_SOLVER=fast|ffi`)
-against the reference factor/solve pair in `solver` (`_oracles.block_thomas_diag_offdiag`).
+# size-limit-ok: the solver checks and their oracle children share one fixture set
+"""The default solver path against the reference factor and solve pair.
 
-What must hold, for both backends: the primal is the same solution (bit-identical
-for `fast`, which runs the same scans; residual-matched for the C++ `ffi` kernel),
-the `custom_linear_solve` tangent agrees with differentiating through the LU
-and its linearised residual is never worse, reverse mode (steady_state_grad's
-`jax.vjp` through the step) agrees, and vmap is consistent. Random systems at
+`vulcan3.solver_fast` (`VULCAN3_SOLVER=fast|ffi`) against `solver` (`_oracles.block_thomas_diag_offdiag`). What must
+hold, for both backends: the primal is the same solution (bit-identical for `fast`, residual-matched for the C++ `ffi`
+kernel), the `custom_linear_solve` tangent agrees with differentiating through the LU and its linearised residual is
+never worse, and vmap is consistent. Reverse mode agrees under `fast` and is refused under `ffi`. Random systems at
 the VULCAN shape, then the real HD189 blocks at four dt (the W39b blocks in a
 SNCHO child, slow-gated like the other W39b children). On a CUDA host the GPU
 factor (Gauss-Jordan) and solve are also checked against the CPU kernel on
@@ -27,8 +26,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
-jax.config.update("jax_enable_x64", True)
 
 if os.environ.get("VULCAN3_SOLVER") == "reference":
     pytest.skip(
@@ -372,6 +369,7 @@ def test_cuda_kernel_under_compute_sanitizer(tool, buffers):
         text=True,
         env=env,
         timeout=600,
+        check=False,
     )
     assert res.returncode == 0, res.stdout[-4000:] + res.stderr[-4000:]
 
@@ -440,6 +438,7 @@ def buffer_variants(tmp_path_factory):
                 env=env,
                 cwd=ROOT,
                 timeout=900,
+                check=False,
             )
             if buffers == "2" and res.returncode and "shared memory per block" in res.stderr:
                 runs[net] = next(ln for ln in res.stderr.splitlines() if "shared memory per block" in ln)
@@ -709,6 +708,8 @@ def check_matrix_free(fixture: str, cfg_name: str, backend: str):
             p_dense, t_dense = dense(*c)
             for a, b in zip(p_free, p_dense, strict=False):
                 assert _rel(b, a) <= primal_bar, (float(c[0][2]), _rel(b, a))
+            # The worst tangent gap measured is 1.4e-4 (HD189, dt 1e6, x86-64), and it grows with dt: the bar leaves a
+            # factor of 7 and still catches a wrong operator.
             for a, b in zip(t_free, t_dense, strict=False):
                 assert _rel(b, a) < 1e-3, (float(c[0][2]), bool(c[2].any()), _rel(b, a))
             # no "dt=" here: the W39b child counts check_real_blocks' rows by it

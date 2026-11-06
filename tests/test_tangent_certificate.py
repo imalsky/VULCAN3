@@ -59,11 +59,8 @@ def _zero_tangent(tree):
 
 
 def _check(case):
-    import jax
     import jax.numpy as jnp
     import numpy as np
-
-    jax.config.update("jax_enable_x64", True)
 
     integ, state, static = _build(case)
     dstate = _zero_tangent(state)._replace(pv=_zero_tangent(state.pv)._replace(Kzz=state.pv.Kzz * H))

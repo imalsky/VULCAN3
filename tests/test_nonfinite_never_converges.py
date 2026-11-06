@@ -89,7 +89,8 @@ def test_sub_atol_cell_gives_a_finite_batch_independent_tangent():
 
     for f in (longdy_of, delta_of):
         plain, batched = tangents(f)
-        assert np.isfinite(plain) and np.isfinite(batched), (f.__name__, plain, batched)
+        assert np.isfinite(plain), (f.__name__, plain, batched)
+        assert np.isfinite(batched), (f.__name__, plain, batched)
         np.testing.assert_allclose(batched, plain, rtol=1e-12, err_msg=f.__name__)
 
 

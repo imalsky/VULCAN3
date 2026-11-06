@@ -69,7 +69,9 @@ def sha256(path: Path) -> str:
 
 def _git_head() -> str | None:
     try:
-        r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10)
+        r = subprocess.run(
+            ["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10, check=False
+        )
         head = r.stdout.strip()
         if r.returncode != 0 or not head:
             return None
@@ -78,6 +80,7 @@ def _git_head() -> str | None:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         ).stdout.strip()
         return head + ("-dirty" if dirty else "")
     except Exception:  # best-effort provenance: record None, never block generation
@@ -125,7 +128,7 @@ def run_generator(key: str) -> None:
     # the generators fail for reasons unrelated to the repo.
     env.pop("PYTHONSAFEPATH", None)
     t0 = time.time()
-    r = subprocess.run(spec["argv"], cwd=ROOT, env=env)
+    r = subprocess.run(spec["argv"], cwd=ROOT, env=env, check=False)
     if r.returncode != 0:
         raise SystemExit(
             f"gen_fixtures: generator {key} failed (exit {r.returncode}). "

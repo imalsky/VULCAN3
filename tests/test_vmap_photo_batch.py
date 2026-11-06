@@ -84,7 +84,19 @@ def test_photo_lane_matches_its_solo_run():
     n_absp_T = sA.pv.p_absp_T_cross.shape[0]
     tdiff = _max_rel_diff(sB.pv.p_absp_T_cross, sA.pv.p_absp_T_cross, floor=0.0)
     jdiff = _max_rel_diff(sB.pv.p_cross_J_T, sA.pv.p_cross_J_T, floor=0.0)
-    assert n_absp_T != 0 and tdiff != 0.0 and jdiff != 0.0, (
+    assert n_absp_T != 0, (
+        "T-dep cross sections do not differ between lanes",
+        n_absp_T,
+        tdiff,
+        jdiff,
+    )
+    assert tdiff != 0.0, (
+        "T-dep cross sections do not differ between lanes",
+        n_absp_T,
+        tdiff,
+        jdiff,
+    )
+    assert jdiff != 0.0, (
         "T-dep cross sections do not differ between lanes",
         n_absp_T,
         tdiff,
@@ -96,7 +108,8 @@ def test_photo_lane_matches_its_solo_run():
     soloB = integB._runner(sB_own, atmB_own)
 
     # photo really fired: actinic flux nonzero, photo branch wrote k rows.
-    assert np.any(np.asarray(soloA.aflux) > 0) and float(soloA.aflux_change) != 0.0, "photo branch never fired in soloA"
+    assert np.any(np.asarray(soloA.aflux) > 0), "photo branch never fired in soloA"
+    assert float(soloA.aflux_change) != 0.0, "photo branch never fired in soloA"
 
     # --- batch on A's runner ----------------------------------------------
     batched = integA.run_batch(
@@ -116,7 +129,8 @@ def test_photo_lane_matches_its_solo_run():
             relA = _peak_ratio(bat0, refA)
             relB = _peak_ratio(bat1, refB)
             tol = RTOL
-        assert relA <= tol and relB <= tol, ("solo-vs-batch", name, relA, relB)
+        assert relA <= tol, ("solo-vs-batch", name, relA, relB)
+        assert relB <= tol, ("solo-vs-batch", name, relA, relB)
 
     profiles_differ = _max_rel_diff(soloB.ymix, soloA.ymix)
     assert profiles_differ >= 1e-6, ("profiles identical", profiles_differ)
@@ -182,7 +196,8 @@ def test_lane_gone_nonfinite_on_a_photo_tick_keeps_its_whole_carry():
             continue
         a, b = np.asarray(a), np.asarray(b)
         equal_nan = bool(np.issubdtype(a.dtype, np.floating))
-        assert a.dtype == b.dtype and np.array_equal(a, b, equal_nan=equal_nan), name
+        assert a.dtype == b.dtype, name
+        assert np.array_equal(a, b, equal_nan=equal_nan), name
 
 
 @pytest.mark.strict_isolation
@@ -208,7 +223,7 @@ def test_queue_on_photo_lanes_matches_the_batch():
     atm_b = stack_atm_statics([atmA, atmB])
     ref = integ.run_batch(init_b, atm_b)
 
-    (y, t, acc, reason), n_iter = integ.run_queue(
+    (y, t, acc, reason), _n_iter = integ.run_queue(
         lambda job: job,
         (init_b, atm_b),
         n_lanes=2,

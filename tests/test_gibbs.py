@@ -23,7 +23,7 @@ def main() -> None:
     from vulcan3.config import default_config
 
     vulcan_cfg = default_config()
-    import store, op  # noqa
+    import store, op  # noqa: E401, I001 (master's modules, in the order it imports them)
     from vulcan3.atm_setup import Atm
 
     import vulcan3.network as net_mod

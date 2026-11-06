@@ -38,6 +38,7 @@ FD_ANCHORS = {13: -5.651e-01, 14: +5.651e-01, 115: -1.919e-05, 116: +2.712e-05}
 
 
 def main() -> int:
+    """Run the example; return 0 on success."""
     if not FIXTURE.exists():
         print(f"Missing fixture {FIXTURE}; build it with `python tests/_gen_adj_state.py hd189`.")
         return 1

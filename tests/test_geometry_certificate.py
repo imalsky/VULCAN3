@@ -34,10 +34,8 @@ def _run(update_frq):
 
 
 def _check():
-    import jax
     import numpy as np
 
-    jax.config.update("jax_enable_x64", True)
     y100, y1 = _run(100), _run(1)
     m = (y100 > 1e-8) & (y1 > 1e-8)
     worst = float(np.max(np.abs(np.log(y100[m] / y1[m]))))

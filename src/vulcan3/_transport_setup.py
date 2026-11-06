@@ -8,7 +8,7 @@ Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, l
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
@@ -54,7 +54,7 @@ def _scan_up_mu_dz_g(
     pico_up_lo = pico[pref_indx:nz]
     pico_up_hi = pico[pref_indx + 1 : nz + 1]
 
-    def body(carry, scan_in):
+    def body(carry: Any, scan_in: Any) -> Any:
         z_prev, _gz_prev, _Hp_prev = carry
         i, T_i, mu_i, p_lo, p_hi = scan_in
         is_first = i == 0
@@ -90,7 +90,7 @@ def _scan_down_mu_dz_g(
     pico_lo_rev = pico[:pref_indx][::-1]
     pico_hi_rev = pico[1 : pref_indx + 1][::-1]
 
-    def body(carry, scan_in):
+    def body(carry: Any, scan_in: Any) -> Any:
         z_above = carry
         T_i, mu_i, p_lo, p_hi = scan_in
         gz_i = gs * (Rp / (Rp + z_above)) ** 2
@@ -103,7 +103,9 @@ def _scan_down_mu_dz_g(
     return gz_rev[::-1], Hp_rev[::-1], dz_rev[::-1], z_rev[::-1]
 
 
-def mu_dz_g_jax(pref_indx: int, gs, Rp, Tco, mu, pico, nz: int):
+def mu_dz_g_jax(
+    pref_indx: int, gs: jnp.ndarray, Rp: Any, Tco: jnp.ndarray, mu: jnp.ndarray, pico: jnp.ndarray, nz: int
+) -> Any:
     """Hydrostatic height integration on the JAX graph, anchored at `pref_indx`.
 
     The host setup path (:func:`compute_mu_dz_g`) runs it on the graph too, so
@@ -134,7 +136,7 @@ def mu_dz_g_jax(pref_indx: int, gs, Rp, Tco, mu, pico, nz: int):
 
 
 def compute_mu_dz_g(
-    cfg,
+    cfg: Any,
     ymix: np.ndarray,
     ms_arr: np.ndarray,
     pico: np.ndarray,
@@ -217,7 +219,7 @@ def settling_velocity_jax(
 
 
 def compute_settling_velocity(
-    cfg,
+    cfg: Any,
     Tco: np.ndarray,
     g: np.ndarray,
     species_list: list[str],
@@ -244,7 +246,7 @@ def compute_settling_velocity(
 
 
 def settling_coeff_array(
-    cfg,
+    cfg: Any,
     species_list: list[str],
     rho_p: Mapping[str, float],
     r_p: Mapping[str, float],
@@ -267,7 +269,7 @@ def settling_coeff_array(
     return settle_coeff
 
 
-def _Dzz_gen_for_base(atm_base: str):
+def _Dzz_gen_for_base(atm_base: str) -> Any:
     """Return a JAX lambda `(T, n_tot, mi) -> Dzz` for an atm_base.
 
     Coefficients are species-pair fits from Moses 2000a (H2 base) and the
@@ -284,7 +286,7 @@ def _Dzz_gen_for_base(atm_base: str):
     raise OSError(f"\n Unknown atm_base={atm_base!r}!")
 
 
-def _alpha_array_for_base(atm_base: str, species_list: list[str], mol_mass) -> np.ndarray:
+def _alpha_array_for_base(atm_base: str, species_list: list[str], mol_mass: Any) -> np.ndarray:
     """Thermal-diffusion factor per species, atm_base-dependent. Returns (ni,).
 
     Defaults to zero. H2 base: H = -0.1, He = 0.145, then every species over
@@ -312,7 +314,19 @@ def _alpha_array_for_base(atm_base: str, species_list: list[str], mol_mass) -> n
     return alpha
 
 
-def mol_diff_jax(atm_base: str, Tco, n_0, g, Hp, dz, ms, alpha, nongas_mask, *, use_vm_mol: bool):
+def mol_diff_jax(
+    atm_base: str,
+    Tco: jnp.ndarray,
+    n_0: jnp.ndarray,
+    g: jnp.ndarray,
+    Hp: jnp.ndarray,
+    dz: jnp.ndarray,
+    ms: jnp.ndarray,
+    alpha: jnp.ndarray,
+    nongas_mask: Any,
+    *,
+    use_vm_mol: bool,
+) -> Any:
     """Molecular diffusion on the JAX graph: (Dzz, Dzz_cen, vm).
 
     Shared by the host setup path (:func:`compute_mol_diff`) and the
@@ -348,7 +362,7 @@ def mol_diff_jax(atm_base: str, Tco, n_0, g, Hp, dz, ms, alpha, nongas_mask, *, 
 
 
 def compute_mol_diff(
-    cfg,
+    cfg: Any,
     Tco: np.ndarray,
     n_0: np.ndarray,
     g: np.ndarray,

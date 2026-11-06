@@ -22,8 +22,9 @@ notes (the NAS `analysis/` tree no longer exists).
 - Consumers floor `vulcan3>=0.18.0`. Production: vulcan-retrieval's WASP-39b on NAS
   GH200s (2025 SNCHO file, ni 93; v5 ran the 2021 file, ni 89; `ffi`, grouped RHS).
 - Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209
-  1211, W39b 1260 (1202 on the 2021 file, as below) on arm64 and x86-64. HD189_vulcan3
-  is not in that test: 2603 on arm64; on x86-64 it ends on its phase-1 budget at 4018.
+  1206, W39b 1084 on x86-64 [M] ("Parity ledger", below table A); arm64 not read at this
+  code (todo). HD189_vulcan3 is not in that test: 2603 on arm64 before C25; on x86-64 it
+  ends on its phase-1 budget at 4057.
 - Tests [M], daw, no GPU, oracle on: normal tier (`-n 16`, budget 10 min) 330 passed /
   54 skipped in 6:50, full tier 346 passed / 38 skipped (skips: full-tier gating, the
   `ffi` and CUDA-kernel cases off CUDA, compute-sanitizer, an arm64-only pin); the arm64
@@ -34,7 +35,7 @@ notes (the NAS `analysis/` tree no longer exists).
   clean at those commits with `core.fileMode false`, so
   `VULCAN_MASTER_DIR=~/VULCAN_Project/.oracles/vulcan2_ncho` works.
 - Fixtures: the tracked `FIXTURES.json` is the arm64 manifest of a laptop rebuild at
-  `709407d` plus the speed pass, made before C25-C29 and now stale (todo 4). daw's
+  `709407d` plus the speed pass, made before C25-C29 and now stale (todo). daw's
   `tests/data` is an x86-64 rebuild with C25-C29 (HD209 1206 steps); `--verify` fails
   there by design (restore the tracked manifest after a rebuild).
 
@@ -48,6 +49,13 @@ stays off [M]. Ruff's unnecessary-lambda fix would have removed fresh-trace clos
 
 Baseline counts [M], daw, CPU: VUL steps HD189 1495, HD209 1206, W39b 1084 on the 2025 file, HD189_vulcan3 4057 (reason 3).
 Normal tier at 16 CPUs 324 passed, 66 skipped, 5:32, no oracle set. vulcan-forward's normal tier 90 passed, 8 skipped, 2:37.
+Refusing `ffi` reverse mode removes its transpose from every `ffi` program: the lowered text changes, the optimised CPU
+program of `runner` is equal once instruction names are stripped, and a 30-step carry is bitwise [M]; GPU not run.
+Full tier, daw CPU, 20 workers, no oracle set, 19:47 [M]: 413 passed, 50 skipped, 5 failed. Three failed alike at `01ce3b8`: the
+HD209 and W39b gates, since re-pinned ("Parity ledger"), and the Kzz JVP test ("Forward mode"). The adjoint regression failed
+only under warnings-as-errors, and now expects its warning.
+The NH3 batch test's old profiles differed by 2.7e-7, under its 1e-6 guard, as their hot deep layers held dt at its floor; the
+new pair differs by 0.10, and giving a lane the other's cold-trap index moves it 3.9e-2, above the 1e-2 bar [M]. Both pass.
 
 ## Efficiency program
 
@@ -328,20 +336,32 @@ A. Upstream errors corrected in the port
 | C15b | `make_bins_read_cross` drops a bin when `dbin_12trans` is out of range | `op.py:583-585` | `photo_setup._make_bins` raises; silent | unreachable shipped | no |
 | C19 | Ros2 stage vectors leak element content at large dt (only guard `loss_eps`) | `op.py:2914,2929`; `:2490`; `vulcan_cfg.py:136` | `jax_step._repair_stage` + `config.DT_MAX_S` (a larger `dt_max` raises); cap declared, repair silent | upstream fails the same column (S +32%); gates unchanged | no |
 | C20 | `OH + CH3 + M` Troe width in ln, not log10 | `op.py:204-205` | `rates_jax._troe_OH_CH3`; both sides via `ORACLE_CODE_DELTAS`; `test_troe_oh_ch3_is_visscher_moses_eq14` | rate 1.19-1.21x at Pr 0.1; max 0.111 ln VMR (HD189 CH4); gates unchanged | no |
-| C25 | low-T reverse rates above the collision limit: NH3 + CH removed; NCO + HCN and S + CN rewritten in the exothermic direction (CN + HNCO 2.50E-11, Tsang 1992; N + CS 3.80E-11 (T/300)^0.5 exp(-1160/T), UMIST RATE22); CH + M and C2H + M first removed, then kept under C30 (removing them moved up to 1.9 dex in hot gas) | NCHO, CHO, SNCHO, TiSNCHO network rows | `low_t_reverse_rates`; declared (`KNOWN_THERMO_DIVERGENCES`, `ORACLE_DATA_DELTAS`) | reverse at 300 K, 1 bar up to 2e5x collision; NH3 + CH alone moves no scored gas in maxichem's 395,114-row 0-D yardstick; step-count gates not re-baselined yet (todo 4) | NH3 + CH only (39f1906) |
+| C25 | low-T reverse rates above the collision limit: NH3 + CH removed; NCO + HCN and S + CN rewritten in the exothermic direction (CN + HNCO 2.50E-11, Tsang 1992; N + CS 3.80E-11 (T/300)^0.5 exp(-1160/T), UMIST RATE22); CH + M and C2H + M first removed, then kept under C30 (removing them moved up to 1.9 dex in hot gas) | NCHO, CHO, SNCHO, TiSNCHO network rows | `low_t_reverse_rates`; declared (`KNOWN_THERMO_DIVERGENCES`, `ORACLE_DATA_DELTAS`) | reverse at 300 K, 1 bar up to 2e5x collision; NH3 + CH alone moves no scored gas in maxichem's 395,114-row 0-D yardstick | NH3 + CH only (39f1906) |
 | C26 | (was P8) `HNCO + M -> H + NCO` carries M on the reactant side only | 9 network files | product M added (as a68d7151); declared | 1.3e-5 / 5.0e-5 / 6.0e-4 ln VMR on the gates (P8's measurement) | a68d7151, 6 files |
 | C27 | (was P10) N(2D) NASA-9 thermo is a molecule's (Cp/R near 4, S 69.8 J/mol/K above N) | `thermo/NASA9/N_2D.txt` | rebuilt from N: Cp 2.5 R, H(N) + 230.017 kJ/mol, S(N) + R ln(10/4); `n2d_thermo`, declared | K_eq 1.6e3-1.5e4x; HD209 1211 -> 1206 (P10's measurement) | no |
 | C28 | CS, CS2, COS, first HCS masses inconsistent with the file's own atomic masses | `thermo/all_compose.txt:133-136` | 44.071 / 76.131 / 60.071 / 45.079; `sulfur_compose_masses`, declared | mean mass, moldiff only | no |
 | C30 | no rate may exceed collision rates: a rate fit extrapolated far from its range (the reverse of CH + M -> C + H + M is ~6e-5 cm3/s at 300 K, 1 bar) | `rates_jax.build_rate_array` | `apply_collision_limit`: each thermal pair scaled by c = min(1, 1e-9 cm3/s / q), q the larger direction's bimolecular-equivalent rate (k M^three-body M^(molecules - 2), two or more molecules); both directions scaled, so K_eq and the equilibrium are kept; `tests/test_collision_limit.py` | acts in NCHO on the CH + M and C2H + M reverses (CH below ~560-650 K, C2H below ~900 K at 1 bar, ~1830 K at 100 bar), NH + M (<= 4x, <= 351 K), and the forward fits of NCO + NH2 (<= 2x, >= 1880 K) and CN + C2H6 (<= 1.2x, >= 2890 K); SNCHO adds SH + O2 and S + CS + M, TiSNCHO C + SH and Ti + CN; the limit 1e-9 is a regularization ceiling, not a measured rate | no |
 | C31 | `C2H + C -> C3H + H` does not balance hydrogen (SNCHO_photo_network_C3 only) | `thermo/SNCHO_photo_network_C3.txt` row 861 | written `C2H + C -> C3 + H` (Hickson et al. 2016, the row's reference) | the file had no consumer that checks balance | no |
 | C32 | HNO3 NASA-9 file holds three sets (below 200 K, 200-1000 K, 1000-6000 K); the readers take the first two as the T < 1000 / T >= 1000 K fits | `thermo/NASA9/HNO3.txt` | the below-200 K set dropped; `hno3_thermo`, declared | Cp/R at 500 K 19.8 -> 8.67; HNO3 K_eq against FastChem +7.6 dex at 999 K, -0.42 at 3000 K before, within 0.03 dex after (maxichem's end-to-end tests, 2026-11-05); NCHO_full_photo and SNCHO_DMS only; no column rerun | no (the three pinned clones carry the same file) |
-| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_aggregate_delta_fn` masks where the old and the pre-clip trial ymix are both < mtol; `_clip_prologue` keeps values < nega_cut (step rejected); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`; a non-finite gas sum stays non-finite in the condensing clip; `steady_state_grad._clip_dead_mask` matches; `tests/test_step_control.py`; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes); step-count gates not re-baselined yet (todo 4) | no |
+| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_aggregate_delta_fn` masks where the old and the pre-clip trial ymix are both < mtol; `_clip_prologue` keeps values < nega_cut (step rejected); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`; a non-finite gas sum stays non-finite in the condensing clip; `steady_state_grad._clip_dead_mask` matches; `tests/test_step_control.py`; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes) | no |
 | L1 | `diffdf_settling_vm` drops the `vm` drift at the bottom interface | `op.py:1845-1848` | consistent; `test_diffusion`; silent | one cell, `use_settling` only | no |
 | L2 | vm_branch setup `vm` rolls a 2-D array without `axis=0` | `vulcan3_vm_branch/build_atm.py:803` | `axis=0`; silent | 5e-10 at step 2 | no |
 | P18 | `sflux-GJ1214.txt` pads 133.75-181.55 nm with 464 zero rows | `atm/stellar_flux/sflux-GJ1214.txt` | upstream's regenerated file, `gj1214_upstream_regenerated`; declared | 0 shipped; regeneration lowers every flux 1.392x | bb9255b1 |
 
 C12 was drafted as a report to upstream; whether it was sent is not recorded. C20
 is not reported upstream (maintainer).
+
+Gate counts by fix [M], daw CPU, one change at a time on `e91db66`, where HD189 / HD209 /
+W39b read the old pins 1495 / 1211 / 1260. Networks alone (C25, C26): W39b 1083, the others
+unchanged. N(2D) alone (C27): HD209 1206, the others unchanged. Masses alone (C28): no count
+moves. C29's code alone: all three bitwise. All of `e32dc86`: 1495 / 1206 / 1083. C30's
+commit `8b30242`: W39b 1084, HD189's bits move and its count does not. C32: bitwise.
+
+The counts do not follow the machine: 1, 2 and 6 CPUs and `--xla_cpu_max_isa=SSE4_2` (no
+FMA) change the `.vul` hash on all three and leave every count and the exit longdy to about
+1e-6 (0.0910, 0.0303, 0.0955 against 0.1) [M]. arm64 and x86-64 read the same pins at the
+last two network states (`2441e6c`, commit record); arm64 at this code is unread [I]. The
+gates read no fixture, and `oracle.yml` runs them on x86-64, so they are pinned at daw's.
 
 Port defects fixed back to parity, and JAX-only additions
 
@@ -675,8 +695,22 @@ Reverse mode.
   re-converged central FD, top 1% response cells: median relative error 1.27e-4,
   max 1.71e-4 with the adaptive timestep differentiated; with its gradient
   stopped, median 0.388 with identical primals. `test_forward_jvp_integration`
-  runs that map (4:16, 4.8 GB on one daw core); single-step and reverse-mode
-  checks do not cover this tangent.
+  runs that map at `nega_cut: -inf` (below): median 3.6e-4, max 4.5e-4 at C32 (2:35 on two
+  daw cores) [M]; single-step and reverse-mode checks do not cover this tangent.
+- C29 stops HD189 photo off (`default`, `use_photo: false`), at any `yconv` or `dt_max`
+  [M]: at the shipped `nega_cut` -1 it ends on its 3000-step cap at t 4.9e4 s, dt 14 s,
+  longdy 0.68, 2804 steps rejected (10000-step cap: t 7.9e4 s, longdy 0.26). CO at layer 148
+  (1e-8 bar) sits at exactly 0 and a step takes it to -0.079 dt, so dt past ~14 s rejects; the
+  moldiff operator is the source [I]: moldiff off certifies in 641 steps with no rejection.
+  `nega_cut` -1e3 still ends on the cap (dt 3.5e4 s, 373 rejected, NO and HNCO go next);
+  -1e6 and -inf certify in 793, as the code before C29 did. HD189_vulcan3 photo off
+  stalls alike (dt 5.8 s, 1998 rejected). HD209 and W39b photo off certify with no
+  rejection (283, 153 steps), and C29's code alone is bitwise on the photo-on gates. The planner's
+  photo-off path certifies too: WASP-39 b, HD 209458 b, HD 189733 b and WASP-107 b, moldiff on
+  and off, its 2025 and sulfur-free networks, 16 of 16 in 121-181 steps (nz 100). So the JVP
+  test and the `adj_state_hd189` fixture set `-inf`; a fixture built at -1 sat up to 1.04 dex
+  from the certified column (NH3, 1e-7 bar), and its builder now refuses an uncertified run.
+  The shipped rule stays until decided (todo).
 - End-to-end `jvp` on HD189 photo-on vs re-converged FD: better than 0.1% on
   responding levels, correlation > 0.9999.
 - Photo-off W39b (retrieval `config.WIDE`) was a primal problem: a marginally
@@ -868,7 +902,7 @@ confirmed defect; a relaxation of VULCAN's gate is never adopted.
 
 The parity audit's three ion-mode / low-T items stay at parity; P4, P5, P7, P9
 stay; every confirmed data and step-control defect is corrected (C25-C29, which replace P8, P10
-and the old "NH3 and CH stay" decision); the step-count gates are not re-baselined yet (todo 4); the C20 report is not filed upstream; the
+and the old "NH3 and CH stay" decision); the C20 report is not filed upstream; the
 tangent-stall early stop is not built; `test_vmap_photo_batch`'s ymix assertion
 is the scale ratio `max|lane - solo| / max|soloA - soloB|` (`SCALE_TOL` 1e-3 since C29: 1.6e-4 measured, a closure leak gives ~1); the
 photo-on batched deviation (13 of 87 carry leaves at the last bit) is accepted as
@@ -1005,7 +1039,7 @@ Parity and data
 - "Fixing" the escape-flux Jacobian entry or the S8 diagonal cells to match upstream, or patching the TiSNCHO / SNCHO_C3 duplicates, `CH3SH_branch.csv` or the CS-family masses: breaks bit-parity or touches unconsumed data.
 - Matched-step parity past ~step 145 at rtol >= 0.25 (FP amplification): compare converged states.
 - A higher-order vertical transport scheme: the shipped eddy and central moldiff kernels measure second order (1.95-2.00) on a 15x-stretched grid, and nz 150 is converged to about 1% at observable pressures.
-- Bit-moving refactors: folding atm_setup's mu/dz scans into `atm_refresh.hydrostatic_column` (1-2 ulp eager) or `update_mu_dz_jax` onto `atm_setup.mu_dz_g_jax` (`zco` 1 ulp on W39b under jit), one bin-weight contraction in `photo.compute_J_jax_flat`, the shared transport-kernel helpers (`c756201`, reverted `f3dfdf7`: vulcan-forward's `test_queue_is_differentiable` tangent 3.0e-4 -> 1.6e-2). Transport-kernel refactors need that full-tier test.
+- Bit-moving refactors: folding atm_setup's mu/dz scans into `atm_refresh.hydrostatic_column` (1-2 ulp eager) or `update_mu_dz_jax` onto `atm_setup.mu_dz_g_jax` (`zco` 1 ulp on W39b under jit), one bin-weight contraction in `photo.compute_J_jax_flat`, the shared transport-kernel helpers (`c756201`, reverted `f3dfdf7`: vulcan-forward's `test_queue_is_differentiable` tangent 3.0e-4 -> 1.6e-2, then inside that test's bit-level noise [I], its notes "Batched routes"). Transport-kernel refactors need that full-tier test.
 - ExoGibbs's bundled FastChem 3.1.3 tables as the seed's data (a second dataset, no excited states); exogibbs with its declared dependencies; `scan_hot_from_top` (cheaper, but moves the seed and HD189_vulcan3 misses its 20000-step cap).
 - Deselecting the `oracle.yml` HD209 codegen cases or pinning their arm64 FMA residual: they assert the platform-independent invariant since `ebcb780`.
 

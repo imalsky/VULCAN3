@@ -5,7 +5,9 @@ Evidence for these items is in `notes.md` (this repo's, unless another repo is n
 1. [decision] Claim `vulcan3` on PyPI: the README installs put TestPyPI first, so a TestPyPI package can shadow its PyPI namesake.
 2. [unverified] The Jacobian power change (`chem._jac_pow_tables`) is bitwise only where measured, on CPU: check on a GH200 that it leaves a W39b batch unchanged.
 3. [decision] The arm64 full tier fails `test_fast_on_real_w39b_blocks[fast]`: on the W39b 2025-network fixture the matrix-free step's primal under `jvp` is not bitwise the plain step's (bitwise on x86-64).
-4. [owed] Re-baseline after the C25-C29 data and step-control fixes: full tier with the step-count gates, the oracle comparisons (`oracle.yml`), and the arm64 fixture manifest.
+4. [owed] Re-baseline after the C25-C29 data and step-control fixes: the arm64 fixture manifest, the arm64 gate reading and the oracle comparisons (`oracle.yml`).
+5. [owed] Rebuild the CUDA kernel on the NAS and check `ffi` on a GH200: the code cleanup changed the kernel sources, and its proof of `ffi` ran on CPU only.
+6. [decision] Since C29's negativity rejection, HD189 photo off cannot certify at the shipped `nega_cut`: keep the rule or change the cut.
 
 ## 1. vulcan3 on PyPI
 
@@ -49,14 +51,33 @@ full tier passes and the notes row states the CPU scope.
 
 ## 4. Re-baseline after C25-C29
 
-Evidence: notes "Parity ledger" C25-C29. The data fixes (low-T reverse rows, HNCO + M,
-N(2D), sulfur masses) and the C29 step control change every trajectory, so the
-full-tier step-count gates (`tests/test_step_count_gates.py`) move and the tracked
-`tests/data/FIXTURES.json` (the arm64 laptop manifest) is stale. The normal tier
-passes on daw with fixtures rebuilt there (HD209 1206 steps). Steps: on the laptop
-`python tests/gen_fixtures.py --all --force` and commit the manifest; run
-`VULCAN3_RUN_SLOW=1 python -m pytest tests -n 12 -q` and re-pin the gates with the
-new counts; dispatch `oracle.yml` (`VULCAN_MASTER_DIR` at 80f75b9: the oracle copy
-gets the corrected files through `tests/oracle.py::ORACLE_DATA_DELTAS`). Done when
-the full tier and the oracle workflow pass and the gates hold the new counts.
+Evidence: notes "Parity ledger" C25-C32. The step-count gates are re-pinned to x86-64's
+counts. Left: the tracked `tests/data/FIXTURES.json` is the arm64 laptop manifest from before
+these fixes. Steps: on the laptop `python tests/gen_fixtures.py --all --force` and commit the
+manifest; run `VULCAN3_RUN_SLOW=1 python -m pytest tests -n 12 -q` and check that the gates
+read HD189 1495, HD209 1206, W39b 1084 there (a different count means the record of
+machine-independent gates fails: record it, do not re-pin); dispatch `oracle.yml`
+(`VULCAN_MASTER_DIR` at 80f75b9: the oracle copy gets the corrected files through
+`tests/oracle.py::ORACLE_DATA_DELTAS`). Done when the manifest is committed and the arm64 full
+tier and the oracle workflow pass.
 
+## 5. NAS rebuild and `ffi` check after the cleanup
+
+Evidence: notes "Cleanup proofs". The kernel sources were reformatted, so a library built
+before the cleanup is refused until it is rebuilt. Lowered `ffi` programs moved when reverse
+mode's transpose was removed; the optimized CPU program stayed equal apart from names. The GPU
+was not run. Needs the maintainer's NAS login. Steps, after the commits are pushed: `git pull`,
+`python -m vulcan3.solver_fast --cuda`, then the kernel test job on a GH200. Done when
+the rebuilt library loads and the job passes.
+
+## 6. HD189 photo off under C29
+
+Evidence: notes "Forward mode". No shipped photo-on number moves: C29's code alone is bitwise
+on the three gates. The column is a test and fixture setup, and any user's `default` with
+`use_photo: false`: it ends on its step cap. Grepped `use_photo` false in vulcan-retrieval's
+and jwst-transit-authority's `src`: the planner's GUI offers it, with moldiff on or off, and
+its columns certify (notes). Choose: (a) keep the rule, photo-off HD189 needs `nega_cut: -inf` as the tests set it; (b) a
+looser shipped cut (-1e6 removes every rejection on this column); (c) exempt or scale by cell,
+which is not built: `-1e3` shows trace cells with VMR 1e-15 stop it next. (b) and (c) touch a
+settled item and need maxichem's 0-D case re-run, the case that motivated C29. Done when decided
+and recorded in the "Parity ledger" C29 row.

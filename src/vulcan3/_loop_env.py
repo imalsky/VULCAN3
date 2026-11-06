@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from ._loop_branches import _make_conden_branch, _make_photo_branch
 from ._step_control import _make_aggregate_delta_fn, _make_clip_fn
@@ -17,21 +17,21 @@ if TYPE_CHECKING:
 class RunnerEnv(NamedTuple):
     """What every part of the step closes over: built once per runner, read at trace time."""
 
-    net: object
+    net: Any
     statics: _Statics
     non_gas_present: bool
     gas_indx_mask: jnp.ndarray
     start_conden_time: float
     stop_conden_time: float
     refresh_static: _atm_refresh_mod.AtmRefreshStatic
-    clip_fn: object
-    agg_delta_fn: object
-    photo_branch: object
-    conden_branch: object
+    clip_fn: Any
+    agg_delta_fn: Any
+    photo_branch: Any
+    conden_branch: Any
 
 
 def make_env(
-    net,
+    net: Any,
     statics: _Statics,
     non_gas_present: bool,
     gas_indx_mask: jnp.ndarray,

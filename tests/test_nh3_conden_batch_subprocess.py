@@ -83,9 +83,10 @@ import vulcan3.op_jax as op_jax
 import vulcan3.outer_loop as outer_loop
 
 # Two Heng+14 parameter sets whose temperature minima sit at different layers,
-# so the per-profile NH3 cold-trap indices differ (the vacuity guard below).
-PARA_A = [120.0, 130.0, 0.05, 0.02, 1.0, 1.0]
-PARA_B = [100.0, 170.0, 0.2, 0.01, 1.0, 1.0]
+# so the per-profile NH3 cold-trap indices differ (the vacuity guard below). Both deep columns stay near 1000 K: a
+# hotter one holds dt at its floor, and 40 steps then reach too little time for the two runs to differ.
+PARA_A = [60.0, 130.0, 0.05, 0.02, 1.0, 1.0]
+PARA_B = [40.0, 170.0, 0.2, 0.01, 1.0, 1.0]
 
 cfg.para_anaTP = PARA_A
 rsA = RunState.with_pre_loop_setup(cfg)
@@ -134,6 +135,8 @@ j = sl.index("NH3_l_s")
 ice = max(float(np.asarray(soloA.ymix)[:, j].sum()),
           float(np.asarray(soloB.ymix)[:, j].sum()))
 print(f"relA={relA:.3e} relB={relB:.3e} differ={differ:.3e} NH3_l_s={ice:.3e}")
+# Measured relA 4e-16, relB 0, differ 0.10 on x86-64: a lane matches its solo run here. The bar is the batch contract,
+# the convergence scale, not this column's value.
 assert relA < 1e-2, f"lane A diverged from solo: {relA:.3e}"
 assert relB < 1e-2, f"lane B diverged from solo: {relB:.3e}"
 assert differ > 1e-6, f"profiles identical ({differ:.3e}) - vacuous"

@@ -17,7 +17,7 @@ Moving an array operation moves the program.
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -78,7 +78,7 @@ def activate_fix_species(statics: _Statics, s_in: JaxIntegState) -> JaxIntegStat
     )
 
 
-def _photo_update(env: RunnerEnv, s: JaxIntegState, lane_axis, photo_take) -> JaxIntegState:
+def _photo_update(env: RunnerEnv, s: JaxIntegState, lane_axis: Any, photo_take: Any) -> JaxIntegState:
     """Fire the photolysis branch on its cadence: `retry_count == 0` so reject loops do not re-fire it."""
     photo_branch = env.photo_branch
     if photo_branch is not None:
@@ -91,7 +91,7 @@ def _photo_update(env: RunnerEnv, s: JaxIntegState, lane_axis, photo_take) -> Ja
     return s
 
 
-def _ros2_solve(env: RunnerEnv, s: JaxIntegState, atm_step, matrix_free):
+def _ros2_solve(env: RunnerEnv, s: JaxIntegState, atm_step: Any, matrix_free: Any) -> Any:
     """Run the Ros2 step with the row pins the config asks for; return `(sol, delta_arr)`."""
     statics, net = env.statics, env.net
     # use_ion: master pins the electron rows inside both Ros2 stages
@@ -132,7 +132,7 @@ def _ros2_solve(env: RunnerEnv, s: JaxIntegState, atm_step, matrix_free):
     return sol, delta_arr
 
 
-def _bottom_pins(statics: _Statics, s: JaxIntegState, sol):
+def _bottom_pins(statics: _Statics, s: JaxIntegState, sol: jnp.ndarray) -> Any:
     """Apply the bottom-layer pins; return `(sol, h2he_pinned_next, h2he_mix_next, zero_bot_dyn)`."""
     # Bottom-layer pins are applied to `sol` before the truncation error
     # and the clip (exoclime@80f75b9 op.py:2935-2946): the carried ymix
@@ -171,7 +171,9 @@ def _bottom_pins(statics: _Statics, s: JaxIntegState, sol):
     return sol, h2he_pinned_next, h2he_mix_next, zero_bot_dyn
 
 
-def _loss_and_delta(env: RunnerEnv, s: JaxIntegState, sol, sol_clip, delta_arr, zero_bot_dyn):
+def _loss_and_delta(
+    env: RunnerEnv, s: JaxIntegState, sol: jnp.ndarray, sol_clip: jnp.ndarray, delta_arr: jnp.ndarray, zero_bot_dyn: Any
+) -> Any:
     """Return this trial's per-atom relative conservation residual and its aggregate truncation error."""
     statics, gas_indx_mask, non_gas_present, agg_delta_fn = (
         env.statics,
@@ -209,7 +211,15 @@ class _StepDecision(NamedTuple):
     ymix_new: jnp.ndarray
 
 
-def _decide_step(statics: _Statics, s: JaxIntegState, sol, sol_clip, ymix_new, atom_loss_new, delta) -> _StepDecision:
+def _decide_step(
+    statics: _Statics,
+    s: JaxIntegState,
+    sol: jnp.ndarray,
+    sol_clip: jnp.ndarray,
+    ymix_new: jnp.ndarray,
+    atom_loss_new: jnp.ndarray,
+    delta: jnp.ndarray,
+) -> _StepDecision:
     """Accept, reject or force-accept the trial, and count why it failed."""
     # Acceptance uses the build-time rtol, never the carry's adapted one:
     # upstream binds `rtol = vulcan_cfg.rtol` as a default argument of
@@ -268,7 +278,9 @@ def _decide_step(statics: _Statics, s: JaxIntegState, sol, sol_clip, ymix_new, a
     )
 
 
-def _conden_step(env: RunnerEnv, s: JaxIntegState, do_accept, y_post_clip, ymix_new):
+def _conden_step(
+    env: RunnerEnv, s: JaxIntegState, do_accept: jnp.ndarray, y_post_clip: jnp.ndarray, ymix_new: jnp.ndarray
+) -> Any:
     """Run condensation and the fix_species activation on an accepted step.
 
     Returns `(sol_clip, ymix_new, trigger_fix, carry updates)`.
@@ -332,7 +344,16 @@ def _conden_step(env: RunnerEnv, s: JaxIntegState, do_accept, y_post_clip, ymix_
     return sol_clip, ymix_new, trigger_fix, updates
 
 
-def _rebalance(env: RunnerEnv, s: JaxIntegState, atm_step, sol_clip, ymix_new, do_accept, accept, atom_loss_new):
+def _rebalance(
+    env: RunnerEnv,
+    s: JaxIntegState,
+    atm_step: Any,
+    sol_clip: jnp.ndarray,
+    ymix_new: jnp.ndarray,
+    do_accept: jnp.ndarray,
+    accept: jnp.ndarray,
+    atom_loss_new: jnp.ndarray,
+) -> Any:
     """Rebalance the hydrostatic column and advance y, ymix, atom_loss and the counters.
 
     Returns `(y_next, ymix_next, carry updates)`.
@@ -377,7 +398,15 @@ def _rebalance(env: RunnerEnv, s: JaxIntegState, atm_step, sol_clip, ymix_new, d
     return y_next, ymix_next, updates
 
 
-def _ring_write(statics: _Statics, s: JaxIntegState, y_next, t_next, accept_count_next, hold, defer_ring):
+def _ring_write(
+    statics: _Statics,
+    s: JaxIntegState,
+    y_next: jnp.ndarray,
+    t_next: jnp.ndarray,
+    accept_count_next: jnp.ndarray,
+    hold: jnp.ndarray,
+    defer_ring: Any,
+) -> Any:
     """Append to the convergence ring; return `(ring_idx, y_slot, y_time_ring_new, t_time_ring_new, keep)`."""
     keep = None
     # Ring append (op.save_step). On reject this rewrites the same slot
@@ -400,7 +429,16 @@ def _ring_write(statics: _Statics, s: JaxIntegState, y_next, t_next, accept_coun
     return ring_idx, y_slot, y_time_ring_new, t_time_ring_new, keep
 
 
-def _evolution_append(statics: _Statics, s: JaxIntegState, y_next, t_next, do_accept, accept_count_next, hold, keep):
+def _evolution_append(
+    statics: _Statics,
+    s: JaxIntegState,
+    y_next: jnp.ndarray,
+    t_next: jnp.ndarray,
+    do_accept: jnp.ndarray,
+    accept_count_next: jnp.ndarray,
+    hold: jnp.ndarray,
+    keep: jnp.ndarray,
+) -> Any:
     """Capture this step for save_evolution; return the carry updates."""
     # save_evolution capture. Master appends every accepted step and
     # post-slices [::save_evo_frq], keeping accepted steps 1, K+1, 2K+1...
@@ -440,17 +478,17 @@ def _evolution_append(statics: _Statics, s: JaxIntegState, y_next, t_next, do_ac
 def _update_longdy(
     statics: _Statics,
     s: JaxIntegState,
-    y_next,
-    ymix_next,
-    t_next,
-    t_time_ring_new,
-    y_time_ring_new,
-    accept_count_next,
-    ring_idx,
-    y_slot,
-    do_accept,
-    defer_ring,
-):
+    y_next: jnp.ndarray,
+    ymix_next: jnp.ndarray,
+    t_next: jnp.ndarray,
+    t_time_ring_new: jnp.ndarray,
+    y_time_ring_new: jnp.ndarray,
+    accept_count_next: jnp.ndarray,
+    ring_idx: jnp.ndarray,
+    y_slot: jnp.ndarray,
+    do_accept: jnp.ndarray,
+    defer_ring: Any,
+) -> Any:
     """Return `(longdy_next, longdydt_next, where_varies_most_next)` against the ring."""
     # Snapshot state with (y, t, time ring) updated, fed to _conv_jax,
     # with the y ring and the slot just written. Solo, that is the written
@@ -485,8 +523,14 @@ def _update_longdy(
 
 
 def _certificate_candidate(
-    statics: _Statics, s: JaxIntegState, longdy_next, longdydt_next, t_next, accept_count_next, do_accept
-):
+    statics: _Statics,
+    s: JaxIntegState,
+    longdy_next: jnp.ndarray,
+    longdydt_next: jnp.ndarray,
+    t_next: jnp.ndarray,
+    accept_count_next: jnp.ndarray,
+    do_accept: jnp.ndarray,
+) -> Any:
     """Return `(ready_after, candidate)`: whether this step may certify the run."""
     # Certificate candidate: `_convergence_ok` on this step's longdy. The
     # refresh below is forced on it, and geom_ok records whether
@@ -504,14 +548,14 @@ def _certificate_candidate(
 def body_fn(
     env: RunnerEnv,
     s: JaxIntegState,
-    atm_static_,
-    lane_axis=None,
-    it=None,
-    hold=None,
-    photo_take=None,
-    defer_ring=False,
-    matrix_free=True,
-):
+    atm_static_: Any,
+    lane_axis: Any = None,
+    it: Any = None,
+    hold: jnp.ndarray | None = None,
+    photo_take: Any = None,
+    defer_ring: bool = False,
+    matrix_free: bool = True,
+) -> Any:
     """Advance the carry by one trial step.
 
     `lane_axis=None` is the single-profile trace. A string means the body runs under

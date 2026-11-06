@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import jax.numpy as jnp
 import numpy as np
 
@@ -14,7 +16,7 @@ _WHOLE_COLUMN_CONDENSATES = {"H2O_l_s", "H2SO4_l", "NH3_l_s", "S8_l_s"}
 
 
 # size-limit-ok: packs one long NamedTuple, one field per line
-def build_statics(integ, var, atm) -> _Statics:
+def build_statics(integ: Any, var: Any, atm: Any) -> _Statics:
     """Pack scalar config + per-run arrays into the closure inputs."""
     ni = _NETWORK.ni
     atom_ini_arr = np.asarray(
@@ -176,7 +178,7 @@ def build_statics(integ, var, atm) -> _Statics:
     )
 
 
-def gas_mask(integ, atm) -> np.ndarray:
+def gas_mask(integ: Any, atm: Any) -> np.ndarray:
     """(ni,) gas-species mask.
 
     `atm.gas_indx` when `non_gas_sp` is set, else all True.
@@ -189,7 +191,7 @@ def gas_mask(integ, atm) -> np.ndarray:
 
 
 # size-limit-ok: packs one long NamedTuple, one field per line
-def build_photo_static(integ, var, atm) -> _PhotoStatic | None:
+def build_photo_static(integ: Any, var: Any, atm: Any) -> _PhotoStatic | None:
     """Pack photo cross sections + scalar configs into a `_PhotoStatic`.
 
     Returns None if `use_photo=False` (the runner skips the photo branch
@@ -275,7 +277,7 @@ def build_photo_static(integ, var, atm) -> _PhotoStatic | None:
     )
 
 
-def build_refresh_static(integ, atm) -> _atm_refresh_mod.AtmRefreshStatic:
+def build_refresh_static(integ: Any, atm: Any) -> _atm_refresh_mod.AtmRefreshStatic:
     """Pack the static inputs to `atm_refresh.update_mu_dz_jax`.
 
     Captures the T-P profile, planetary constants, species masses, and
@@ -309,7 +311,7 @@ def build_refresh_static(integ, atm) -> _atm_refresh_mod.AtmRefreshStatic:
     )
 
 
-def build_conden_static(integ, var, atm, gas_mask_jnp) -> _conden_mod.CondenStatic | None:
+def build_conden_static(integ: Any, var: Any, atm: Any, gas_mask_jnp: Any) -> _conden_mod.CondenStatic | None:
     """Pack the conden tables into a `CondenStatic`.
 
     None when `use_condense=False`; the runner then omits the conden branch.

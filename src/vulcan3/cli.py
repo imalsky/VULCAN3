@@ -1,5 +1,7 @@
 """VULCAN3 driver: build RunState, integrate, pickle .vul. Public name: `cli_main`."""
 
+from __future__ import annotations
+
 import argparse
 import contextlib
 import logging
@@ -7,6 +9,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import jax
 
@@ -19,7 +22,7 @@ __all__ = ["cli_main"]
 _RELAUNCH_GUARD = _settings.RELAUNCH_GUARD
 
 
-def _frozen_knob_mismatch(cfg):
+def _frozen_knob_mismatch(cfg: Any) -> Any:
     """Import-frozen knobs `cfg` disagrees with (`state._frozen_mismatch`), as ``{env var: cfg's value}``.
 
     `load_config` folds ``$VULCAN3_*`` over the YAML before returning, so a
@@ -32,7 +35,7 @@ def _frozen_knob_mismatch(cfg):
     }
 
 
-def _relaunch_for_frozen_knobs(cfg, config_ref):
+def _relaunch_for_frozen_knobs(cfg: Any, config_ref: Any) -> None:
     """Re-exec with ``$VULCAN3_*`` set when the config needs a different network.
 
     ``network`` / ``atom_list`` / ``com_file`` are read once at the first
@@ -79,7 +82,7 @@ def _relaunch_for_frozen_knobs(cfg, config_ref):
     )
 
 
-def cli_main(argv=None):
+def cli_main(argv: Any = None) -> None:
     """Entry point for the ``vulcan3`` console script.
 
     ``--config`` selects a config by name (``default``, ``W39b``, ...; resolved
@@ -155,7 +158,7 @@ def cli_main(argv=None):
     print(f"Total wall time: {time.time() - runstate.metadata.start_time:.1f}s")
 
 
-def _drop_into_repl(namespace):
+def _drop_into_repl(namespace: Any) -> None:
     """IPython if installed, else the standard console with line editing."""
     try:
         from IPython import embed

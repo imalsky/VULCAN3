@@ -69,7 +69,7 @@ def _dummy_input_sensitivity(body_terms, **kw):
         None,
         None,
         0.0,
-        lambda p: (None, None),
+        lambda _p: (None, None),
         compo_array=jnp.ones((3, 2)),
         dz=jnp.ones(2),
         body_terms=body_terms,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
@@ -29,7 +29,16 @@ _HYBRID_FLIP_RUNTIME_FACTOR = 1.1
 
 
 # size-limit-ok: the cond and its two sides read one set of locals
-def _refresh_geometry(env: RunnerEnv, s: JaxIntegState, ymix_new, sol_clip, do_accept, candidate, it, lane_axis):
+def _refresh_geometry(
+    env: RunnerEnv,
+    s: JaxIntegState,
+    ymix_new: jnp.ndarray,
+    sol_clip: jnp.ndarray,
+    do_accept: jnp.ndarray,
+    candidate: jnp.ndarray,
+    it: Any,
+    lane_axis: Any,
+) -> Any:
     """Refresh the hydrostatic column and the escape flux on their cadence; return the carry updates."""
     statics, refresh_static = env.statics, env.refresh_static
     # Atm refresh (op.py:905-907): after conden, before hydrostatic
@@ -55,7 +64,7 @@ def _refresh_geometry(env: RunnerEnv, s: JaxIntegState, ymix_new, sol_clip, do_a
         Rp=s.pv.r_Rp,
     )
 
-    def _do_refresh(_):
+    def _do_refresh(_: Any) -> Any:
         mu_n, g_n, Hp_n, dz_n, zco_n, dzi_n, Hpi_n = _atm_refresh_mod.update_mu_dz_jax(ymix_new, refresh_lane)
         top_flux_n = _atm_refresh_mod.update_phi_esc_jax(
             sol_clip,
@@ -66,7 +75,7 @@ def _refresh_geometry(env: RunnerEnv, s: JaxIntegState, ymix_new, sol_clip, do_a
         )
         return mu_n, g_n, Hp_n, dz_n, zco_n, dzi_n, Hpi_n, top_flux_n
 
-    def _no_refresh(_):
+    def _no_refresh(_: Any) -> Any:
         return (s.mu, s.g, s.Hp, s.dz, s.zco, s.dzi, s.Hpi, s.top_flux)
 
     if lane_axis is None:
@@ -78,7 +87,7 @@ def _refresh_geometry(env: RunnerEnv, s: JaxIntegState, ymix_new, sol_clip, do_a
         )
     else:
 
-        def _do_refresh_gated(_):
+        def _do_refresh_gated(_: Any) -> Any:
             new, old = _do_refresh(None), _no_refresh(None)
             return tuple(jnp.where(refresh_due, n, o) for n, o in zip(new, old, strict=False))
 
@@ -127,7 +136,7 @@ def _refresh_geometry(env: RunnerEnv, s: JaxIntegState, ymix_new, sol_clip, do_a
     }
 
 
-def _element_budget(statics: _Statics, s: JaxIntegState, y_next, candidate):
+def _element_budget(statics: _Statics, s: JaxIntegState, y_next: jnp.ndarray, candidate: jnp.ndarray) -> Any:
     """Accumulate the cumulative element budget; return the carry updates."""
     # Cumulative element budget: loss_eps misses a slow drain.
     # Accumulate each step's change in the operator-weighted atom column
@@ -146,14 +155,14 @@ def _element_budget(statics: _Statics, s: JaxIntegState, y_next, candidate):
 def _hybrid_flip(
     statics: _Statics,
     s: JaxIntegState,
-    longdy_next,
-    longdydt_next,
-    t_next,
-    accept_count_next,
-    Hp_next,
-    do_accept,
-    ready_after,
-):
+    longdy_next: jnp.ndarray,
+    longdydt_next: jnp.ndarray,
+    t_next: jnp.ndarray,
+    accept_count_next: jnp.ndarray,
+    Hp_next: jnp.ndarray,
+    do_accept: jnp.ndarray,
+    ready_after: Any,
+) -> Any:
     """Switch the hybrid scheme to central difference when its upwind phase ends.
 
     Returns `(longdy_next, longdydt_next, carry updates)`; a non-hybrid run passes everything through.
@@ -209,7 +218,9 @@ def _hybrid_flip(
     return longdy_next, longdydt_next, updates
 
 
-def _adapt_rtol(statics: _Statics, s: JaxIntegState, atom_loss_new, do_accept, trigger_fix):
+def _adapt_rtol(
+    statics: _Statics, s: JaxIntegState, atom_loss_new: jnp.ndarray, do_accept: jnp.ndarray, trigger_fix: jnp.ndarray
+) -> Any:
     """Return `(rtol_next, loss_criteria_after_dec)`, from the atom loss on accepted steps."""
     # Adaptive rtol (accepted steps only): periodic decrease while
     # |atom_loss| >= loss_criteria; periodic increase below a lower
@@ -239,7 +250,15 @@ def _adapt_rtol(statics: _Statics, s: JaxIntegState, atom_loss_new, do_accept, t
     return rtol_next, loss_criteria_after_dec
 
 
-def _next_dt(statics: _Statics, s: JaxIntegState, delta, rtol_next, accept, force_accept, next_dt_if_reject):
+def _next_dt(
+    statics: _Statics,
+    s: JaxIntegState,
+    delta: jnp.ndarray,
+    rtol_next: Any,
+    accept: jnp.ndarray,
+    force_accept: jnp.ndarray,
+    next_dt_if_reject: jnp.ndarray,
+) -> Any:
     """Return the next step size; it runs after the adaptive rtol, so the new tolerance applies."""
     # Step-size control runs *after* adaptive rtol so the post-update
     # tolerance applies to the next step.
@@ -273,8 +292,14 @@ def _next_dt(statics: _Statics, s: JaxIntegState, delta, rtol_next, accept, forc
 
 
 def _photo_switch(
-    env: RunnerEnv, s: JaxIntegState, t_next, accept_count_next, count_min_dyn_next, longdy_next, longdydt_next
-):
+    env: RunnerEnv,
+    s: JaxIntegState,
+    t_next: jnp.ndarray,
+    accept_count_next: jnp.ndarray,
+    count_min_dyn_next: jnp.ndarray,
+    longdy_next: jnp.ndarray,
+    longdydt_next: jnp.ndarray,
+) -> Any:
     """Return the carry updates of the photolysis ini->final frequency switch."""
     statics, photo_branch = env.statics, env.photo_branch
     # Photo-frequency ini->final switch when longdy / longdydt drop

@@ -1,6 +1,6 @@
-// CUDA twin of block_thomas_cpu.cc (VULCAN3_SOLVER=ffi on a GPU): the same
-// block-Thomas factor and solve on [..., nz, ni, ni] blocks, with the same perm
-// convention (perm[i] = source row of permuted row i). One thread block per
+// size-limit-ok: the host handlers and the kernels share one translation unit; a split is a build change for the GPU
+// host. CUDA twin of block_thomas_cpu.cc (VULCAN3_SOLVER=ffi on a GPU): the same block-Thomas factor and solve on [...,
+// nz, ni, ni] blocks, with the same perm convention (perm[i] = source row of permuted row i). One thread block per
 // batch element, the whole nz sweep inside the kernel. A zero pivot gives
 // inf/nan like lax.linalg.lu, not an error. Build: python -m vulcan3.solver_fast --cuda.
 // It takes sm_80+ and ni <= 96; solver_fast refuses a wider network before any
@@ -327,6 +327,7 @@ __device__ __forceinline__ void bt_gj_pivot(const double (&v)[kGjRowSlots], int 
 // row is scaled by -1 / piv, and the owner of column `step` sets that column
 // to f, with 1 / piv in the pivot row. f is 0 in the pivot row, so the update
 // leaves it for the scale.
+// size-limit-ok: one Gauss-Jordan step per warp; notes "Do not retry" lists kernel restructurings
 __device__ __forceinline__ void bt_gj_update(double (&a)[kGjRowSlots][kGjColSlots], int step, int nb, int ni, int lane,
                                              int warp, const BtGjSmem& m) {
   const int prow = m.prow[nb];
@@ -393,12 +394,13 @@ __device__ __forceinline__ void bt_gj_update(double (&a)[kGjRowSlots][kGjColSlot
 // Schur update A'_{j+1} = D_{j+1} - (c b^T) .* inv(A'_j) into the registers,
 // barriers between them; D_{j+1} is prefetched to L2 while the layer is swept.
 __global__ void __launch_bounds__(kGjThreads, kGjMinBlocks)
+    // size-limit-ok: the fused factor loop; notes "Do not retry" lists kernel restructurings
     bt_gj_factor_kernel(const double* __restrict__ diag, const double* __restrict__ sup, const double* __restrict__ sub,
                         double* __restrict__ lu, int32_t* __restrict__ perm, int nz, int ni) {
   extern __shared__ double bt_smem[];
   const BtGjSmem m = bt_gj_carve(bt_smem);
   const int blk = ni * ni;
-  const int tid = threadIdx.x, lane = tid & kLaneMask, warp = tid / kWarpSize;
+  const int tid = static_cast<int>(threadIdx.x), lane = tid & kLaneMask, warp = tid / kWarpSize;
   const int64_t b = blockIdx.x;
   const double* D = diag + b * nz * static_cast<int64_t>(blk);
   const double* SU = sup + b * static_cast<int64_t>(nz - 1) * ni;
@@ -553,6 +555,7 @@ __device__ inline void bt_swap(double*& a, double*& b) {
 // the next layer loaded) before its permuted read.
 template <bool kOneBuf, int NB>
 __global__ void __launch_bounds__(2 * kWarpSize * NB, kSolveMinBlocks[NB])
+    // size-limit-ok: the fused solve loop; notes "Do not retry" lists kernel restructurings
     bt_solve_kernel(const double* __restrict__ lu, const int32_t* __restrict__ perm, const double* __restrict__ sup,
                     const double* __restrict__ sub, const double* __restrict__ rhs, double* __restrict__ x, int nz,
                     int ni, BtBcast s) {
@@ -563,7 +566,7 @@ __global__ void __launch_bounds__(2 * kWarpSize * NB, kSolveMinBlocks[NB])
   double* t = An + blk;                  // one layer's solution, and
   double* u = t + ni;                    // the permuted rhs the substitution consumes
 
-  const int tid = threadIdx.x, nt = blockDim.x;
+  const int tid = static_cast<int>(threadIdx.x), nt = static_cast<int>(blockDim.x);
   const int warp = tid / kWarpSize, lane = tid & kLaneMask;
   const int64_t b = blockIdx.x;
   const int64_t band = static_cast<int64_t>(nz - 1) * ni;

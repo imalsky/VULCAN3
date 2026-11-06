@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 # would copy the whole (conv_step, nz, ni) leaf twice per iteration.
 
 
-def _freeze_leaf(old, new, keep_old):
+def _freeze_leaf(old: Any, new: Any, keep_old: Any) -> Any:
     """`where(keep_old, old, new)`.
 
     Skipped when the step passed the leaf through unchanged (the same object, so the select is a copy for nothing).
@@ -46,7 +46,7 @@ def _freeze_leaf(old, new, keep_old):
     return old if old is new else jnp.where(keep_old, old, new)
 
 
-def _freeze_state(s: JaxIntegState, s_adv: JaxIntegState, keep_old):
+def _freeze_state(s: JaxIntegState, s_adv: JaxIntegState, keep_old: Any) -> Any:
     """Keep the pre-step carry `s` where `keep_old`, the advanced carry elsewhere.
 
     Leaf by leaf, so untouched leaves are not re-selected. The ring buffers come back from `body_fn` already frozen
@@ -64,7 +64,7 @@ def _freeze_state(s: JaxIntegState, s_adv: JaxIntegState, keep_old):
     return s._replace(**out)
 
 
-def body_fn_batch(env: RunnerEnv, s: JaxIntegState, atm_static_, lane_axis=None, it=None):
+def body_fn_batch(env: RunnerEnv, s: JaxIntegState, atm_static_: Any, lane_axis: Any = None, it: Any = None) -> Any:
     """Advance every lane one tick and freeze the ones that are done."""
     statics = env.statics
     # vmap applies the body to every lane each iteration until the slowest
@@ -76,8 +76,8 @@ def body_fn_batch(env: RunnerEnv, s: JaxIntegState, atm_static_, lane_axis=None,
     already_done = s.is_done
     hold = already_done | real_term
 
-    def tick(photo_take):
-        def advance(operand):
+    def tick(photo_take: Any) -> Any:
+        def advance(operand: Any) -> Any:
             ss, y_ring = operand
             ss = ss._replace(y_time_ring=y_ring)
             s_adv, ring_idx, y_slot = body_fn(
@@ -107,7 +107,7 @@ def body_fn_batch(env: RunnerEnv, s: JaxIntegState, atm_static_, lane_axis=None,
     # (body_fn's `defer_ring`).
     operand = (s._replace(y_time_ring=None), s.y_time_ring)
 
-    def write_ring(out):
+    def write_ring(out: Any) -> Any:
         s_out, ring_idx, y_slot = out
         return s_out._replace(y_time_ring=s.y_time_ring.at[ring_idx].set(y_slot))
 
@@ -131,7 +131,7 @@ def body_fn_batch(env: RunnerEnv, s: JaxIntegState, atm_static_, lane_axis=None,
 
 # size-limit-ok: the runner closures share one environment
 def make_runner(
-    net,
+    net: Any,
     statics: _Statics,
     non_gas_present: bool,
     gas_indx_mask: jnp.ndarray,
@@ -142,7 +142,7 @@ def make_runner(
     refresh_static: _atm_refresh_mod.AtmRefreshStatic,
     photo_static: _PhotoStatic | None = None,
     conden_static: _conden_mod.CondenStatic | None = None,
-):
+) -> Any:
     """Build `(runner, runner_chunk, runner_batch, runner_queue, make_runner_jvp)`.
 
     The JIT'd `runner(state, atm_static) -> state` runs to convergence, `count_max`, or `runtime`, and
@@ -167,7 +167,7 @@ def make_runner(
     )
 
     @jax.jit
-    def runner(state: JaxIntegState, atm_static: AtmStatic):
+    def runner(state: JaxIntegState, atm_static: AtmStatic) -> Any:
         # One-shot run to convergence / count_max / runtime.
         final = jax.lax.while_loop(
             functools.partial(cond_fn, statics),
@@ -180,7 +180,7 @@ def make_runner(
         return final._replace(termination_reason=reason)
 
     @jax.jit
-    def runner_chunk(state: JaxIntegState, atm_static: AtmStatic, target):
+    def runner_chunk(state: JaxIntegState, atm_static: AtmStatic, target: Any) -> Any:
         # `runner` cut off once `accept_count` reaches `target`, so a host
         # loop can print progress and take Ctrl+C between chunks. Same body
         # and carry: resuming from the returned state continues the run.
@@ -202,7 +202,7 @@ def make_runner(
         axis_name=_LANE_AXIS,
     )
 
-    def runner_batch(state_b: JaxIntegState, atm_b: AtmStatic):
+    def runner_batch(state_b: JaxIntegState, atm_b: AtmStatic) -> Any:
         # Freeze-on-done loop on stacked inputs; the caller jits it. The
         # while loop sits above the vmap, so photo/refresh conds key on the
         # shared iteration tick: batched and solo runs agree at the

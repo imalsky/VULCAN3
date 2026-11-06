@@ -94,20 +94,21 @@ def _file_ids_by_position(path: str) -> list[tuple[int, int, str]]:
     out: list[tuple[int, int, str]] = []
     section = "thermal"
     pos = 1
-    for line in open(path, errors="replace"):
-        s = line.strip()
-        if s.startswith("#"):
-            low = s.lower()
-            if "photo disscoiation" in low or "photo dissociation" in low:
-                section = "photo"
-            elif "ionization" in low or "ionisation" in low:
-                section = "ion"
-            continue
-        m = _SECTION_RE.match(s)
-        if not m:
-            continue
-        out.append((pos, int(m.group(1) or 0), section))
-        pos += 2
+    with open(path, errors="replace") as handle:
+        for line in handle:
+            s = line.strip()
+            if s.startswith("#"):
+                low = s.lower()
+                if "photo disscoiation" in low or "photo dissociation" in low:
+                    section = "photo"
+                elif "ionization" in low or "ionisation" in low:
+                    section = "ion"
+                continue
+            m = _SECTION_RE.match(s)
+            if not m:
+                continue
+            out.append((pos, int(m.group(1) or 0), section))
+            pos += 2
     return out
 
 

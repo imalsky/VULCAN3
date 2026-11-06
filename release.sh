@@ -85,6 +85,7 @@ python -m twine upload --verbose --repository-url https://test.pypi.org/legacy/ 
 #    vulcan3 is the editable checkout)
 RELCHECK="$(mktemp -d)/relcheck"
 python -m venv "$RELCHECK"
+# shellcheck source=/dev/null
 source "$RELCHECK/bin/activate"
 python -V
 

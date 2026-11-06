@@ -25,8 +25,6 @@ ROOT = Path(__file__).resolve().parent.parent
 # Many tests assume cwd == ROOT for relative data paths.
 os.chdir(ROOT)
 
-warnings.filterwarnings("ignore")
-
 
 def _assert_testing_repo_checkout() -> None:
     """Fail collection loudly if `import vulcan3` resolves outside this repo.
@@ -104,7 +102,7 @@ def _release_jax_caches_per_module():
     _clear_jax_caches()
 
 
-def pytest_collection_modifyitems(config, items):
+def pytest_collection_modifyitems(config, items):  # noqa: ARG001 (pytest passes both by name)
     """Apply the full-tier switch: `slow` tests skip unless VULCAN3_RUN_SLOW=1."""
     if os.environ.get("VULCAN3_RUN_SLOW") == "1":
         return

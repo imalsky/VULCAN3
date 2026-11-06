@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -155,7 +155,7 @@ class BodyTerms(NamedTuple):
     bot_val: jnp.ndarray | None = None  # (m,)
 
 
-def _clip_dead_mask(G, cfg) -> np.ndarray:
+def _clip_dead_mask(G: Any, cfg: Any) -> np.ndarray:
     """Cells where the runner's per-step zero-clip would not be the identity.
 
     Applied to a candidate post-step state `G` (number density, cm^-3), the
@@ -172,7 +172,10 @@ def _clip_dead_mask(G, cfg) -> np.ndarray:
     return (G < pos_cut) & (G >= nega_cut)
 
 
-def _make_body_map(y_star, k_arr, atm, net, body_dt, photo_recompute_k, body_terms=None):
+# size-limit-ok: the body map closes over one set of adjoint inputs
+def _make_body_map(
+    y_star: Any, k_arr: jnp.ndarray, atm: Any, net: Any, body_dt: Any, photo_recompute_k: Any, body_terms: Any = None
+) -> Any:
     """Build the one-step body map `G(y)` the adjoint linearizes (unjitted).
 
     Returns `(apply_post_map, body_map, body_map_k, step_fn)`:
@@ -194,7 +197,7 @@ def _make_body_map(y_star, k_arr, atm, net, body_dt, photo_recompute_k, body_ter
     M_col_default = atm.M[:, None]
     dt64 = jnp.float64(body_dt)
 
-    def apply_post_map(sol, M_col=None):
+    def apply_post_map(sol: jnp.ndarray, M_col: Any = None) -> Any:
         # The runner's rebalance, so y_star is a tight fixed point (SOLVER_MAP).
         M_c = M_col_default if M_col is None else M_col
         if not has_terms:
@@ -220,7 +223,7 @@ def _make_body_map(y_star, k_arr, atm, net, body_dt, photo_recompute_k, body_ter
             balanced = balanced.at[0, t.bot_idx].set(t.bot_val)
         return balanced
 
-    def step_fn(y, k_use, atm_use):
+    def step_fn(y: jnp.ndarray, k_use: Any, atm_use: Any) -> Any:
         # Reverse mode through the step: the dense stage operator
         # (`matrix_free=False`, jax_step._ros2_stages).
         # fix_species regime: pin inside the step (pinned rows zeroed off the diagonal, RHS zeroed)
@@ -239,7 +242,7 @@ def _make_body_map(y_star, k_arr, atm, net, body_dt, photo_recompute_k, body_ter
     # (rate ~ y - y_sat). Folding the recomputes in from the incoming y is
     # exact for the fixed-point adjoint (incoming == post-step at the fixed
     # point; the one-step lag drops out of the coupled-system algebra).
-    def body_map(y):
+    def body_map(y: jnp.ndarray) -> Any:
         k_use = photo_recompute_k(y) if photo_recompute_k is not None else k_arr
         if t is not None and t.conden_static is not None:
             k_use = update_conden_rates(k_use, y, t.conden_static)
@@ -248,7 +251,7 @@ def _make_body_map(y_star, k_arr, atm, net, body_dt, photo_recompute_k, body_ter
     # k-linearization at y_star: k stays free (photo/conden rows not
     # recomputed -- a row entry means "perturb this rate"; the y-operator
     # above carries the state feedback).
-    def body_map_k(k):
+    def body_map_k(k: Any) -> Any:
         return apply_post_map(step_fn(y_star, k, atm))
 
     return apply_post_map, body_map, body_map_k, step_fn
@@ -377,7 +380,7 @@ def _topk_ensemble_spread(g_stack: np.ndarray) -> float:
     return float(np.max(width / np.abs(g_mean[top])))
 
 
-def _host_network(net):
+def _host_network(net: Any) -> Any:
     """Return the import-locked parsed network, after checking that `net` has its reaction count.
 
     The body map's Ros2 step runs the import-time codegen RHS.
@@ -395,7 +398,7 @@ def _host_network(net):
     return host
 
 
-def _active_photolysis_rows(k_arr, net) -> bool:
+def _active_photolysis_rows(k_arr: jnp.ndarray, net: Any) -> bool:
     """Whether `k_arr` contains nonzero photodissociation rows."""
     photo_rows = np.asarray(_host_network(net).is_photo, dtype=bool)
     if not photo_rows.any():
@@ -404,7 +407,7 @@ def _active_photolysis_rows(k_arr, net) -> bool:
 
 
 def _resolve_photo_recompute_k(
-    photo_recompute_k: PhotoRecomputeArg, k_arr, net
+    photo_recompute_k: PhotoRecomputeArg, k_arr: jnp.ndarray, net: Any
 ) -> Callable[[jnp.ndarray], jnp.ndarray] | None:
     """Resolve the public photo-feedback argument for sensitivity calls.
 
@@ -428,7 +431,7 @@ def _resolve_photo_recompute_k(
     )
 
 
-def _guard_unmodeled_processes(y_star, k_arr, net, body_terms):
+def _guard_unmodeled_processes(y_star: Any, k_arr: jnp.ndarray, net: Any, body_terms: Any) -> None:
     """Refuse processes the body map would silently mistreat.
 
     Raises on nonzero ion rows (charge balance is in no body map) and on
@@ -493,7 +496,7 @@ def _adjoint_solve_core(
     photo_recompute_k: PhotoRecomputeArg,
     body_terms: BodyTerms | None,
     n_solves: int,
-):
+) -> Any:
     """Shared deflated-LGMRES adjoint solve on the body map.
 
     Resolves the photo feedback, refuses unmodeled processes, builds the body
@@ -525,7 +528,7 @@ def _adjoint_solve_core(
     )
     _, vjp_Gy = jax.vjp(body_map, y_star)
 
-    def a_eta(z):  # (I - dG/deta)^T in log-abundance coordinates
+    def a_eta(z: Any) -> Any:  # (I - dG/deta)^T in log-abundance coordinates
         return z - y_star * vjp_Gy(z * inv_y)[0]
 
     # Jit once, shared by the null-quality diagnostic and the LGMRES matvec,
@@ -536,11 +539,11 @@ def _adjoint_solve_core(
     # Conserved-mass deflation projector.
     Q = _conserved_null_basis(y_star, compo_array, dz)
 
-    def proj(z):
+    def proj(z: Any) -> Any:
         zf = z.reshape(-1)
         return (zf - Q @ (Q.T @ zf)).reshape(nz, ni)
 
-    def deflated(z):
+    def deflated(z: Any) -> Any:
         return proj(a_eta_j(proj(z)))
 
     # How null the deflated directions are: max_e ||A_eta^T q_e|| (unit-norm
@@ -560,7 +563,7 @@ def _adjoint_solve_core(
 
     n_matvec = [0]
 
-    def matvec(x):
+    def matvec(x: Any) -> Any:
         n_matvec[0] += 1
         return np.asarray(deflated(jnp.asarray(x.reshape(nz, ni)))).ravel()
 

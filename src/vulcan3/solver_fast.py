@@ -18,7 +18,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -45,33 +45,33 @@ class Factors(NamedTuple):
     sub_d: jnp.ndarray
 
 
-def _matvec(diag, sup_d, sub_d, x):
+def _matvec(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray, x: Any) -> Any:
     out = jnp.einsum("zij,zj->zi", diag, x)
     out = out.at[:-1].add(sup_d * x[1:])
     return out.at[1:].add(sub_d * x[:-1])
 
 
-def _raw_factor(diag, sup_d, sub_d):
+def _raw_factor(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> Any:
     if BACKEND == "ffi":
         return _ffi_factor(diag, sup_d, sub_d)
     f = _ref.factor_block_thomas_diag_offdiag(diag, sup_d, sub_d)
     return f.diag_lu, f.diag_perm
 
 
-def _raw_solve(lu, perm, sup_d, sub_d, rhs):
+def _raw_solve(lu: jnp.ndarray, perm: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray, rhs: jnp.ndarray) -> Any:
     if BACKEND == "ffi":
         return _ffi_solve(lu, perm, sup_d, sub_d, rhs)
     return _ref.solve_block_thomas_diag_offdiag(_ref.BlockThomasDiagFactors(lu, perm, sup_d, sub_d), rhs)
 
 
-def factor(diag, sup_d, sub_d) -> Factors:
+def factor(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> Factors:
     """Factor the block-tridiagonal stage matrix on the selected backend."""
     sg = jax.lax.stop_gradient
     lu, perm = _raw_factor(sg(diag), sg(sup_d), sg(sub_d))
     return Factors(lu, perm, diag, sup_d, sub_d)
 
 
-def solve(factors: Factors, rhs, matvec=None):
+def solve(factors: Factors, rhs: jnp.ndarray, matvec: Any = None) -> Any:
     """`matvec` is the operator as a function of x.
 
     The primal never runs it; the AD rules do (the tangent's `dA x`, the transpose's cotangent). The default is the
@@ -85,14 +85,14 @@ def solve(factors: Factors, rhs, matvec=None):
     if matvec is None:
         matvec = functools.partial(_matvec, diag, sup_d, sub_d)
 
-    def solve_(_matvec, b):
+    def solve_(_matvec: Any, b: Any) -> Any:
         return _raw_solve(lu, perm, sup0, sub0, b)
 
-    def transpose_solve(_vecmat, c):
+    def transpose_solve(_vecmat: Any, c: Any) -> Any:
         # Transpose of the primal sweep on the same factors (no second
         # factorisation). The FFI call has no transpose rule, so
         # this always runs the JAX scan, on whichever backend's factors.
-        def sweep(b):
+        def sweep(b: Any) -> Any:
             return _ref.solve_block_thomas_diag_offdiag(_ref.BlockThomasDiagFactors(lu, perm, sup0, sub0), b)
 
         _, vjp = jax.vjp(sweep, c)
@@ -194,7 +194,7 @@ def build(force: bool = False, cuda: bool = False) -> Path:
 _REGISTERED = False
 
 
-def _register():
+def _register() -> None:
     global _REGISTERED  # noqa: PLW0603 (registration happens once per process)
     if _REGISTERED:
         return
@@ -224,7 +224,7 @@ def _on_cuda() -> bool:
     return jax.default_backend() in ("gpu", "cuda")
 
 
-def _ffi_factor(diag, sup_d, sub_d):
+def _ffi_factor(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> Any:
     ni = diag.shape[-1]
     if ni > CUDA_MAX_NI and _on_cuda():
         raise ValueError(
@@ -239,7 +239,7 @@ def _ffi_factor(diag, sup_d, sub_d):
     return jax.ffi.ffi_call("vulcan_bt_factor", out, vmap_method="broadcast_all")(diag, sup_d, sub_d)
 
 
-def _ffi_solve(lu, perm, sup_d, sub_d, rhs):
+def _ffi_solve(lu: jnp.ndarray, perm: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray, rhs: jnp.ndarray) -> Any:
     # expand_dims, not broadcast_all: at a vmap level where only `rhs` is
     # batched (the tangent directions share one factorisation) the factors get
     # a size-1 axis instead of one copy per direction, and the handler

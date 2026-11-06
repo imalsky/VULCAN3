@@ -142,7 +142,12 @@ def test_a_geometry_refresh_alone_never_moves_the_budget(err_c, reason, why):
     budget_ref = col_seed.at[ci].divide(1.0 + err_c)
     seeded = _candidate(state, c, dz=dz_seed, budget_ref=budget_ref, budget_err=budget_err)
     final = integ._runner(seeded, atm_static)
-    assert int(final.termination_reason) == reason and bool(final.budget_ok) is (reason == 1), (
+    assert int(final.termination_reason) == reason, (
+        why,
+        int(final.termination_reason),
+        np.asarray(final.budget_drift),
+    )
+    assert bool(final.budget_ok) is (reason == 1), (
         why,
         int(final.termination_reason),
         np.asarray(final.budget_drift),

@@ -1,7 +1,7 @@
 """The one reader of the `VULCAN3_*` environment variables; docs/settings.md lists them.
 
-Each function reads the environment when called, so `import vulcan3` leaves `$VULCAN3_SOLVER` open until `jax_step` first
-loads, and `$VULCAN3_CHEM_RHS` open until `make_chem_funs` does.
+Each function reads the environment when called, so `import vulcan3` leaves `$VULCAN3_SOLVER` open until `jax_step`
+first loads, and `$VULCAN3_CHEM_RHS` open until `make_chem_funs` does.
 """
 
 from __future__ import annotations

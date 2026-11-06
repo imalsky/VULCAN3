@@ -114,7 +114,8 @@ def test_run_batch_matches_solo_runs():
         reason = int(het_out[i].termination_reason)
         # A frozen-too-early lane would diverge from its solo run; a
         # never-frozen lane would over-integrate. Both show up here.
-        assert rel <= RTOL and reason == 3, ("heterogeneous", i, o, rel, reason)
+        assert rel <= RTOL, ("heterogeneous", i, o, rel, reason)
+        assert reason == 3, ("heterogeneous", i, o, rel, reason)
 
     # --- 2. Non-finite isolation ----------------------------------------
     bad = 1
@@ -147,4 +148,6 @@ def test_run_batch_matches_solo_runs():
     relB = max(_max_rel_diff(o.ymix, soloB.ymix, floor=BATCH_FLOOR) for o in het2_out[1::2])
     # Sanity: the two profiles must actually differ, else the test is vacuous.
     profiles_differ = _max_rel_diff(soloB.ymix, soloA.ymix)
-    assert relA <= RTOL and relB <= RTOL and profiles_differ >= 1e-6, ("diff-profiles", relA, relB, profiles_differ)
+    assert relA <= RTOL, ("diff-profiles", relA, relB, profiles_differ)
+    assert relB <= RTOL, ("diff-profiles", relA, relB, profiles_differ)
+    assert profiles_differ >= 1e-6, ("diff-profiles", relA, relB, profiles_differ)

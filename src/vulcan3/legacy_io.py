@@ -12,11 +12,14 @@ dict, and parameter fields are synthesised at pickle time from the typed
 `RunState`.
 """
 
+from __future__ import annotations
+
 import logging
 import pickle
 import time
 import warnings
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -92,7 +95,7 @@ class ReadRate:
     legacy ``var``.
     """
 
-    def read_rate(self, var, atm):
+    def read_rate(self, var: Any, atm: Any) -> Any:
         """Copy the parsed network's host-side metadata onto `var`.
 
         Sets the attributes something reads: `Rf` (reaction text by
@@ -116,7 +119,7 @@ class ReadRate:
         return var
 
 
-def _synthesize_cross_dicts(static) -> dict:
+def _synthesize_cross_dicts(static: Any) -> dict:
     """Build the legacy `var.cross*` dict views from a `PhotoStaticInputs`.
 
     The .vul writer publishes up to these five dicts, the keys the upstream
@@ -140,7 +143,7 @@ def _synthesize_cross_dicts(static) -> dict:
     }
 
 
-def _synthesize_save_dicts(runstate, cfg):
+def _synthesize_save_dicts(runstate: Any, cfg: Any) -> Any:
     """Build the three .vul top-level dicts from a `RunState`.
 
     Returns `(variable_dict, atm_dict, parameter_dict)` matching the
@@ -214,7 +217,7 @@ def _synthesize_save_dicts(runstate, cfg):
 class Output:
     """Per-run output: cfg copy, .vul writer, progress report."""
 
-    def __init__(self, cfg=None):
+    def __init__(self, cfg: Any = None) -> None:
         """Set up the `.vul` writer for one run.
 
         Warn if the target file already exists. save_cfg and save_out create their own directories.
@@ -228,7 +231,7 @@ class Output:
         if Path(output_dir + out_name).is_file():
             warnings.warn("The output file: " + str(out_name) + " already exists.", stacklevel=2)
 
-    def print_prog(self, var, para):
+    def print_prog(self, var: Any, para: Any) -> None:
         """Log one progress block (the config asked for it.
 
         `use_print_prog`): elapsed model time, step count vs `count_max`, longdy / longdy_dt / dt, and the
@@ -240,7 +243,7 @@ class Output:
         logger.info("from nz = %s and %s", int(indx_max / ni), species[indx_max % ni])
         logger.info("------------------------------------------------------------------------")
 
-    def print_end_msg(self, var, para):
+    def print_end_msg(self, var: Any, para: Any) -> None:
         """Log the steady-state success summary.
 
         CPU wall time, step count, final model time, long dy / dy_dt, per-atom loss (skipping `cfg.loss_ex`),
@@ -257,7 +260,7 @@ class Output:
         self._log_losses(var, para)
         logger.info("------ Live long and prosper \\V/ ------")
 
-    def print_unconverged_msg(self, var, para, case):
+    def print_unconverged_msg(self, var: Any, para: Any, case: Any) -> None:
         """Log the non-converged summary for termination `case`.
 
         2 = runtime budget, 3 = max steps, 5 = stopped without converging and without hitting a cap; any other case
@@ -279,7 +282,7 @@ class Output:
         logger.warning("Integration stopped before converged...\n%s", why)
         self._log_losses(var, para)
 
-    def _log_losses(self, var, para):
+    def _log_losses(self, var: Any, para: Any) -> None:
         """Log per-atom loss (skipping `cfg.loss_ex`) and the negative/loss/delta rejection counters."""
         logger.info("total atom loss:")
         for atom in self._cfg.atom_list:
@@ -292,7 +295,7 @@ class Output:
         logger.info("delta rejected counter:")
         logger.info(str(para.delta_count))
 
-    def save_cfg(self, dname):
+    def save_cfg(self, dname: str) -> None:
         """Write a repr snapshot of the active cfg, make_config overrides included.
 
         Goes to `cfg_<out_name stem>.txt` under `dname/output_dir`, skipping private, callable, type and module
@@ -315,7 +318,7 @@ class Output:
         with out_path.open("w") as f:
             f.write("\n".join(lines) + "\n")
 
-    def save_out(self, runstate, dname):
+    def save_out(self, runstate: Any, dname: str) -> None:
         """Write the `.vul` pickle output; reads everything from `runstate`."""
         var_save, atm_save, para_save = _synthesize_save_dicts(runstate, self._cfg)
 
@@ -335,7 +338,7 @@ class Output:
     # in `plot_dir`. matplotlib is the optional `plot` extra, imported here so
     # a run without plots never needs it.
 
-    def plot_end(self, rs):
+    def plot_end(self, rs: Any) -> None:
         """Plot final mixing ratios of `cfg.plot_spec` against pressure, saved to `plot_dir/mix.png`."""
         p_bar = np.asarray(rs.atm.pco) / 1.0e6
         ymix = np.asarray(rs.step.ymix)
@@ -348,7 +351,7 @@ class Output:
             other_lim=(p_bar.max(), p_bar.min()),
         )
 
-    def plot_evo(self, rs):
+    def plot_evo(self, rs: Any) -> None:
         """Mixing ratios of `cfg.plot_spec` against model time in the layer nearest `_EVO_P_BAR`.
 
         From the `save_evo_frq` snapshots, saved to `plot_dir/evo.png`.
@@ -370,7 +373,7 @@ class Output:
             other_lim=(t_evo.min(), t_evo.max()),
         )
 
-    def _plot_species(self, xy, name, xlabel, ylabel, mix_axis, other_lim):
+    def _plot_species(self, xy: Any, name: str, xlabel: Any, ylabel: Any, mix_axis: Any, other_lim: Any) -> None:
         """One log-log line per `cfg.plot_spec` species, `xy(index) -> (x, y)`.
 
         The mixing-ratio axis (`mix_axis` 0 = x, 1 = y) spans the plotted values, floored at `_PLOT_YMIN`.
@@ -417,7 +420,7 @@ _RC = {
 }
 
 
-def _import_plt():
+def _import_plt() -> Any:
     """Matplotlib's pyplot, or a pointer to the `plot` extra."""
     try:
         import matplotlib.pyplot as plt

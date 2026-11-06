@@ -80,6 +80,7 @@ def test_cfg_example_setup(cfg_name: str) -> None:
         capture_output=True,
         text=True,
         cwd=ROOT,
+        check=False,
     )
     assert result.returncode == 0, (
         f"{cfg_name} setup failed with exit code {result.returncode}\n"

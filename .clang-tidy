@@ -3,6 +3,8 @@
 #   bugprone-signed-bitwise: 66 of 160 findings on one kernel, nearly all lane and mask arithmetic on int.
 #   bugprone-easily-swappable-parameters: 22 of 160, every kernel helper takes several doubles.
 #   bugprone-reserved-identifier: 30 of 160, CUDA's own __device__ style names.
+#   bugprone-implicit-widening-of-multiplication-result: 15 of 20 here, block offsets j * ni with ni <= 96 and nz small.
+#   performance-enum-size: 2 of 20 here, a one-byte enum saves nothing on a stack argument of the kernel handlers.
 Checks: >
   -*,
   bugprone-*,
@@ -16,5 +18,7 @@ Checks: >
   -bugprone-signed-bitwise,
   -bugprone-easily-swappable-parameters,
   -bugprone-reserved-identifier,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -performance-enum-size,
   -clang-analyzer-optin.*
 HeaderFilterRegex: '.*'

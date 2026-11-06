@@ -225,7 +225,7 @@ def _known_row_divergence_only(master_path: Path, jax_path: Path, reactions: tup
     In the same order (so a moved section heading is caught). The allowlisted rows themselves are not compared here:
     their exact text is guarded by the file's sha256 pin in tests/science_sources.yaml.
     """
-    keep = lambda items: [i for i in items if not (i[0] == "row" and any(rx in i[1] for rx in reactions))]  # noqa: E731
+    keep = lambda items: [i for i in items if not (i[0] == "row" and any(rx in i[1] for rx in reactions))]  # noqa: E731 (a one-line predicate, used once)
     if keep(_items(master_path)) != keep(_items(jax_path)):
         return ["rows or lines differ outside the known divergences"]
     return []

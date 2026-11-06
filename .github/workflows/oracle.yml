@@ -67,8 +67,8 @@ jobs:
         run: python -m pytest ${{ matrix.select }} -q --tb=short -ra
 
       # The full tier: the `slow` tests only (the normal tier is tests.yml),
-      # among them the CLI step-count gates HD189 1495 / HD209 1211 / W39b
-      # 1260. HD189_vulcan3's count is arm64-only and is not run here.
+      # among them the CLI step-count gates HD189 1495 / HD209 1206 / W39b
+      # 1084. HD189_vulcan3's count is arm64-only and is not run here.
       # One process per test, run in sequence: the W39b tangent certificate
       # peaks at 12.6 GB on this 16 GB runner, so memory one test leaves
       # behind must not carry into the next. Each failure prints at once

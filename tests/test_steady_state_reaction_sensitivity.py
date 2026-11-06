@@ -15,12 +15,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
-jax.config.update("jax_enable_x64", True)
 
 from vulcan3.steady_state_grad import (
     _BODY_MAP_DT_MAX,
@@ -192,16 +189,19 @@ def test_hd189_reaction_sensitivity_regression():
         ymix = y / jnp.sum(y, axis=1, keepdims=True)
         return jnp.log10(ymix[L0, ch4])
 
-    dLdlnk, info = steady_state_reaction_sensitivity(
-        loss,
-        y_star,
-        k_arr,
-        atm,
-        net,
-        compo_array=compo,
-        dz=dz,
-        return_info=True,
-    )
+    # This fixture's null_quality (bounded below) sits above the warning's 1e-3: the warning is expected here, and the
+    # FD check below is what validates the magnitudes.
+    with pytest.warns(UserWarning, match="null_quality"):
+        dLdlnk, info = steady_state_reaction_sensitivity(
+            loss,
+            y_star,
+            k_arr,
+            atm,
+            net,
+            compo_array=compo,
+            dz=dz,
+            return_info=True,
+        )
     dLdlnk = np.asarray(dLdlnk)
 
     assert info["solver_map"] == "renorm"  # vulcan-jwst-tool writes this key

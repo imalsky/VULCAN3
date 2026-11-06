@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
@@ -32,7 +32,9 @@ logger = logging.getLogger(__name__)
 
 
 # size-limit-ok: one check per process
-def _adjoint_scope_findings(cfg, final_state=None, photo_recompute_k=None, body_terms=None) -> list:  # noqa: C901 (one check per process)
+def _adjoint_scope_findings(  # noqa: C901 (one check per process)
+    cfg: Any, final_state: Any = None, photo_recompute_k: Any = None, body_terms: Any = None
+) -> list:
     """Run static scope checks: which runner processes are OUTSIDE the adjoint's body map for this configuration.
 
     Also says what that does to the gradient.
@@ -47,10 +49,10 @@ def _adjoint_scope_findings(cfg, final_state=None, photo_recompute_k=None, body_
     def add(code: str, severity: str, message: str) -> None:
         findings.append({"code": code, "severity": severity, "message": message})
 
-    def flag(name: str, default):
+    def flag(name: str, default: Any) -> Any:
         return getattr(cfg, name, default)
 
-    def state_bool(name: str):
+    def state_bool(name: str) -> Any:
         if final_state is None:
             return None
         val = getattr(final_state, name, None)
@@ -139,7 +141,7 @@ def _adjoint_scope_findings(cfg, final_state=None, photo_recompute_k=None, body_
                 "error",
                 "use_photo=True with photo_recompute_k=None freezes J (dJ/dy "
                 "omitted, 11% on W39b OH+H2). Pass make_photo_recompute_k("
-                "integ._photo_static, final).",
+                "integ.photo_static, final).",
             )
         else:
             add(
@@ -193,20 +195,20 @@ def _adjoint_scope_findings(cfg, final_state=None, photo_recompute_k=None, body_
 
 
 # size-limit-ok: four checks in order, with the doc of each
-def audit_adjoint_scope(  # noqa: C901 (four checks in order, with the doc of each)
+def audit_adjoint_scope(  # noqa: C901 (four checks in order)
     y_star: jnp.ndarray,
     k_arr: jnp.ndarray,
     atm: AtmStatic,
     net: NetworkArrays,
     *,
-    cfg=None,
-    final_state=None,
+    cfg: Any = None,
+    final_state: Any = None,
     loss_fn: Callable[[jnp.ndarray], jnp.ndarray] | None = None,
     photo_recompute_k: Callable[[jnp.ndarray], jnp.ndarray] | None = None,
     body_terms: BodyTerms | None = None,
     body_dt: float = BODY_MAP_DT,
     print_report: bool = True,
-):
+) -> Any:
     """Scan a run for physics the adjoint's body map drops, before trusting it.
 
     The adjoint linearizes `G = ros2_step (+ renorm) (+ photo) (+ body_terms)` at `y_star`;

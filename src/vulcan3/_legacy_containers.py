@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .state import RunState
@@ -17,7 +17,7 @@ __all__ = ["legacy_view"]
 
 
 # size-limit-ok: one legacy field per line
-def legacy_view(rs: RunState):
+def legacy_view(rs: RunState) -> Any:
     """Return a `(var, atm, para)` SimpleNamespace shim built from `rs`.
 
     Mutations to the shim do not round-trip back to `rs`.
@@ -120,7 +120,7 @@ def legacy_view(rs: RunState):
 class _Variables:
     """Private mutable scratch container used by the pre-loop pipeline."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         from .chem_funs import ni as _ni
 
         _nz = default_config().nz
@@ -177,7 +177,7 @@ class _Variables:
 class _AtmData:
     """Private mutable scratch container for atmosphere-structure arrays."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         from .chem_funs import ni as _ni, spec_list as _spec_list
 
         _nz = default_config().nz

@@ -12,7 +12,7 @@ import functools
 import logging
 import pickle
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
@@ -86,7 +86,7 @@ def _condensate_species() -> set[str]:
     return out
 
 
-def _make_hvector(coeffs: np.ndarray):
+def _make_hvector(coeffs: np.ndarray) -> Any:
     """`T -> mu0(T)/(RT)` (K,) at the 1 bar standard state.
 
     That is the convention ExoGibbs's `gk = h + ln n_k - ln n_tot +
@@ -98,7 +98,7 @@ def _make_hvector(coeffs: np.ndarray):
     """
     coeffs = np.asarray(coeffs, dtype=np.float64)
 
-    def hvector(T):
+    def hvector(T: jnp.ndarray) -> Any:
         return rates_jax.gibbs_sp_vector(coeffs, jnp.atleast_1d(T))[:, 0]
 
     return hvector
@@ -170,7 +170,7 @@ def _seed_key() -> tuple[float, int]:
 
 
 @functools.cache
-def _seed_controls(tol: float, max_iter: int) -> tuple[EquilibriumOptions, object]:
+def _seed_controls(tol: float, max_iter: int) -> tuple[EquilibriumOptions, Any]:
     """`(options, eq_seed jitted)` for one set of solver controls, interned.
 
     ExoGibbs keys its scan-body cache on `id(options)`, so a fresh dataclass
@@ -188,7 +188,7 @@ def _seed_controls(tol: float, max_iter: int) -> tuple[EquilibriumOptions, objec
 
 
 @jax.custom_jvp
-def eq_seed(Tco, p_bar, b):
+def eq_seed(Tco: jnp.ndarray, p_bar: Any, b: Any) -> Any:
     """Equilibrium mixing ratios `(nz, ni)` at `Tco` (K) and `p_bar` (bar).
 
     `b` is the elemental abundance vector in `seed_elements()` order; only its
@@ -202,7 +202,7 @@ def eq_seed(Tco, p_bar, b):
     return _eq_seed_column(Tco, p_bar, b)
 
 
-def _solve_profile(Tco, p_bar, b):
+def _solve_profile(Tco: jnp.ndarray, p_bar: Any, b: Any) -> Any:
     """ExoGibbs `solve_profile` on one column: `(result, per-layer diagnostics)`."""
     from exogibbs.api.gas import solve_profile
 
@@ -218,7 +218,7 @@ def _solve_profile(Tco, p_bar, b):
 
 
 @jax.custom_batching.custom_vmap
-def _eq_seed_column(Tco, p_bar, b):
+def _eq_seed_column(Tco: jnp.ndarray, p_bar: Any, b: Any) -> Any:
     """`eq_seed` on one column; under `vmap`, `_eq_seed_lanes`."""
     res, diag = _solve_profile(Tco, p_bar, b)
     seed_idx = _seed()[1]
@@ -228,7 +228,7 @@ def _eq_seed_column(Tco, p_bar, b):
 
 
 @_eq_seed_column.def_vmap
-def _eq_seed_lanes(axis_size, in_batched, Tco, p_bar, b):
+def _eq_seed_lanes(axis_size: Any, in_batched: Any, Tco: jnp.ndarray, p_bar: Any, b: Any) -> Any:
     """Batched seed: the unbatched program once per lane, in a `lax.map`.
 
     A vmapped minimizer computes a lane in another order than the solo one,
@@ -245,7 +245,7 @@ def _eq_seed_lanes(axis_size, in_batched, Tco, p_bar, b):
 
 
 @eq_seed.defjvp
-def _eq_seed_jvp(primals, tangents):
+def _eq_seed_jvp(primals: Any, tangents: Any) -> Any:
     """Zero tangent: the seed is an initial condition, not a model output.
 
     ExoGibbs's kernel carries a `custom_vjp` and no forward rule, so a jvp
@@ -301,7 +301,7 @@ def _base_vector() -> np.ndarray:
     return b
 
 
-def ratio_indices(names) -> jnp.ndarray:
+def ratio_indices(names: Any) -> jnp.ndarray:
     """Positions of `names` in the seed's element vector, resolved once.
 
     The array path (`element_vector`) takes these so a batched caller never
@@ -316,7 +316,7 @@ def ratio_indices(names) -> jnp.ndarray:
     return jnp.asarray([elements.index(sp) for sp in names], dtype=jnp.int32)
 
 
-def element_vector(ratios, idx) -> jnp.ndarray:
+def element_vector(ratios: Any, idx: Any) -> jnp.ndarray:
     """`b` (E,) with the elements at `idx` replaced by `ratios`. Traceable.
 
     Starts from `_element_vector()`, the host path's own no-override vector,
@@ -344,7 +344,7 @@ def _element_vector(ratios: dict | None = None) -> np.ndarray:
     return b
 
 
-def _abun_lowT_residual(x, O_H, C_H, He_H, N_H):
+def _abun_lowT_residual(x: Any, O_H: Any, C_H: Any, He_H: Any, N_H: Any) -> Any:
     """5-mol residual: H2 / H2O / CH4 / He / NH3.
 
     The sum constraint (f1) only includes x1..x4; NH3 (x5) participates
@@ -360,7 +360,7 @@ def _abun_lowT_residual(x, O_H, C_H, He_H, N_H):
     return jnp.stack([f1, f2, f3, f4, f5])
 
 
-def _jax_newton(residual_fn, m0, args, max_iter, tol):
+def _jax_newton(residual_fn: Any, m0: Any, args: Any, max_iter: Any, tol: Any) -> Any:
     """Small dense Newton via `lax.while_loop` on residual norm.
 
     Solves the 5-element `_abun_lowT_residual` system. The Jacobian is built with
@@ -370,11 +370,11 @@ def _jax_newton(residual_fn, m0, args, max_iter, tol):
     """
     jac_fn = jax.jacrev(residual_fn)
 
-    def cond_fn(state):
+    def cond_fn(state: Any) -> Any:
         _, residual_norm, iter_count = state
         return jnp.logical_and(residual_norm > tol, iter_count < max_iter)
 
-    def body_fn(state):
+    def body_fn(state: Any) -> Any:
         m, _, iter_count = state
         r = residual_fn(m, *args)
         J = jac_fn(m, *args)
@@ -392,12 +392,12 @@ def _jax_newton(residual_fn, m0, args, max_iter, tol):
     return final_m
 
 
-def compute_atom_ini(y, compo_arr=compo_array):
+def compute_atom_ini(y: jnp.ndarray, compo_arr: Any = compo_array) -> Any:
     """`atom_ini[a] = Σ_i compo[i,a] * Σ_z y[z,i]`. y (nz, ni), compo_arr (ni, n_atoms)."""
     return jnp.einsum("zi,ia->a", y, compo_arr)
 
 
-def operator_column_weights(dz):
+def operator_column_weights(dz: jnp.ndarray) -> Any:
     """Cell weights (nz,) that the flux-form transport operator conserves.
 
     The diffusion divergence divides by the interface-centered spacing
@@ -411,7 +411,7 @@ def operator_column_weights(dz):
     return jnp.concatenate([dzi[:1], 0.5 * (dzi[:-1] + dzi[1:]), dzi[-1:]])
 
 
-def column_atoms(y, dz, compo_arr=compo_array):
+def column_atoms(y: jnp.ndarray, dz: jnp.ndarray, compo_arr: Any = compo_array) -> Any:
     """Operator-weighted atom column (n_atoms,).
 
     `Σ_z w_z * y[z,i] * compo[i,a]` with `w = operator_column_weights(dz)`:
@@ -421,7 +421,7 @@ def column_atoms(y, dz, compo_arr=compo_array):
     return jnp.einsum("z,zi,ia->a", w, jnp.asarray(y, dtype=jnp.float64), compo_arr)
 
 
-def eq_column(pco, Tco, M) -> np.ndarray:
+def eq_column(pco: jnp.ndarray, Tco: jnp.ndarray, M: jnp.ndarray) -> np.ndarray:
     """Equilibrium column ``(nz, ni)`` in absolute number densities.
 
     ``pco`` is in dyne/cm^2, ``Tco`` in K and ``M`` the total gas density.
@@ -471,12 +471,12 @@ def eq_column(pco, Tco, M) -> np.ndarray:
     return ymix * np.asarray(M, dtype=np.float64)[:, None]
 
 
-def _load_eq_y(data_atm) -> tuple[np.ndarray, list[str]]:
+def _load_eq_y(data_atm: Any) -> tuple[np.ndarray, list[str]]:
     """Seed the atmosphere's own T-P at the config's elemental abundances."""
     return eq_column(data_atm.pco, data_atm.Tco, data_atm.M), []
 
 
-def _load_vulcan_ini_y(data_atm) -> tuple[np.ndarray, list[str]]:
+def _load_vulcan_ini_y(data_atm: Any) -> tuple[np.ndarray, list[str]]:
     """Load `y` from a previous `.vul` file via pickle."""
     logger.info("Initializing with compositions from the previous run %s", _CFG.vul_ini)
     with Path(resolve_data_path(_CFG.vul_ini)).open("rb") as handle:
@@ -493,7 +493,7 @@ def _load_vulcan_ini_y(data_atm) -> tuple[np.ndarray, list[str]]:
     return y, (_charged_species() if _CFG.use_ion is True else [])
 
 
-def _load_table_y(data_atm) -> tuple[np.ndarray, list[str]]:
+def _load_table_y(data_atm: Any) -> tuple[np.ndarray, list[str]]:
     """Load `y` from a per-layer mixing-ratio text table."""
     table = np.genfromtxt(resolve_data_path(_CFG.vul_ini), names=True, dtype=None, skip_header=1)
     if not len(data_atm.pco) == len(table["Pressure"]):
@@ -508,7 +508,7 @@ def _load_table_y(data_atm) -> tuple[np.ndarray, list[str]]:
     return y, []
 
 
-def _load_const_mix_y(data_atm) -> tuple[np.ndarray, list[str]]:
+def _load_const_mix_y(data_atm: Any) -> tuple[np.ndarray, list[str]]:
     """Load `y` from `_CFG.const_mix` (a per-species mixing dict)."""
     logger.info("Initializing with constant (well-mixed): %s", _CFG.const_mix)
     nz_ = len(data_atm.pco)
@@ -523,7 +523,7 @@ def _load_const_mix_y(data_atm) -> tuple[np.ndarray, list[str]]:
 _LOWT_M0 = (0.9, 0.1, 0.0, 0.0, 0.0)
 
 
-def _load_const_lowT_y(data_atm) -> tuple[np.ndarray, list[str]]:
+def _load_const_lowT_y(data_atm: Any) -> tuple[np.ndarray, list[str]]:
     """Solve the 5-mol H2/H2O/CH4/He/NH3 system via JAX Newton."""
     O_H = float(_CFG.O_H)
     C_H = float(_CFG.C_H)
@@ -568,7 +568,7 @@ _MODE_DISPATCH = {
 }
 
 
-def _apply_condense(y: np.ndarray, data_atm) -> np.ndarray:
+def _apply_condense(y: np.ndarray, data_atm: Any) -> np.ndarray:
     """Apply the `use_condense` initial-cold-trap clip.
 
     Mutates `data_atm.sat_mix` / `data_atm.conden_min_lev`. Returns the
@@ -628,7 +628,7 @@ def _compute_ymix(y: np.ndarray) -> np.ndarray:
     return y / ysum
 
 
-def compute_initial_abundance(data_atm) -> IniAbunOutputs:
+def compute_initial_abundance(data_atm: Any) -> IniAbunOutputs:
     """Run the configured `ini_mix` mode and return a typed pytree.
 
     Side effect: when `use_condense=True`, the legacy `data_atm` container
@@ -659,11 +659,11 @@ def compute_initial_abundance(data_atm) -> IniAbunOutputs:
 class InitialAbun:
     """Legacy-mutation facade matching `atm_setup.Atm`'s pattern."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Capture `cfg.atom_list` (cfg's possibly reordered/subset atom set) for use in `ele_sum`."""
         self.atom_list = _CFG.atom_list
 
-    def ini_y(self, data_var, data_atm):
+    def ini_y(self, data_var: Any, data_atm: Any) -> Any:
         """Compute the initial abundance in place and return `data_var`.
 
         Writes `data_var.y`, `ymix` and `y_ini`, plus `charge_list` when `use_ion`.
@@ -676,7 +676,7 @@ class InitialAbun:
             data_var.charge_list = list(outputs.charge_list)
         return data_var
 
-    def ele_sum(self, data_var):
+    def ele_sum(self, data_var: Any) -> Any:
         """Write per-atom initial totals onto `data_var.atom_ini` and return `data_var`.
 
         Zeroes `atom_loss` and `atom_conden`, reads `data_var.y`, looks up each cfg atom's column by name and skips

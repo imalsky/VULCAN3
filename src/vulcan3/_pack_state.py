@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import jax.numpy as jnp
 import numpy as np
 
@@ -12,7 +14,7 @@ from .ini_abun import column_atoms
 from .state import TERM_CONVERGED, TERM_NONFINITE, TERM_RUNNING, TERM_RUNTIME, TERM_STEP_COUNT
 
 
-def initial_photo_carry(integ, rs) -> dict:
+def initial_photo_carry(integ: Any, rs: Any) -> dict:
     """Build the initial photo carry from `rs.rate.k` and `rs.photo_runtime` (placeholders when photo is off)."""
     nz = int(rs.atm.Tco.shape[0])
     nr = _NETWORK.nr
@@ -40,7 +42,7 @@ def initial_photo_carry(integ, rs) -> dict:
     }
 
 
-def initial_atm_carry(integ, rs) -> dict:
+def initial_atm_carry(rs: Any) -> dict:
     """Build the initial atm-refresh carry from a RunState slice."""
     return {
         "g": jnp.asarray(rs.atm.g, dtype=jnp.float64),
@@ -55,7 +57,7 @@ def initial_atm_carry(integ, rs) -> dict:
     }
 
 
-def initial_conv_carry(integ, rs) -> dict:
+def initial_conv_carry(integ: Any, rs: Any) -> dict:
     """Build the initial conv-history carry from a RunState slice."""
     nz = int(rs.atm.Tco.shape[0])
     ni = _NETWORK.ni
@@ -86,7 +88,7 @@ def initial_conv_carry(integ, rs) -> dict:
     }
 
 
-def profile_vars(integ, rs) -> ProfileVars:
+def profile_vars(integ: Any, rs: Any) -> ProfileVars:
     """Snapshot this profile's per-profile constants into a `ProfileVars`.
 
     Rebuilds the per-run static bundles for this runstate (so the values
@@ -160,7 +162,7 @@ def profile_vars(integ, rs) -> ProfileVars:
 
 
 # size-limit-ok: one carry field per line
-def pack_state(integ, rs) -> JaxIntegState:
+def pack_state(integ: Any, rs: Any) -> JaxIntegState:
     """Build the initial JaxIntegState from a fully-populated RunState.
 
     Static metadata (atom ordering, fix-species mapping) lives on the
@@ -248,7 +250,7 @@ def pack_state(integ, rs) -> JaxIntegState:
 
 
 # size-limit-ok: one RunState field per line
-def unpack_state(integ, state: JaxIntegState, rs_entry):
+def unpack_state(integ: Any, state: JaxIntegState, rs_entry: Any) -> Any:
     """Build a fresh `RunState` from the runner's final JaxIntegState.
 
     The static atm fields (pco, Tco, Kzz, n_0, ms, alpha, ...) are
@@ -397,7 +399,7 @@ def unpack_state(integ, state: JaxIntegState, rs_entry):
     )
 
 
-def classify_end_case(integ, state: JaxIntegState):
+def classify_end_case(state: JaxIntegState) -> Any:
     """Classify end-of-run (op.py:1069-1085) from the in-loop reason.
 
     `_real_terminate` applies master's priority (converged over runtime

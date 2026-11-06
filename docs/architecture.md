@@ -6,6 +6,20 @@
 analytical Jacobian and the block solve. `state.RunState.with_pre_loop_setup(cfg)` runs setup, and `legacy_io.Output.save_out`
 writes a `.vul` pickle. A module keeps its path when its code moves: the old module re-exports the names.
 
+| Module | Holds |
+|---|---|
+| `outer_loop` | `OuterLoop`; re-exports the private modules below |
+| `_carry` | the carry and closure pytrees, field lists, batch axes |
+| `_convergence`, `_termination` | the convergence test and certificate; the termination predicate and ring statistics |
+| `_step_control` | step size, clip, aggregate truncation error |
+| `_loop_body`, `_loop_after_step`, `_loop_branches`, `_loop_env` | one step, in named parts, and what it closes over |
+| `_runners`, `_runner_jvp`, `_runner_queue` | solo, chunk and batch; forward mode; queue and compaction |
+| `_build_statics`, `_pack_state` | setup into the runner's inputs; `RunState` to carry and back |
+| `steady_state_grad`, `_adjoint_core`, `_adjoint_audit` | public sensitivities; the solve; the scope audit |
+| `atm_setup`, `_tp_kzz`, `_transport_setup`, `_stellar_flux`, `_saturation` | `Atm` facade and setup pieces |
+| `state`, `_legacy_containers` | pytrees and the pre-loop pipeline; the legacy views |
+| `_settings` | the one reader of `VULCAN3_*` |
+
 ## Import order
 
 `import vulcan3` enables x64 and freezes the network: `chem_funs` parses it, `composition` reads the tables and

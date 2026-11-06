@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 # size-limit-ok: the photolysis chain, in program order
-def _make_photo_branch(photo_static: _PhotoStatic):
+def _make_photo_branch(photo_static: _PhotoStatic) -> Any:
     """Build the in-loop photo branch closure.
 
     Computes tau / aflux / J inside the JIT'd body and writes the
@@ -122,7 +122,7 @@ def _make_photo_branch(photo_static: _PhotoStatic):
     return photo_branch
 
 
-def _splice_conden(conden_static, pv: ProfileVars):
+def _splice_conden(conden_static: Any, pv: ProfileVars) -> Any:
     """Return the baked `CondenStatic` with this lane's per-profile arrays (see ProfileVars).
 
     Its other fields stay baked and must be batch-constant. nh3_conden_top is a 0-d int32 only compared against
@@ -140,7 +140,7 @@ def _splice_conden(conden_static, pv: ProfileVars):
     )
 
 
-def _splice_step_atm(atm_static, s, use_vm_mol: bool, kb: float, Navo: float):
+def _splice_step_atm(atm_static: Any, s: JaxIntegState, use_vm_mol: bool, kb: float, Navo: float) -> Any:
     """Return the step's `AtmStatic`: the carry's refreshed geometry (op.py:905-907) and hybrid vm_mol phase.
 
     Under `use_vm_mol`, also the vm recomputed from them.
@@ -161,7 +161,7 @@ def _splice_step_atm(atm_static, s, use_vm_mol: bool, kb: float, Navo: float):
     return atm
 
 
-def _make_conden_branch(conden_static: _conden_mod.CondenStatic):
+def _make_conden_branch(conden_static: _conden_mod.CondenStatic) -> Any:
     """Build the in-loop conden closure.
 
     Operates on the post-Ros2/post-clip s.y/s.ymix. Updates the conden

@@ -147,6 +147,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
+known-first-party = ["vulcan3"]  # the commit guard lints an export without src/, where Ruff cannot detect this
 combine-as-imports = true
 
 [tool.ruff.lint.pydocstyle]
@@ -181,9 +182,10 @@ extend-ignore-names = [
 "src/vulcan3/*.py" = ["PLC0415"]
 # Tests: the frozen network and $VULCAN3_* must be set before a lazy import. Names follow the symbol under test and the
 # A and B profiles of a comparison. A test's name is its documentation.
-"tests/**" = ["T20", "PLC0415", "D103", "N802", "N803", "N806", "PLW0108", "PLW2901", "PTH", "PERF203", "N812"]  # PLW0108: a fresh lambda is a fresh trace
-"tools/**" = ["T20"]
-"examples/**" = ["T20"]
+# E402: an oracle test sets the path and environment before its imports. PT011: the exception type is the contract there.
+"tests/**" = ["T20", "PLC0415", "D103", "N802", "N803", "N806", "PLW0108", "PLW2901", "PTH", "PERF203", "N812", "E402", "PT011", "PLW0603"]  # PLW0108: a fresh lambda is a fresh trace
+"tools/**" = ["T20", "PLC0415"]
+"examples/**" = ["T20", "PLC0415", "E402"]  # x64 is set before the imports that need it
 
 [tool.codespell]
 ignore-words-list = "statics,nd,kinf,indx,radis,caf,optin"
@@ -195,10 +197,7 @@ addopts = ["-ra", "--tb=short", "--strict-markers", "--strict-config"]
 xfail_strict = true
 log_level = "INFO"
 testpaths = ["tests"]
-filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::PendingDeprecationWarning",
-]
+filterwarnings = ["error"]
 markers = [
     "slow: minutes or several GB; skipped unless VULCAN3_RUN_SLOW=1",
     "gpu: needs a GPU; runs locally, never in CI",
@@ -224,6 +223,9 @@ enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 warn_unreachable = true
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+# ndarray type parameters add nothing here: shapes and dtypes are in the comments beside each array.
+disallow_any_generics = false
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "vulcan3.*"

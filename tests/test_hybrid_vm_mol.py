@@ -68,8 +68,9 @@ def test_hybrid_flips_and_extends_budget():
 
 
 def test_returned_atm_carries_refreshed_zmco_and_vm():
-    """The returned atm (what the .vul writer stores) must carry the fields
-    upstream's update_mu_dz refreshes in-loop: zmco from the refreshed zco
+    """The returned atm, what the .vul writer stores, must carry the fields upstream refreshes in-loop.
+
+    From update_mu_dz: zmco from the refreshed zco
     (op.py:972-973) and, under use_vm_mol, vm from the refreshed g/Hpi/dzi
     (vm_branch op.py:945-992). Setup-time copies are the silent failure.
     """

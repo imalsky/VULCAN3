@@ -10,7 +10,7 @@ Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, l
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -20,7 +20,7 @@ from .phy_const import UNDERFLOW_DENOM
 __all__ = ["AtmRefreshStatic", "hydrostatic_step", "recompute_vm_jax", "update_mu_dz_jax", "update_phi_esc_jax"]
 
 
-def hydrostatic_step(T, mu, g, p_lo, p_hi, kb, Navo):
+def hydrostatic_step(T: jnp.ndarray, mu: jnp.ndarray, g: jnp.ndarray, p_lo: Any, p_hi: Any, kb: Any, Navo: Any) -> Any:
     """Pressure scale height `Hp` and layer thickness `dz` for one layer.
 
     The single definition of the formula: `atm_setup._scan_up_mu_dz_g` and
@@ -52,7 +52,7 @@ class AtmRefreshStatic(NamedTuple):
     nz: int  # static
 
 
-def update_mu_dz_jax(ymix: jnp.ndarray, st: AtmRefreshStatic):
+def update_mu_dz_jax(ymix: jnp.ndarray, st: AtmRefreshStatic) -> Any:
     """Recompute (mu, g, Hp, dz, zco, dzi, Hpi) from the current ymix (nz, ni).
 
     Shapes: mu (nz,), g (nz,), Hp (nz,), dz (nz,), zco (nz+1,), dzi (nz-1,),
@@ -72,7 +72,7 @@ def update_mu_dz_jax(ymix: jnp.ndarray, st: AtmRefreshStatic):
     mu = jnp.einsum("zi,i->z", ymix, st.ms)
 
     # Forward scan upward from `pref_indx` to nz-1.
-    def fwd_step(zco_i, i):
+    def fwd_step(zco_i: Any, i: Any) -> Any:
         # g at the reference layer is gs by definition; above it, g follows
         # the inverse-square law from Rp+zco[i].
         is_pref = i == pref_indx
@@ -89,7 +89,7 @@ def update_mu_dz_jax(ymix: jnp.ndarray, st: AtmRefreshStatic):
     )
 
     # Backward scan downward from pref_indx-1 to 0; length 0 when pref_indx==0.
-    def bwd_step(zco_ip1, i):
+    def bwd_step(zco_ip1: Any, i: Any) -> Any:
         # The layer sits below zco[i+1], so g uses Rp+zco[i+1].
         g_i = gs * (Rp / (Rp + zco_ip1)) ** 2
         Hp_i, dz_i = hydrostatic_step(Tco[i], mu[i], g_i, pico[i], pico[i + 1], kb, Navo)

@@ -46,7 +46,7 @@ def fake_oracle(tmp_path):
             (repo / rel).write_text("upstream\n")
     # the declared code delta must find its OLD block exactly once
     (repo / "op.py").write_text("def read_rate():\n" + orc.ORACLE_CODE_DELTAS["op.py"][0][0])
-    _git_init = subprocess.run(["git", "init", "-q", str(repo)], capture_output=True, text=True)
+    _git_init = subprocess.run(["git", "init", "-q", str(repo)], capture_output=True, text=True, check=False)
     assert _git_init.returncode == 0, _git_init.stderr
     _git(repo, "config", "user.email", "t@example.invalid")
     _git(repo, "config", "user.name", "t")
@@ -69,7 +69,8 @@ def test_manifest_is_well_formed():
     for family, spec in m["oracles"].items():
         assert "repo" in spec, family
         commit = spec.get("commit", "")
-        assert len(commit) == 40 and all(c in "0123456789abcdef" for c in commit), (
+        assert len(commit) == 40, f"{family}: commit must be a full 40-hex sha, got {commit!r}"
+        assert all(c in "0123456789abcdef" for c in commit), (
             f"{family}: commit must be a full 40-hex sha, got {commit!r}"
         )
         assert spec.get("why", "").strip(), f"{family}: needs a reason"

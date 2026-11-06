@@ -12,7 +12,7 @@ import copy
 import types
 import warnings
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import jax.numpy as jnp
 import numpy as np
@@ -84,7 +84,7 @@ class AtmInputs(NamedTuple):
 class RateInputs(NamedTuple):
     """Rate constants. `k[0]` is unused: reactions are 1-based throughout VULCAN."""
 
-    k: jnp.ndarray  # (nr+1, nz) rate constants of every reaction
+    k: Any  # (nr+1, nz) rate constants of every reaction
 
 
 class IniAbunOutputs(NamedTuple):
@@ -263,7 +263,7 @@ class RunState(NamedTuple):
     photo_static: PhotoStaticInputs | None = None
 
     @staticmethod
-    def with_pre_loop_setup(cfg) -> RunState:
+    def with_pre_loop_setup(cfg: Any) -> RunState:
         """Build a fully-initialised `RunState` from a config.
 
         Runs the full pre-loop pipeline (atmosphere structure, rate constants
@@ -291,7 +291,7 @@ _SFLUX_BIN_MIN_NM = 2.0
 _SFLUX_BIN_MAX_NM = 700.0
 
 
-def load_stellar_flux(cfg) -> tuple[float, float]:
+def load_stellar_flux(cfg: Any) -> tuple[float, float]:
     """Read the stellar flux file and return the spectral-bin extents.
 
     Returns `(def_bin_min, def_bin_max)`, clamped to [2, 700] nm, or
@@ -313,7 +313,7 @@ def load_stellar_flux(cfg) -> tuple[float, float]:
     )
 
 
-def pytree_from_store(var, atm) -> RunState:
+def pytree_from_store(var: Any, atm: Any) -> RunState:
     """Snapshot atm + rate + photo fields off a legacy (var, atm) into a typed RunState."""
     nr = int(chem_funs.nr)
     nz = int(atm.Tco.shape[0])
@@ -365,19 +365,19 @@ def pytree_from_store(var, atm) -> RunState:
     return RunState(atm=atm_inputs, rate=rate_inputs, photo=photo_inputs)
 
 
-def _atom_dict_to_arr(d, atom_order) -> np.ndarray:
+def _atom_dict_to_arr(d: Any, atom_order: Any) -> np.ndarray:
     return np.asarray(
         [float(d.get(a, 0.0)) for a in atom_order],
         dtype=np.float64,
     )
 
 
-def _atom_arr_to_dict(arr, atom_order) -> dict:
+def _atom_arr_to_dict(arr: Any, atom_order: Any) -> dict:
     return {a: float(arr[i]) for i, a in enumerate(atom_order)}
 
 
 # size-limit-ok: one RunState field per line
-def runstate_from_store(var, atm, para) -> RunState:
+def runstate_from_store(var: Any, atm: Any, para: Any) -> RunState:
     """Snapshot the full runner-input state of `(var, atm, para)`.
 
     Carries pre-loop fields plus runner-state slots (step/params/atoms/
@@ -476,7 +476,7 @@ def runstate_from_store(var, atm, para) -> RunState:
     )
 
 
-def _atm_metadata_from_atm(atm) -> dict:
+def _atm_metadata_from_atm(atm: Any) -> dict:
     return {
         "Ti": jnp.asarray(getattr(atm, "Ti", atm.Tco), dtype=jnp.float64),
         "gas_indx": tuple(getattr(atm, "gas_indx", []) or []),
@@ -490,7 +490,7 @@ def _atm_metadata_from_atm(atm) -> dict:
     }
 
 
-def _runmetadata_from_legacy(var, atm, para) -> RunMetadata:
+def _runmetadata_from_legacy(var: Any, atm: Any, para: Any) -> RunMetadata:
     """Snapshot host-side static metadata that doesn't fit the JAX pytrees."""
     atm_meta = _atm_metadata_from_atm(atm)
     y_ini_src = getattr(var, "y_ini", None)
@@ -541,7 +541,7 @@ def _same_file(want: str, have: str, what: str) -> bool:
         return True
 
 
-def _frozen_mismatch(cfg) -> dict[str, tuple]:
+def _frozen_mismatch(cfg: Any) -> dict[str, tuple]:
     """Return the import-frozen knobs (`config._FROZEN_ENV`) on which `cfg` disagrees with the first `import vulcan3`.
 
     Returned as ``{knob: (requested, import-time)}``. A file knob matches a byte-identical copy at another path.
@@ -571,7 +571,7 @@ def _frozen_mismatch(cfg) -> dict[str, tuple]:
     return out
 
 
-def _assert_frozen_knobs_match_import(cfg) -> None:
+def _assert_frozen_knobs_match_import(cfg: Any) -> None:
     """Fail fast if `cfg` requests another network, com_file or atom_list.
 
     It must match the import-frozen one (`_frozen_mismatch`). ``make_config(...)`` cannot change them
@@ -591,7 +591,7 @@ def _assert_frozen_knobs_match_import(cfg) -> None:
 
 
 @contextlib.contextmanager
-def _cfg_overlay(cfg):
+def _cfg_overlay(cfg: Any) -> Any:
     """Overlay cfg's public attributes onto the process default config for setup.
 
     The pre-loop scratch containers, the ``atm_setup``/``ini_abun`` facades,
@@ -619,9 +619,7 @@ def _cfg_overlay(cfg):
         # Copy mutable containers rather than aliasing, so an in-place write
         # through `base` can never reach the caller's cfg. Setup must not
         # write config knobs: such a write is lost when the overlay ends.
-        if isinstance(val, (list, dict, set, bytearray)):
-            val = copy.deepcopy(val)
-        setattr(base, name, val)
+        setattr(base, name, copy.deepcopy(val) if isinstance(val, (list, dict, set, bytearray)) else val)
     try:
         yield
     finally:
@@ -631,7 +629,7 @@ def _cfg_overlay(cfg):
             delattr(base, name)
 
 
-def _build_pre_loop_runstate_impl(cfg) -> RunState:
+def _build_pre_loop_runstate_impl(cfg: Any) -> RunState:
     """Run the full pre-loop pipeline and return a populated RunState."""
     import time
 

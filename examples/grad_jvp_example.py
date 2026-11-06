@@ -27,6 +27,7 @@ from vulcan3.jax_step import AtmStatic, jax_ros2_step
 
 
 def main() -> int:
+    """Run the example; return 0 on success."""
     # ---- Build a small synthetic atmosphere just big enough to step. ----
     net = _chem_mod.to_jax(_net_mod.parse_network(default_config().network))
     nz, ni = 12, net.ni

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import jax.numpy as jnp
 
 from .phy_const import UNDERFLOW_DENOM
@@ -32,7 +34,7 @@ def _step_size(
     return jnp.clip(dt * h_factor, dt_min, dt_max)
 
 
-def _clip_prologue(y_in, pos_cut: float, nega_cut: float):
+def _clip_prologue(y_in: Any, pos_cut: float, nega_cut: float) -> Any:
     """Return `(y_clip, small_y_inc, nega_y_inc)`: the per-step clip of both `_make_clip_fn` branches.
 
     Values in [nega_cut, pos_cut) go to 0. A value below nega_cut stays
@@ -51,7 +53,7 @@ def _make_clip_fn(
     gas_indx_mask: jnp.ndarray,
     pos_cut: float,
     nega_cut: float,
-):
+) -> Any:
     """Build a `clip(y_in) -> (y_clip, ymix_new, small_inc, nega_inc)` closure.
 
     `non_gas_present` selects between the gas-only / total `ysum` denominators
@@ -61,7 +63,7 @@ def _make_clip_fn(
     if non_gas_present:
         gas_mask_2d = gas_indx_mask  # (ni,) bool
 
-        def clip_fn(y_in):
+        def clip_fn(y_in: Any) -> Any:
             y_clip, small_y_inc, nega_y_inc = _clip_prologue(y_in, pos_cut, nega_cut)
             ysum = jnp.sum(jnp.where(gas_mask_2d[None, :], y_clip, 0.0), axis=1, keepdims=True)
             # ysum==0 on an all-clipped gas layer (master divides unguarded):
@@ -72,7 +74,7 @@ def _make_clip_fn(
             return y_clip, ymix_new, small_y_inc, nega_y_inc
     else:
 
-        def clip_fn(y_in):
+        def clip_fn(y_in: Any) -> Any:
             y_clip, small_y_inc, nega_y_inc = _clip_prologue(y_in, pos_cut, nega_cut)
             # No condensate column exists here, so the numerator cannot
             # overflow a tiny denominator: flooring an all-zero layer's ysum
@@ -85,7 +87,7 @@ def _make_clip_fn(
     return clip_fn
 
 
-def _make_aggregate_delta_fn(mtol: float, atol: float, zero_bot_row: bool, condense_zero_mask: jnp.ndarray):
+def _make_aggregate_delta_fn(mtol: float, atol: float, zero_bot_row: bool, condense_zero_mask: jnp.ndarray) -> Any:
     """Build the scalar `delta(sol, delta_arr, ymix_old, zero_bot, ymix_trial)` reducer.
 
     Zeros entries where both the pre-step and the trial (pre-clip) mixing ratio
@@ -97,7 +99,9 @@ def _make_aggregate_delta_fn(mtol: float, atol: float, zero_bot_row: bool, conde
     """
     cond_zero = jnp.asarray(condense_zero_mask, dtype=jnp.bool_)
 
-    def agg(sol, delta_arr, ymix_old, zero_bot=None, ymix_trial=None):
+    def agg(
+        sol: jnp.ndarray, delta_arr: jnp.ndarray, ymix_old: Any, zero_bot: Any = None, ymix_trial: Any = None
+    ) -> Any:
         dead = ymix_old < mtol
         if ymix_trial is not None:
             dead = dead & (ymix_trial < mtol)

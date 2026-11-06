@@ -25,8 +25,9 @@ LAPACK_RTOL = 1e-12  # the repair sweep vs lax.linalg.tridiagonal_solve
 
 
 def test_projection_conserves_atoms_on_reservoir_rows_only(hd189_state):
-    """An injected CH4 defect and the real codegen RHS both project to an atom
-    residual under PROJECTION_TOL of their scale, changing reservoir columns only.
+    """Project an injected CH4 defect and the real codegen RHS to an atom residual under PROJECTION_TOL.
+
+    Both are measured against their scale, and only reservoir columns change.
     """
     import jax.numpy as jnp
 
@@ -146,7 +147,8 @@ def test_repair_tridiagonal_solve_is_lapack_gtsv_with_its_tangent(hd189_state):
     for dt in (1e4, 1e8, 1e11, 1e13, 1e15):
         d = 1.0 / (js._ROS2_GAMMA * dt) - diag_d[:, ridx]
         x = js._tridiagonal_solve(dl, d, du, g)
-        assert bool(jnp.all(jnp.isfinite(x))) and backward_error(dl, d, du, g, x) < 5e-15, dt
+        assert bool(jnp.all(jnp.isfinite(x))), dt
+        assert backward_error(dl, d, du, g, x) < 5e-15, dt
 
     # Well-conditioned, column-dominant, with five rows shrunk so |d_i| < |dl_{i+1}|
     # forces a swap there; plus the 3x3 whose unpivoted second pivot is exactly 0.

@@ -14,17 +14,19 @@ from __future__ import annotations
 
 import copy
 import functools
-import os
 import re
 import types
 import warnings
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from . import _settings
+
+if TYPE_CHECKING:
+    import os
 
 __all__ = [
     "DT_MAX_S",
@@ -51,7 +53,7 @@ class _StrictLoader(yaml.SafeLoader):
     2. Duplicate keys raise instead of last-wins.
     """
 
-    def construct_mapping(self, node, deep=False):
+    def construct_mapping(self, node: Any, deep: bool = False) -> Any:
         seen: set = set()
         for key_node, _ in node.value:
             key = self.construct_object(key_node, deep=deep)

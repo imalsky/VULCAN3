@@ -9,7 +9,7 @@ Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, l
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import jax.numpy as jnp
 
@@ -109,13 +109,13 @@ class CondenProfile(NamedTuple):
     fix_species_sat_mix: jnp.ndarray  # (n_fix, nz)
 
 
-def _m_over_rho_r2(atm, gas_sp: str) -> float:
+def _m_over_rho_r2(atm: Any, gas_sp: str) -> float:
     """`m / (rho_p * r_p**2)` for `gas_sp` and its condensate, in cgs."""
     c = GAS_TO_CONDENSATE[gas_sp]
     return (GAS_MASS_G_PER_MOL[gas_sp] / Navo) / (float(atm.rho_p[c]) * float(atm.r_p[c]) ** 2)
 
 
-def make_conden_spec(cfg, var, atm, species_idx) -> CondenSpec:
+def make_conden_spec(cfg: Any, var: Any, atm: Any, species_idx: Any) -> CondenSpec:
     """Extract the static condensation metadata from a completed setup.
 
     Walks `var.conden_re_list`: a reaction
@@ -243,9 +243,9 @@ def build_conden_profile(
     h2o_sat = _sat_n("H2O") if spec.h2o_active else zz
     nh3_Dg = _Dg_col(spec.nh3_idx) if spec.nh3_active else zz
     nh3_sat = _sat_n("NH3") if spec.nh3_active else zz
-    if spec.nh3_active:
-        # conden_top = argmin(sat_mix['NH3']) = argmin(sat_n / n_0);
-        # discrete by nature, moves layer-by-layer as T changes.
+    # conden_top = argmin(sat_mix['NH3']) = argmin(sat_n / n_0);
+    # discrete by nature, moves layer-by-layer as T changes.
+    if spec.nh3_active:  # noqa: SIM108 (the comment above reads better on two branches)
         nh3_conden_top = jnp.argmin(nh3_sat / n_0).astype(jnp.int32)
     else:
         nh3_conden_top = jnp.int32(0)
@@ -331,7 +331,18 @@ def update_conden_rates(k_arr: jnp.ndarray, y: jnp.ndarray, st: CondenStatic) ->
     return k_arr_new.at[st.conden_re_idx + 1].set(k_neg)
 
 
-def _relax(y, ymix, dt, st, idx, l_s, Dg, sat, m_over, conden_top=None):
+def _relax(
+    y: jnp.ndarray,
+    ymix: jnp.ndarray,
+    dt: jnp.ndarray,
+    st: Any,
+    idx: Any,
+    l_s: Any,
+    Dg: Any,
+    sat: Any,
+    m_over: Any,
+    conden_top: Any = None,
+) -> Any:
     """Implicit-Euler cold-trap relaxation of gas `idx` toward `sat`.
 
     Condense where `tau > 0` (y > sat), evaporate where `tau < 0`; mass

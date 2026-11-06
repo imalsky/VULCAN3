@@ -23,7 +23,7 @@ def _manual_jion(aflux, cross, split, dbin1, dbin2):
 
 
 # size-limit-ok: one oracle script, run in a subprocess on a copy of master
-def main() -> int:
+def test_photo_ion_rates():
     aflux = np.array(
         [
             [1.0, 2.0, 4.0, 8.0, 16.0],
@@ -120,8 +120,4 @@ def main() -> int:
 
     print()
     print("PASS" if ok else "FAIL")
-    return 0 if ok else 1
-
-
-def test_main():
-    assert main() == 0
+    assert ok

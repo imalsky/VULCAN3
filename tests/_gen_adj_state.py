@@ -77,7 +77,7 @@ def build_hd189(out_dir: Path) -> Path:
     cfg.yconv_cri = 1e-3
     cfg.count_max = 3000
     cfg.runtime = 1e14
-
+    cfg.nega_cut = float("-inf")  # stalls at the shipped -1 (notes "Forward mode")
     import vulcan3.legacy_io as op
     from vulcan3 import chem as chem_mod, composition, network as net_mod, op_jax, outer_loop
     from vulcan3.jax_step import jax_ros2_step, make_atm_static
@@ -97,6 +97,8 @@ def build_hd189(out_dir: Path) -> Path:
     atm_static = make_atm_static(atm_d, ni, nz, cfg=integ._cfg)
     state0 = integ._pack_state_from_runstate(rs)
     final = integ._runner(state0, atm_static)
+    if integ._classify_end_case(final) != 1:
+        raise RuntimeError(f"HD189 fixture not certified at step {int(final.accept_count)}")
     y0 = final.y
     atm_step = atm_static._replace(g=final.g, dzi=final.dzi, Hpi=final.Hpi, top_flux=final.top_flux, vs=final.vs)
     kj = jnp.asarray(state0.k_arr)

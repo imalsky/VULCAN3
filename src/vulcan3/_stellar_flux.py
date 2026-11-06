@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # size-limit-ok: one binning pass, in the order the bit-parity tests pin
 def read_sflux_binned(
-    cfg,
+    cfg: Any,
     bins: np.ndarray,
     sflux_raw: np.ndarray | None = None,
 ) -> dict[str, Any]:
@@ -145,14 +145,14 @@ def _parse_bc_file(path: str) -> list[list[str]]:
     return rows
 
 
-def _bc_species_index(sp: str, species_list: list[str], path) -> int:
+def _bc_species_index(sp: str, species_list: list[str], path: str) -> int:
     """Return a boundary-flux row's species index, refusing a species outside the network, as upstream does."""
     if sp not in species_list:
         raise ValueError(f"{path}: boundary-flux row names {sp!r}, which is not in the network; remove the row.")
     return species_list.index(sp)
 
 
-def read_bc_flux(cfg, species_list: list[str]) -> dict[str, np.ndarray]:
+def read_bc_flux(cfg: Any, species_list: list[str]) -> dict[str, np.ndarray]:
     """Build (top_flux, bot_flux, bot_vdep, bot_fix_sp).
 
     use_topflux and use_botflux each fill their section from a file. bot_fix_sp

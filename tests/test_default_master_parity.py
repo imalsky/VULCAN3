@@ -230,6 +230,7 @@ def _run_script(script: str, args: list) -> subprocess.CompletedProcess[str]:
         text=True,
         timeout=900.0,
         env={**os.environ, "PYTHONHASHSEED": "0"},
+        check=False,
     )
 
 
@@ -268,7 +269,10 @@ def _run_pair(master_root: Path, knobs: dict, jax_script: str) -> tuple[dict, di
             (jax_script, [PACKAGE_ROOT, jax_npz, master_npz], "JAX_OK"),
         ):
             res = _run_script(script, args)
-            assert res.returncode == 0 and tag in res.stdout, (
+            assert res.returncode == 0, (
+                f"{tag} subprocess failed {res.returncode}\n--- stdout ---\n{res.stdout}\n--- stderr ---\n{res.stderr}"
+            )
+            assert tag in res.stdout, (
                 f"{tag} subprocess failed {res.returncode}\n--- stdout ---\n{res.stdout}\n--- stderr ---\n{res.stderr}"
             )
         return (dict(np.load(master_npz, allow_pickle=True)), dict(np.load(jax_npz, allow_pickle=True)))
@@ -438,7 +442,7 @@ os.environ["JAX_PLATFORMS"] = "cpu"
 sys.path.insert(0, str(package_root.parent))
 os.chdir(package_root)
 
-import vulcan3  # noqa: F401
+import vulcan3  # noqa: F401 (freezes the network named by the variables above)
 import vulcan3.chem_funs as chem_funs
 import vulcan3.legacy_io as op
 import vulcan3.op_jax as op_jax

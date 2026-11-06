@@ -72,12 +72,11 @@ def test_use_vm_mol_populates_vm():
     ],
 )
 def test_bc_flux_loaded_from_file(flag, file_attr, file_path, target_sp, tmp_path):
-    """``use_topflux=True`` / ``use_botflux=True`` populates
-    ``atm.top_flux`` / ``atm.bot_flux`` from the matching cfg file.
+    """Populate ``atm.top_flux`` and ``atm.bot_flux`` from the matching cfg file.
+
     Verifies non-zero flux for at least one network species.
     """
     from vulcan3 import composition
-
     from vulcan3._paths import resolve_data_path
 
     species_list = list(composition.species)

@@ -10,12 +10,13 @@ examples/grad_reverse_example.py.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
+from ._carry import JaxIntegState
 from .conden import (
     CondenStatic,
     apply_h2o_relax_jax,
@@ -197,7 +198,7 @@ def steady_state_reaction_sensitivity(
     body_terms: BodyTerms | None = None,
     n_solves: int = N_SOLVES_DEFAULT,
     return_info: bool = False,
-):
+) -> Any:
     """Reverse-mode `dL/d(ln k_r)` at a converged steady state.
 
     Sensitivity of a scalar loss of the converged composition to every
@@ -243,7 +244,7 @@ def steady_state_reaction_sensitivity(
     body_dt
         Adjoint-only probe step in s (see `BODY_MAP_DT`); scan on a new column.
     photo_recompute_k
-        On photo-on columns pass `make_photo_recompute_k(integ._photo_static,
+        On photo-on columns pass `make_photo_recompute_k(integ.photo_static,
         final_state)`, a `k(y) -> k_arr` recompute so the state operator
         carries `dJ/dy` (WASP-39b OH+H2 11% -> 0.2%); it costs an RT solve per
         Krylov matvec. `"auto"` (default) and `None` mean no photolysis
@@ -324,8 +325,8 @@ def steady_state_reaction_sensitivity(
     g_mean_full = np.asarray(dL_dlnk)
     k_np = np.asarray(k_arr)
     pair_antisym = 0.0
-    for r in np.argsort(np.abs(g_mean_full))[::-1][:_TOP_K]:
-        r = int(r)
+    for r_np in np.argsort(np.abs(g_mean_full))[::-1][:_TOP_K]:
+        r = int(r_np)
         f = r if r % 2 == 1 else r - 1
         rev = f + 1
         if f < 1 or rev >= g_mean_full.shape[0]:
@@ -362,7 +363,7 @@ def steady_state_input_sensitivity(
     k_arr: jnp.ndarray,
     atm: AtmStatic,
     net: NetworkArrays,
-    p0,
+    p0: Any,
     rebuild: Callable,
     *,
     compo_array: jnp.ndarray,
@@ -372,7 +373,7 @@ def steady_state_input_sensitivity(
     body_terms: BodyTerms | None = None,
     n_solves: int = N_SOLVES_DEFAULT,
     return_info: bool = False,
-):
+) -> Any:
     """Reverse-mode `dL/dp` at a converged steady state.
 
     For an arbitrary physical input pytree `p` (a (nz,) temperature profile, ln Kzz, ...).
@@ -455,7 +456,7 @@ def steady_state_input_sensitivity(
     # rebuild(p0) must reproduce the map the state converged under.
     k0, atm0 = rebuild(p0)
 
-    def _worst_rel(a, b) -> float:
+    def _worst_rel(a: Any, b: Any) -> float:
         a_np = np.asarray(a, dtype=np.float64)
         b_np = np.asarray(b, dtype=np.float64)
         if a_np.shape != b_np.shape:
@@ -503,7 +504,7 @@ def steady_state_input_sensitivity(
     )
 
     # Parameter map at the fixed point; photolysis rows ride k(p) frozen.
-    def G_p(p):
+    def G_p(p: Any) -> Any:
         k_p, atm_p = rebuild(p)
         return apply_post(step_fn(y_star, k_p, atm_p), M_col=atm_p.M[:, None])
 
@@ -530,7 +531,7 @@ def steady_state_input_sensitivity(
     return dL_dp, info
 
 
-def make_photo_recompute_k(runner_photo_static, converged_state):
+def make_photo_recompute_k(runner_photo_static: Any, converged_state: Any) -> Any:
     """Build a differentiable `k(y)` that rebuilds the photolysis rows from y.
 
     Reuses the runner's own in-loop photo branch so the recompute is
@@ -542,7 +543,7 @@ def make_photo_recompute_k(runner_photo_static, converged_state):
     Parameters
     ----------
     runner_photo_static
-        The runner's internal `_PhotoStatic` (`OuterLoop._photo_static` after
+        The runner's internal `_PhotoStatic` (`OuterLoop.photo_static` after
         `_ensure_runner`), not the public `PhotoStaticInputs` pytree.
     converged_state
         A converged `JaxIntegState`; supplies the frozen geometry (`dz`, `pv`
@@ -558,7 +559,7 @@ def make_photo_recompute_k(runner_photo_static, converged_state):
 
     photo_branch = _make_photo_branch(runner_photo_static)
 
-    def recompute_k(y):
+    def recompute_k(y: jnp.ndarray) -> Any:
         ymix = y / jnp.sum(y, axis=1, keepdims=True)
         return photo_branch(converged_state._replace(y=y, ymix=ymix)).k_arr
 
@@ -566,7 +567,7 @@ def make_photo_recompute_k(runner_photo_static, converged_state):
 
 
 # size-limit-ok: one branch per process, with its doc
-def make_body_terms(integ, converged_state, atm_static):
+def make_body_terms(integ: Any, converged_state: Any, atm_static: Any) -> Any:
     """Build `(atm_step, BodyTerms)` for the adjoint from a finished runner.
 
     Packs every supported per-step process the runner's configuration turns

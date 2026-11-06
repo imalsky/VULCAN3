@@ -171,7 +171,8 @@ def test_disabled_switches_give_zero_arrays():
         **{k: (v, (ni,)) for k, v in read_bc_flux(off, sp).items()},
     }
     for name, (arr, shape) in arrays.items():
-        assert arr.shape == shape and np.all(arr == 0.0), name
+        assert arr.shape == shape, name
+        assert np.all(arr == 0.0), name
 
 
 # atm_base x mol_diff matrix

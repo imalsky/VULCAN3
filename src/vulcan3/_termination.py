@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from ._carry import JaxIntegState, _Statics
 
 
-def ring_slot(statics: _Statics, accept_count):
+def ring_slot(statics: _Statics, accept_count: jnp.ndarray) -> Any:
     """Return the ring slot the accepted step number `accept_count` is written to (op.save_step).
 
     `(accept_count - 1) % conv_step`.
@@ -25,7 +25,7 @@ def ring_slot(statics: _Statics, accept_count):
     )
 
 
-def lookback_index(statics: _Statics, s: JaxIntegState, accept_count_after: jnp.ndarray):
+def lookback_index(statics: _Statics, s: JaxIntegState, accept_count_after: jnp.ndarray) -> Any:
     """Ring slot closest in time to `t * st_factor`, never the newest."""
     target_t = s.t * statics.st_factor
     diffs = jnp.abs(s.t_time_ring - target_t)
@@ -72,13 +72,13 @@ def conv_jax(
     return longdy_new, longdydt_new, ratio
 
 
-def two_branch(statics: _Statics, longdy, longdydt, slope_min):
+def two_branch(statics: _Statics, longdy: jnp.ndarray, longdydt: jnp.ndarray, slope_min: Any) -> Any:
     """Tight (yconv_cri, slope_cri) OR loose (yconv_min, slope_min)."""
     tight, loose = _branches(longdy, longdydt, slope_min, statics)
     return tight | loose
 
 
-def real_terminate(statics: _Statics, s: JaxIntegState, tangent_ok=True):
+def real_terminate(statics: _Statics, s: JaxIntegState, tangent_ok: bool = True) -> Any:
     """Termination predicate + reason code.
 
     Reason priority matches master's stop() (op.py:1065-1085): converged
@@ -128,7 +128,7 @@ def real_terminate(statics: _Statics, s: JaxIntegState, tangent_ok=True):
     return real_term, reason
 
 
-def cond_fn(statics: _Statics, s: JaxIntegState):
+def cond_fn(statics: _Statics, s: JaxIntegState) -> Any:
     """Continue while the run has not terminated."""
     real_term, _ = real_terminate(statics, s)
     return jnp.logical_not(real_term)

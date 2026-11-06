@@ -3,7 +3,7 @@
 Consumers import the names in each module's `__all__`. `tests/test_public_api.py` checks every name a consumer uses.
 
 The top level exports `Config`, `RunState`, `__version__`, `conv_normal`, `default_config`, `load_config`, `make_config` and
-`validate_overrides`.
+`validate_overrides`. A refused config raises `runtime_validation.RuntimeConfigError`, a `ValueError` and a `RuntimeError`.
 
 ## Deprecated names
 

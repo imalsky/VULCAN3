@@ -20,8 +20,6 @@ import pytest
 from vulcan3 import conden
 from vulcan3.phy_const import Navo, kb
 
-jax.config.update("jax_enable_x64", True)
-
 NZ = 40
 NI = 6
 # Fake species table: columns of the fabricated Dzz array.
@@ -188,7 +186,8 @@ def test_temperature_moves_saturation_and_boundaries(spec):
     y_s8 = np.sqrt(sat_cold.min() * sat_cold.max()) * np.ones(NZ)
     sup_cold = y_s8 > sat_cold
     sup_warm = y_s8 > np.asarray(p_warm.sat_n_per_re)[2]
-    assert sup_cold.any() and not sup_cold.all(), "boundary must lie inside grid"
+    assert sup_cold.any(), "boundary must lie inside grid"
+    assert not sup_cold.all(), "boundary must lie inside grid"
     assert (sup_cold != sup_warm).any(), "boundary must move with T"
     # Cold-trap index: mid-column T minimum vs a monotonically colder top.
     T_mono = np.linspace(260.0, 160.0, NZ)

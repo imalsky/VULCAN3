@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import jax.numpy as jnp
 import jax.scipy.special as jsp_special
@@ -47,7 +48,7 @@ def compute_pico(pco: jnp.ndarray) -> jnp.ndarray:
     )
 
 
-def surface_gravity(cfg) -> float:
+def surface_gravity(cfg: Any) -> float:
     """Surface gravity at the reference level (cm/s^2): ``g = G*Mp/Rp**2``.
 
     Single source of gravity (upstream vm_branch); there is no ``gs`` knob.
@@ -63,7 +64,9 @@ def surface_gravity(cfg) -> float:
     return G_grav * float(Mp) / float(Rp) ** 2
 
 
-def high_temp_cut_regrid(pco, Tco, *, T_max: float, P_min: float, P_t: float, nz: int) -> np.ndarray | None:
+def high_temp_cut_regrid(
+    pco: jnp.ndarray, Tco: jnp.ndarray, *, T_max: float, P_min: float, P_t: float, nz: int
+) -> np.ndarray | None:
     """Re-gridded pressure column for the high-temperature bottom cut.
 
     ``pco[0]`` is the deepest (highest-pressure) level. If any layer at
@@ -85,7 +88,7 @@ def high_temp_cut_regrid(pco, Tco, *, T_max: float, P_min: float, P_t: float, nz
     return np.logspace(np.log10(new_P_b), np.log10(P_t), int(nz))
 
 
-def analytical_TP_H14(pco: jnp.ndarray, params, *, gs: float, Pb: float) -> jnp.ndarray:
+def analytical_TP_H14(pco: jnp.ndarray, params: Any, *, gs: float, Pb: float) -> jnp.ndarray:
     """Heng et al. 2014 analytical T(P) profile.
 
     `params` is the 6-tuple `(T_int, T_irr, ka_0, ka_s, beta_s, beta_l)`.
@@ -214,7 +217,7 @@ def _read_atm_table(atm_file: str) -> dict[str, np.ndarray]:
 
 
 # size-limit-ok: one branch per atm_type and Kzz_prof, as master
-def load_TPK(cfg, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, jnp.ndarray]:  # noqa: C901 (one branch per atm_type and Kzz_prof, as master)
+def load_TPK(cfg: Any, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, jnp.ndarray]:  # noqa: C901 (one branch per atm_type and Kzz_prof, as master)
     """Build (Tco, Kzz, vz, M, n_0) for the configured atm/Kzz/vz modes.
 
     `pco` and `pico` are inputs because the `table` mode

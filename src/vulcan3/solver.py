@@ -6,7 +6,7 @@ differentiable and JIT-friendly. The elimination is in docs/method.md.
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -14,7 +14,7 @@ import jax.numpy as jnp
 __all__ = ["BlockThomasDiagFactors", "factor_block_thomas_diag_offdiag", "solve_block_thomas_diag_offdiag"]
 
 
-def _lu_solve_perm(lu, perm, b):
+def _lu_solve_perm(lu: jnp.ndarray, perm: jnp.ndarray, b: Any) -> Any:
     """lu_solve with the row permutation already materialized.
 
     `jax.scipy.linalg.lu_solve` (jax 0.6.2) rebuilds it from the pivots on
@@ -39,7 +39,7 @@ class BlockThomasDiagFactors(NamedTuple):
     sub_d: jnp.ndarray
 
 
-def factor_block_thomas_diag_offdiag(diag, sup_d, sub_d):
+def factor_block_thomas_diag_offdiag(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> Any:
     """Factor a diagonal-offdiag block-tridiagonal system once for reuse.
 
     Both Ros2 stages share the factors. The per-layer pivoted LU keeps error
@@ -52,7 +52,7 @@ def factor_block_thomas_diag_offdiag(diag, sup_d, sub_d):
 
     A0_lu, _, A0_perm = jax.lax.linalg.lu(diag[0])
 
-    def fwd_step(carry, inputs):
+    def fwd_step(carry: Any, inputs: Any) -> Any:
         A_prev_lu, A_prev_perm = carry
         A_j, b_jm1, c_j = inputs
         A_prev_inv = _lu_solve_perm(A_prev_lu, A_prev_perm, eye_ni)
@@ -76,11 +76,11 @@ def factor_block_thomas_diag_offdiag(diag, sup_d, sub_d):
     )
 
 
-def solve_block_thomas_diag_offdiag(factors: BlockThomasDiagFactors, rhs):
+def solve_block_thomas_diag_offdiag(factors: BlockThomasDiagFactors, rhs: jnp.ndarray) -> Any:
     """Solve a diagonal-offdiag block-tridiagonal system for a new RHS."""
     rhs0 = rhs[0]
 
-    def fwd_rhs_step(rhs_prev, inputs):
+    def fwd_rhs_step(rhs_prev: Any, inputs: Any) -> Any:
         A_prev_lu, A_prev_perm, c_j, rhs_j = inputs
         invA_r = _lu_solve_perm(A_prev_lu, A_prev_perm, rhs_prev)
         rhs_new = rhs_j - c_j * invA_r
@@ -104,7 +104,7 @@ def solve_block_thomas_diag_offdiag(factors: BlockThomasDiagFactors, rhs):
         rhs_mod_full[-1],
     )
 
-    def bwd_step(k_next, inputs):
+    def bwd_step(k_next: Any, inputs: Any) -> Any:
         A_lu, A_perm, rhs_mod, b_j = inputs
         rhs_local = rhs_mod - b_j * k_next
         k_curr = _lu_solve_perm(A_lu, A_perm, rhs_local)

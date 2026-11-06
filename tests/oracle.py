@@ -53,7 +53,7 @@ def oracle_spec(family: str) -> dict:
 
 
 def _git(repo: Path, *args: str) -> tuple[int, str]:
-    r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=30)
+    r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=30, check=False)
     return r.returncode, r.stdout.strip()
 
 
@@ -80,7 +80,11 @@ def run_oracle_subprocess(test_file, family: str, config_rel: str | None = None)
         env = os.environ.copy()
         env["VULCAN_MASTER_DIR"] = str(master)
         result = subprocess.run(
-            [sys.executable, str(Path(test_file).resolve())], capture_output=True, text=True, env=env
+            [sys.executable, str(Path(test_file).resolve())],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
         )
     assert result.returncode == 0, (
         f"subprocess exited {result.returncode}\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
@@ -169,7 +173,13 @@ def write_master_cfg(root: Path, cfg_text: str) -> None:
     (root / "chem_funs.py").unlink(missing_ok=True)
     env = {**os.environ, "PYTHONHASHSEED": "0"}
     gen = subprocess.run(
-        [sys.executable, "make_chem_funs.py"], cwd=root, env=env, capture_output=True, text=True, timeout=1800
+        [sys.executable, "make_chem_funs.py"],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=1800,
+        check=False,
     )
     probe = subprocess.run(
         [sys.executable, "-c", "import chem_funs as c; assert c.ni > 0 and c.nr > 0"],
@@ -178,6 +188,7 @@ def write_master_cfg(root: Path, cfg_text: str) -> None:
         capture_output=True,
         text=True,
         timeout=300,
+        check=False,
     )
     assert probe.returncode == 0, (
         f"make_chem_funs.py exited {gen.returncode} and left no importable "
@@ -338,7 +349,7 @@ def _oracle_fastchem_binary(family: str, src: Path) -> Path:
     tree = Path(holder.name) / "fastchem_vulcan"
     shutil.copytree(src / "fastchem_vulcan", tree, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__"))
     (tree / "obj").mkdir(exist_ok=True)
-    build = subprocess.run(["make"], cwd=str(tree), capture_output=True, text=True, timeout=1800)
+    build = subprocess.run(["make"], cwd=str(tree), capture_output=True, text=True, timeout=1800, check=False)
     binary = tree / "fastchem"
     if build.returncode != 0 or not binary.is_file():
         raise RuntimeError(

@@ -9,7 +9,7 @@ the host setup runs. The hydrostatic column on the graph is
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import jax.numpy as jnp
 import numpy as np
@@ -57,7 +57,7 @@ class AtmSpec(NamedTuple):
     use_settling: bool
 
 
-def _mol_diff(phys: PhysicalInputs, spec: AtmSpec, n_0, gz, Hp, dz):
+def _mol_diff(phys: PhysicalInputs, spec: AtmSpec, n_0: jnp.ndarray, gz: Any, Hp: jnp.ndarray, dz: jnp.ndarray) -> Any:
     """Molecular diffusion on the graph: (Dzz, Dzz_cen, vm).
 
     The body is `atm_setup.mol_diff_jax`, the same one the host setup path
@@ -87,7 +87,7 @@ def _mol_diff(phys: PhysicalInputs, spec: AtmSpec, n_0, gz, Hp, dz):
 mol_diff = _mol_diff  # the public name; `_mol_diff` is deprecated (docs/api.md)
 
 
-def make_physical_inputs(cfg, var, atm, species_list: list[str]) -> tuple[PhysicalInputs, AtmSpec]:
+def make_physical_inputs(cfg: Any, var: Any, atm: Any, species_list: list[str]) -> tuple[PhysicalInputs, AtmSpec]:
     """Bridge a legacy (cfg, var, atm) setup into (PhysicalInputs, AtmSpec).
 
     Pulls the differentiable profiles into `PhysicalInputs` and the discrete
