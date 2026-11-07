@@ -151,12 +151,9 @@ Integrator
   :720, :738; no knob) and `config.DT_MAX_S` 1e15 (upstream `runtime*1e-5` =
   1e17). Reason: stage vectors leak element content at large dt; pinned upstream
   fails the same column (S +32%). From later, unaudited commits.
-- Retry cap with force-accept (`batch_max_retries` 110, C11;
-  `outer_loop.py:1077-1080`). Inert: at `dt_var_min` 0.5 the 100th consecutive
-  reject from `DT_MAX_S` 1e15 (the 87th from the retrieval's 1e11) would take dt
-  below `dt_min` 1e-15, and that ends the chain first, as in master. Kept as the
-  loop guard (a jitted `while_loop` cannot raise). Provenance not recorded. A
-  force-accepted step keeps the previous state; a second at `dt_min` stops the run (C29).
+- Retry cap with force-accept (`batch_max_retries` 110, C11). Inert, and refused otherwise: at `dt_var_min` 0.5 the 100th
+  consecutive reject from `DT_MAX_S` 1e15 (the 87th from the retrieval's 1e11) takes dt below `dt_min` 1e-15, which ends
+  the chain first, as in master. A force-accepted step keeps the previous state; a second at `dt_min` stops the run (C29).
 - `dt_min` 1e-15 against master's 1e-14, which C29 turned from a soft floor into a hard one. S4 + M -> S2 + S2 + M has a
   lifetime 1/L of 4e-14 to 8e-14 s at the hot bottom of a frozen WASP-39 b column, 600 times under the next one on the two draws checked [M]. For S4 at f times
   below balance the estimate is (g - 1/2)(f-1)z^2 / ((1+gz)^2 + (f-1)z(1+g^2 z)), z = L dt, g = 1+1/sqrt 2 (within 12 % on the 14 of 16 draws with S4 above `atol` [M]), so large f passes only with z < 0.047 at rtol 0.05. Shipped runs reach neither floor, 6 of 6 `.vul` bitwise [M]. Taking the failed trial at the floor cures the same draws but gives up the estimate there. Evidence: vulcan-retrieval notes "Design records".
@@ -332,7 +329,7 @@ Port defects fixed back to parity, and JAX-only additions
 
 | id | kind | upstream | port | size |
 |---|---|---|---|---|
-| C11 | JAX-only | give-up is a dt floor, `op.py:2515-2516` | `batch_max_retries` 110 + force-accept (`outer_loop.py:1077-1080`) | inert: dt < dt_min ends the reject chain before the cap ("Differences from VULCAN master"); redone at `dt_min` 1e-15: the 100th reject; redo if `dt_max`, `dt_min` or `dt_var_min` change |
+| C11 | JAX-only | give-up is a dt floor, `op.py:2515-2516` | `batch_max_retries` 110 + force-accept (`_decide_step`); `runtime_validation` refuses any other value, and any `dt_var_min`, `dt_min`, `dt_max` whose reject chain would outlast it | inert and now held so: at 1e-15 the 100th reject reaches the floor (87th from 1e11). Kept because removing it moves `run_jvp` on HD189 photo on [M] ("Do not retry") |
 | C15 | port defect | escape Jacobian term only under `use_vm_mol` (`op.py:2102-2107`, `:2426-2431`) | `diag_d.at[-1].add(diff_lim * use_vm_mol)` in `jax_ros2_step` | HD209 1206 -> 1211 |
 | C16 | port defect (= P6) | `step_ok` binds `rtol` at import (`op.py:2489,2495`); writes reach only `step_size` (`:3111`) | `_Statics.rtol_accept` | 1058 of 2893 decisions on HD189_vulcan3 |
 | C17 | port defect | bottom pins before delta and clip (`op.py:2945-2953`; `use_fix_H2He` `:2935-2941`) | pins before the rebalance; `test_use_fix_H2He` | 7.7e-3 on HD189 with `{'H2O': 0.5 EQ}` |
@@ -923,6 +920,7 @@ network drops) is not ported: the seed is ExoGibbs over the network's elements.
 
 ## Do not retry
 
+- Removing `retry_exhausted` from `_decide_step`: primals stay bitwise, but `run_jvp` on HD189 photo on moves (tangent_longdy 0.00184703606 in the 9th digit, |change in dy|/y at most 9.5e-12 above ymix 1e-14) [M]; any change to the step's program can do this to a tangent.
 - A host callback to raise `DtMinFrozenError` under an outer jit: the program never enters JAX's persistent cache [M, CPU, jit(eval_batch) at 1 lane: compile 80-83 s on every process, no file; without it 147 s writing 1.39 GB, then a hit in 31 s].
 - `nega_cut` as a share of the layer (`y < -1e-6 n`): it certifies HD189 photo off, but it is -8.6e14 cm^-3 at the 0-D atomic-H start's
   n, past every CH4 trial of that start (-5.5e13 to -1.56e5) [M]. An absolute -1e3 ends on the step cap, -1100 clears HD189's -1075 by 2%.

@@ -7,34 +7,9 @@ of `vulcan3 <- vulcan-forward <- {vulcan-retrieval, jwst-transit-authority}`, so
 Generic rules (code, docs, git, reviews, jobs) are in the maintainer's global rules, and the shared policy is in the
 project-root `CLAUDE.md`. This file holds only what is unique to this repo.
 
-## Maintainer rules (all repos)
+## Maintainer rules
 
-These five rules are identical in the project-root CLAUDE.md and every repo's; change
-them together.
-
-- **Layout.** Keep code, data and generated files apart. Shipped code, tests, inputs,
-  fixtures and validation assets stay where the repo's CLAUDE.md puts them. Work asked
-  for outside the product (analysis, one-off scripts and checks, their figures and
-  results) goes to `scratch/<topic>/`, one folder per question; run results go to
-  `output/`, and vulcan3's own figures to `plot/`. Keep these three top-level folders
-  gitignored and never commit their contents; never put such work in `src/`, `tests/`,
-  `tools/`, `validation/`, `data/` or the repo root. A durable conclusion goes to
-  notes.md; a reusable check becomes a tracked test or validation script.
-- **Figures.** An ad hoc plot request gets 1 to 3 figures, more only when asked, from one
-  script in `scratch/<topic>/`: no helper module, style layer or extra variants.
-- **Branches.** Work in the existing checkout on `main`. Create no branch, worktree or
-  copy of the repo, and switch no branch, unless the maintainer asks.
-- **Behind main.** At the start of work in a checkout, `git fetch origin`, then
-  `git rev-list --count HEAD..origin/main`. If the count is above 0, tell the
-  maintainer at once; if the fetch fails, say the state is unknown. This alerts and does
-  not block; never pull, rebase or reset unasked. Check again before a commit, a push or
-  a job on daw or NAS.
-- **Tests.** After a change, run the tests that cover it (a file or `-k`). Before a
-  push, run the normal tier (under 10 minutes on daw; CI runs it too). Anything longer
-  (the full tier, oracle comparisons, regenerating validation data or figures) runs
-  only before a release or a production run, or when the maintainer asks. When a change
-  touches what such a run covers, name the run and its rough cost in the report; do not
-  start it unasked.
+Layout, Figures, Branches, Behind main and Tests are in the project-root `CLAUDE.md`, under "Maintainer rules".
 
 ## Docs
 
@@ -93,7 +68,7 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
   also owes vulcan-forward's full-tier `test_queue_is_differentiable`. Both are full-tier runs: name them as owed.
 - Keep the parity items of notes "Parity ledger": step acceptance uses the import-bound `rtol` (C16); bottom pins apply
   before delta and clip (C17); the photo-frequency switch waits for `trun_min` / `count_min` (C18); the escape Jacobian
-  term exists only under `use_vm_mol` (C15); every config keeps `batch_max_retries` 110 (C11).
+  term exists only under `use_vm_mol` (C15); `batch_max_retries` is refused unless 110, and a reject chain must reach `dt_min` first (C11).
 - `conver_ignore`: parity configs ship `[]`, the V3 preset `['HC3N']`; never pick a list because it reproduces a step
   count.
 - Network id columns are output: index photolysis by parser position (C14). `cfg.remove_list` is positional in both

@@ -34,6 +34,10 @@ __all__ = [
 _LIST_KNOBS = ("condense_sp", "non_gas_sp", "fix_species", "T_cross_sp", "scat_sp", "use_fix_sp_bot")
 
 
+# Rejections before a force-accept; `_loop_body._decide_step`. The one value allowed.
+_RETRY_BUDGET = 110
+
+
 class RuntimeConfigError(ValueError, RuntimeError):
     """A config the runtime refuses."""
 
@@ -184,7 +188,6 @@ _COUNTERS = (
     "count_max",
     "update_frq",
     "conv_step",
-    "batch_max_retries",
     "ini_update_photo_frq",
     "final_update_photo_frq",
 )
@@ -220,9 +223,18 @@ def _validate_numerical_bounds(cfg: Config) -> list[str]:
     dt_min, dt_max = float(cfg.dt_min), float(cfg.dt_max)
     if not dt_min < dt_max:
         errors.append(f"dt_min={dt_min:g} must be < dt_max={dt_max:g}.")
-    # int32 in the runner; the cadences are modulo divisors there (x % 0
-    # does not raise in XLA), and batch_max_retries 0 force-accepts every
-    # rejected step.
+    # The retry budget is inert (notes "Parity ledger" C11): master's only give-up is dt_min. Another value, or a chain
+    # that outlasts the budget, would force-accept a failed step above the floor.
+    if float(cfg.batch_max_retries) != _RETRY_BUDGET:
+        errors.append(f"batch_max_retries={cfg.batch_max_retries} must be {_RETRY_BUDGET}: remove the key.")
+    dt_start = max(dt_max, float(cfg.dttry))
+    dt_var_min = float(cfg.dt_var_min)
+    if not (0.0 < dt_var_min and dt_start * dt_var_min**_RETRY_BUDGET < dt_min):
+        errors.append(
+            f"dt_var_min={dt_var_min:g} and dt_min={dt_min:g} must take a reject chain from {dt_start:g} s below "
+            f"dt_min within {_RETRY_BUDGET} rejections."
+        )
+    # int32 in the runner; the cadences are modulo divisors there (x % 0 does not raise in XLA).
     for key in _COUNTERS:
         v = float(getattr(cfg, key))
         if not (math.isfinite(v) and v.is_integer() and 1 <= v < 2**31):

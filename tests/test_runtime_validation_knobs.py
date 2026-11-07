@@ -24,6 +24,8 @@ _VALID = {
     "update_frq": 100,
     "conv_step": 500,
     "batch_max_retries": 110,
+    "dt_var_min": 0.5,
+    "dttry": 1.0e-10,
     "ini_update_photo_frq": 100,
     "final_update_photo_frq": 5,
 }
@@ -44,6 +46,14 @@ _NAN = float("nan")
         {"element_budget_tol": -float("inf")},
         {"dt_min": 1e16},
         {"sl_angle": 58.0},
+        {"batch_max_retries": 64},
+        {"batch_max_retries": 111},
+        {"dt_var_min": 0.9},
+        {"dt_var_min": 1.0},
+        {"dt_var_min": 0.0},
+        {"dt_var_min": _NAN},
+        {"dt_min": 1.0e-30},
+        {"dt_min": 0.0},
         {"humidity": 50.0},
         *(
             dict(**{k: v})
