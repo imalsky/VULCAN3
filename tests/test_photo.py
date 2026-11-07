@@ -11,7 +11,6 @@ from _helpers import relerr
 from oracle import assert_below, enter_master, leave_master, run_oracle_subprocess, upstream_preloop
 
 
-# size-limit-ok: one oracle script, run in a subprocess on a copy of master
 def main() -> None:
     enter_master()
     import jax.numpy as jnp

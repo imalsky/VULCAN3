@@ -10,7 +10,6 @@ from _helpers import relerr
 from oracle import assert_below, enter_master, leave_master, run_oracle_subprocess, upstream_preloop
 
 
-# size-limit-ok: one oracle script, run in a subprocess on a copy of master
 def main() -> None:
     # === 1. Run VULCAN-master pipeline to get reference y/M/k state and chemdf/symjac ===
     enter_master()

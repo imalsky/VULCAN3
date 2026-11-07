@@ -188,7 +188,6 @@ def _two_stream_sweeps(
 
 
 @_partial(jax.jit, static_argnames=("ag0_is_zero",))
-# size-limit-ok: one two-stream sweep; its order is the program
 def compute_flux_jax(
     tau: jnp.ndarray,  # (nz+1, nbin) staggered
     sflux_top: jnp.ndarray,  # (nbin,) at TOA

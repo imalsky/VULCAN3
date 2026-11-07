@@ -195,7 +195,6 @@ def _clip_dead_mask(G: np.ndarray, cfg: Config) -> np.ndarray:
     return dead
 
 
-# size-limit-ok: the body map closes over one set of adjoint inputs
 def _make_body_map(
     y_star: jnp.ndarray,
     k_arr: jnp.ndarray,
@@ -517,7 +516,6 @@ def _guard_unmodeled_processes(
         )
 
 
-# size-limit-ok: one solve; its locals are the info dict
 def _adjoint_solve_core(
     loss_fn: Callable[[jnp.ndarray], jnp.ndarray],
     y_star: jnp.ndarray,

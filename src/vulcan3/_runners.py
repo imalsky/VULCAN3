@@ -143,7 +143,6 @@ def body_fn_batch(
     return write_ring(jax.lax.cond(any_photo, tick(photo_take), tick(None), operand))
 
 
-# size-limit-ok: the runner closures share one environment
 def make_runner(
     net: NetworkArrays,
     statics: _Statics,

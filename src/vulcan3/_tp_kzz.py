@@ -221,7 +221,6 @@ def _read_atm_table(atm_file: str) -> dict[str, np.ndarray]:
     return out
 
 
-# size-limit-ok: one branch per atm_type and Kzz_prof, as master
 def load_TPK(cfg: Config, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, np.ndarray]:  # noqa: C901 (one branch per atm_type and Kzz_prof, as master)
     """Build (Tco, Kzz, vz, M, n_0) for the configured atm/Kzz/vz modes.
 

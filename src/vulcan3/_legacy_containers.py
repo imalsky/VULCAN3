@@ -16,7 +16,6 @@ from .config import default_config
 __all__ = ["legacy_view"]
 
 
-# size-limit-ok: one legacy field per line
 def legacy_view(rs: RunState) -> tuple[types.SimpleNamespace, types.SimpleNamespace, types.SimpleNamespace]:
     """Return a `(var, atm, para)` SimpleNamespace shim built from `rs`.
 

@@ -441,7 +441,6 @@ def _atom_arr_to_dict(arr: np.ndarray, atom_order: tuple[str, ...]) -> dict[str,
     return {a: float(arr[i]) for i, a in enumerate(atom_order)}
 
 
-# size-limit-ok: each RunState slot in turn, with the fix_species and photolysis branches
 def runstate_from_store(
     var: types.SimpleNamespace, atm: types.SimpleNamespace, para: types.SimpleNamespace
 ) -> RunState:

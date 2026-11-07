@@ -317,7 +317,6 @@ def _validate_condensation(cfg: Config) -> list[str]:
     return errors
 
 
-# size-limit-ok: one refusal per knob, in order
 def validate_runtime_config(cfg: Config) -> None:  # noqa: C901 (one refusal per knob, in order)
     """Raise `RuntimeConfigError` if cfg is unsupported or required files are missing.
 

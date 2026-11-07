@@ -190,7 +190,6 @@ def make_conden_spec(
     )
 
 
-# size-limit-ok: one on-graph profile; its order is the program
 def build_conden_profile(
     spec: CondenSpec,
     Tco: jnp.ndarray,

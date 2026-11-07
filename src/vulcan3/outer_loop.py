@@ -186,7 +186,6 @@ class OuterLoop:
             conden_static=self._conden_static,
         )
 
-    # size-limit-ok: the tangent contract, then the leaf bookkeeping of the one call to the jvp runner
     def run_jvp(
         self, state: JaxIntegState, atm_static: AtmStatic, dstate: PyTree, datm: PyTree
     ) -> tuple[JaxIntegState, PyTree, jnp.ndarray, jnp.ndarray]:

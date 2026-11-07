@@ -24,7 +24,6 @@ OFFDIAG_RTOL = 1e-10
 FLOOR_FRAC = 1e-12  # variants: cancellation-residue floor, a fraction of the reference peak
 
 
-# size-limit-ok: one oracle script, run in a subprocess on a copy of master
 def main() -> None:
     # === Set up VULCAN-master state for reference ===
     enter_master()

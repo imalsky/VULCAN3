@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from .jax_step import AtmStatic
 
 
-# size-limit-ok: the photolysis chain, in program order
 def _make_photo_branch(photo_static: _PhotoStatic) -> Callable[[JaxIntegState], JaxIntegState]:
     """Build the in-loop photo branch closure.
 

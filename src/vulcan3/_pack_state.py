@@ -175,7 +175,6 @@ def _profile_vars(integ: OuterLoop, rs: RunState) -> ProfileVars:
     )
 
 
-# size-limit-ok: one carry field per line
 def pack_state(integ: OuterLoop, rs: RunState) -> JaxIntegState:
     """Build the initial JaxIntegState from a fully-populated RunState.
 
@@ -265,7 +264,6 @@ def pack_state(integ: OuterLoop, rs: RunState) -> JaxIntegState:
     )
 
 
-# size-limit-ok: each RunState slot in turn, with the vm, photolysis and fix_species branches
 def unpack_state(integ: OuterLoop, state: JaxIntegState, rs_entry: RunState) -> RunState:
     """Build a fresh `RunState` from the runner's final JaxIntegState.
 

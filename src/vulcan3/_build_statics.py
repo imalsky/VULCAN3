@@ -195,7 +195,6 @@ def gas_mask(integ: OuterLoop, atm: types.SimpleNamespace) -> np.ndarray:
     return mask
 
 
-# size-limit-ok: packs one long NamedTuple, one field per line
 def build_photo_static(integ: OuterLoop, var: types.SimpleNamespace, atm: types.SimpleNamespace) -> _PhotoStatic | None:
     """Pack photo cross sections + scalar configs into a `_PhotoStatic`.
 

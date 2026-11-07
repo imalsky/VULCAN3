@@ -319,7 +319,6 @@ def _decide_step(
     )
 
 
-# size-limit-ok: the cond and its two sides read one set of locals
 def _refresh_geometry(
     env: RunnerEnv,
     s: JaxIntegState,

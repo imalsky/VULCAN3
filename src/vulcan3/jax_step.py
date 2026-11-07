@@ -342,7 +342,6 @@ class DiffGrav(NamedTuple):
     dz_ave: jnp.ndarray
 
 
-# size-limit-ok: notes "Do not retry": transport refactors moved a tangent
 def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
     """y-independent transport piece of the molecular-diffusion blocks."""
     dzi, Hpi, Ti, Tco, g, ms, alpha, Dzz = (
@@ -459,7 +458,6 @@ def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
     )
 
 
-# size-limit-ok: notes "Do not retry": transport refactors moved a tangent
 def _build_diff_coeffs_jax(
     y: jnp.ndarray, atm: AtmStatic, grav: DiffGrav
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
@@ -598,7 +596,6 @@ def _apply_diffusion_jax(
 _ROS2_GAMMA = 1.0 + 2.0**-0.5
 
 
-# size-limit-ok: the two stages share their locals; a change moves the program
 def _ros2_stages(
     y: jnp.ndarray,
     k_arr: jnp.ndarray,

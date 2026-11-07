@@ -22,7 +22,6 @@ def _manual_jion(aflux, cross, split, dbin1, dbin2):
     return left + right
 
 
-# size-limit-ok: one oracle script, run in a subprocess on a copy of master
 def test_photo_ion_rates():
     aflux = np.array(
         [

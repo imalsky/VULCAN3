@@ -203,7 +203,6 @@ def _bin_cross_and_branches(
     return cross_at_bins, branches, ratios
 
 
-# size-limit-ok: one binning pass over the cross-section tables
 def _bin_T_dependent(
     sp: str,
     n_branch: int,

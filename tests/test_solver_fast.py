@@ -531,7 +531,6 @@ def capture_stage1(fixture: str, cfg_name: str, dt: float):
     return diag, sup, sub, cap["rhs"][0]
 
 
-# size-limit-ok: one script per fixture case, run in a subprocess
 def check_real_blocks(fixture: str, cfg_name: str, backend: str):
     """Assert the agreement bars on the real blocks at DTS; returns the rows.
 
@@ -631,7 +630,6 @@ def test_fast_on_real_hd189_blocks(fast):
     check_real_blocks("adj_state_hd189.npz", "HD189", fast.BACKEND)
 
 
-# size-limit-ok: one script per fixture case, run in a subprocess
 def check_matrix_free(fixture: str, cfg_name: str, backend: str):
     """`_ros2_stages` gives the solve a matrix-free operator so a tangent never builds the dense dA per direction.
 

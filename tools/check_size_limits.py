@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check the hard size limits on source files. Run by pre-commit and CI.
 
-Public name: ``main``. The limits are the constants below.
+The limits are the constants below.
 
 Python: module docstring, file and function length. Python complexity is Ruff's C901.
 C, C++ and CUDA: file and function length, and complexity by a scan with comments and strings removed.
@@ -22,7 +22,8 @@ from pathlib import Path
 
 MAX_DOCSTRING_LINES = 15
 MAX_FILE_LINES = 800
-MAX_FUNCTION_LINES = 80
+# Not 80: that invited mechanical splits, and a step that reads as one ordered operation stays whole.
+MAX_FUNCTION_LINES = 150
 MAX_COMPLEXITY = 15
 FILE_EXCEPTION_LINES = 5  # a file-wide exception must sit this close to the top, where a reader sees it
 

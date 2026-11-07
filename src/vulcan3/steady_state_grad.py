@@ -464,7 +464,6 @@ def make_photo_recompute_k(
     return recompute_k
 
 
-# size-limit-ok: one branch per process, with its doc
 def make_body_terms(
     integ: OuterLoop, converged_state: JaxIntegState, atm_static: AtmStatic
 ) -> tuple[AtmStatic, BodyTerms]:

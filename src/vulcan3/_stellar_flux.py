@@ -20,7 +20,6 @@ __all__ = ["read_sflux_binned"]
 logger = logging.getLogger(__name__)
 
 
-# size-limit-ok: one binning pass, in the order the bit-parity tests pin
 def read_sflux_binned(
     cfg: Config,
     bins: np.ndarray,
