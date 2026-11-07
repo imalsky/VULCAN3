@@ -13,8 +13,8 @@ on:
 jobs:
   oracle:
     runs-on: ubuntu-latest
-    # The full-tier step alone is ~70 min of single-core work on daw.
-    timeout-minutes: 180
+    # Two tiers, each with its own limit below: no tier runs past 90 minutes. The job is their sum plus the install.
+    timeout-minutes: 150
     strategy:
       matrix:
         include:
@@ -58,9 +58,12 @@ jobs:
       # rather than set VULCAN3_ALLOW_MISSING_FIXTURES (a skipped oracle
       # reports green).
       - name: Build the numerical-regression fixtures
+        timeout-minutes: 30
         run: python tests/gen_fixtures.py --all
 
+      # 15 test-minutes on daw.
       - name: Run the ${{ matrix.family }} comparisons
+        timeout-minutes: 30
         env:
           VULCAN_MASTER_DIR: ${{ runner.temp }}/oracle-${{ matrix.family }}
           VULCAN3_REQUIRE_ORACLE: "1"
@@ -72,9 +75,10 @@ jobs:
       # One process per test, run in sequence: the W39b tangent certificate
       # peaks at 12.6 GB on this 16 GB runner, so memory one test leaves
       # behind must not carry into the next. Each failure prints at once
-      # instead of being lost when the runner is killed.
+      # instead of being lost when the runner is killed. 59 test-minutes on daw, one test at a time; the longest is 12.
       - name: Full tier
         if: matrix.family == 'vulcan2_ncho'
+        timeout-minutes: 90
         env:
           VULCAN3_RUN_SLOW: "1"
         run: |

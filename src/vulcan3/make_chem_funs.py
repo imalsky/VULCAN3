@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -190,13 +190,14 @@ def build_chem_rhs(net: Network) -> Callable:
     exec(compile(src, "<chem_rhs_codegen>", "exec"), ns)
     raw_fn = ns["chem_rhs_codegen"]
 
-    def chem_rhs_codegen_barriered(y: Any, M: Any, k: Any) -> Any:
+    def chem_rhs_codegen_barriered(y: jnp.ndarray, M: jnp.ndarray, k: jnp.ndarray) -> jnp.ndarray:
         """Fence the RHS output so XLA cannot reassociate it into its caller.
 
         Stops XLA from fusing the diffusion add and Ros2 assembly into the RHS
         and reordering its master-faithful sums. A no-op numerically.
         """
-        return jax.lax.optimization_barrier(raw_fn(y, M, k))
+        out: jnp.ndarray = jax.lax.optimization_barrier(raw_fn(y, M, k))
+        return out
 
     fn = jax.jit(chem_rhs_codegen_barriered)
     _BUILD_CACHE[key] = fn
@@ -297,7 +298,7 @@ def grouped_rhs_tables(net: Network) -> tuple[list, list, np.ndarray]:
     return rate_groups, buckets, place
 
 
-def chem_rhs_grouped_column(y: Any, M: Any, k: Any, tables: tuple) -> Any:
+def chem_rhs_grouped_column(y: jnp.ndarray, M: jnp.ndarray, k: jnp.ndarray, tables: tuple) -> jnp.ndarray:
     """Return the codegen RHS for one column, layer axis trailing.
 
     `(y[nz, ni], M[nz], k[nr+1, nz]) -> dydt[nz, ni]`, bit-identical to `chem_rhs_per_layer_codegen` vmapped over
@@ -346,9 +347,10 @@ def build_chem_rhs_grouped(net: Network) -> Callable:
         return cached
     tables = grouped_rhs_tables(net)
 
-    def chem_rhs_grouped_barriered(y: Any, M: Any, k: Any) -> Any:
+    def chem_rhs_grouped_barriered(y: jnp.ndarray, M: jnp.ndarray, k: jnp.ndarray) -> jnp.ndarray:
         """Fence the RHS output, as `build_chem_rhs` does."""
-        return jax.lax.optimization_barrier(chem_rhs_grouped_column(y, M, k, tables))
+        out: jnp.ndarray = jax.lax.optimization_barrier(chem_rhs_grouped_column(y, M, k, tables))
+        return out
 
     fn = jax.jit(chem_rhs_grouped_barriered)
     _BUILD_CACHE[key] = fn

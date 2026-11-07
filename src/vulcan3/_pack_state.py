@@ -216,6 +216,7 @@ def pack_state(integ: OuterLoop, rs: RunState) -> JaxIntegState:
         delta=jnp.asarray(float(rs.params.delta), dtype=jnp.float64),
         accept_count=jnp.int32(int(rs.params.count)),
         retry_count=jnp.int32(0),
+        keep_prev_run=jnp.int32(0),
         atom_loss=jnp.asarray(rs.atoms.atom_loss, dtype=jnp.float64),
         atom_loss_prev=jnp.asarray(rs.atoms.atom_loss_prev, dtype=jnp.float64),
         nega_count=jnp.int32(int(rs.params.nega_count)),

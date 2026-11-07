@@ -80,7 +80,7 @@ def test_one_outer_loop_runs_fresh_runstates_each_on_its_own_atoms():
         use_photo=False,
         use_print_prog=False,
         ini_mix="const_mix",
-        const_mix={"H2": 0.9, "He": 0.09, "H2O": 5e-3, "CO": 5e-3},
+        const_mix={"H2": 0.9, "He": 0.089, "H2O": 5e-3, "CO": 5e-3, "N2": 1e-3},
     )
     integ = outer_loop.OuterLoop(op_jax.Ros2JAX(), op.Output(cfg=cfg), cfg=cfg)
     rs1 = RunState.with_pre_loop_setup(cfg)
@@ -89,7 +89,7 @@ def test_one_outer_loop_runs_fresh_runstates_each_on_its_own_atoms():
     with pytest.raises(ValueError, match="already run 6 steps"):
         integ(rs_out)
 
-    cfg.const_mix = {"H2": 0.9, "He": 0.09, "H2O": 1e-3, "CO": 9e-3}
+    cfg.const_mix = {"H2": 0.9, "He": 0.089, "H2O": 1e-3, "CO": 9e-3, "N2": 1e-3}
     rs2 = RunState.with_pre_loop_setup(cfg)
     assert not np.array_equal(rs2.atoms.atom_ini, rs1.atoms.atom_ini)
     out2 = integ(rs2)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.util
 import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -14,9 +14,20 @@ from ._paths import resolve_data_path
 from .config import _ELEMENT_RATIO_KEY
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import jax.numpy as jnp
 
-__all__ = ["RuntimeConfigError", "rate_temp_range_exposure", "validate_runtime_config"]
+    from .config import Config
+    from .network import Network
+
+__all__ = [
+    "MissingAtomError",
+    "RuntimeConfigError",
+    "rate_temp_range_exposure",
+    "refuse_missing_atoms",
+    "validate_runtime_config",
+]
 
 
 # Knobs read as lists or mappings throughout setup and the runner: `null` in a config is not "empty".
@@ -27,7 +38,37 @@ class RuntimeConfigError(ValueError, RuntimeError):
     """A config the runtime refuses."""
 
 
-def _validate_abundance_preset(cfg: Any) -> list[str]:
+class MissingAtomError(RuntimeConfigError):
+    """A column holds none of a conserved atom, so its relative loss is 0/0 and no trial could ever be accepted."""
+
+
+def refuse_missing_atoms(atom_ini: np.ndarray, atom_order: Sequence[str]) -> None:
+    """Raise `MissingAtomError` for any conserved atom whose column total is zero.
+
+    Parameters
+    ----------
+    atom_ini : array of float [n_atoms] or [lanes, n_atoms]
+        Column totals, in `atom_order`: `cfg.atom_list` minus `cfg.loss_ex`.
+    atom_order : sequence of str [n_atoms]
+        The atoms' names.
+
+    Raises
+    ------
+    MissingAtomError
+        Naming the atoms, and the lanes when `atom_ini` has a lane axis.
+    """
+    totals = np.asarray(atom_ini)
+    lanes, columns = np.nonzero(np.atleast_2d(totals) == 0.0)
+    if columns.size:
+        atoms = sorted({atom_order[c] for c in columns})
+        where = f" in lane {sorted(set(lanes.tolist()))[:8]}" if totals.ndim > 1 else ""
+        raise MissingAtomError(
+            f"the column holds no {', '.join(atoms)}{where}: a conserved atom's relative loss is then 0/0, so no trial "
+            f"could be accepted. Add it to `loss_ex`, or give the column some."
+        )
+
+
+def _validate_abundance_preset(cfg: Config) -> list[str]:
     """Check that the EQ seed's abundance preset parses and covers the network.
 
     The file is read as `SYMBOL log10(n_X/n_H)+12` rows. The seed needs a
@@ -62,7 +103,7 @@ def _validate_abundance_preset(cfg: Any) -> list[str]:
     return []
 
 
-def _validate_network_assets(cfg: Any) -> list[str]:
+def _validate_network_assets(cfg: Config) -> list[str]:
     """Return a list of human-readable errors for missing network-linked assets.
 
     Checks what produces cryptic downstream errors if wrong (a network species
@@ -149,7 +190,7 @@ _COUNTERS = (
 )
 
 
-def _validate_numerical_bounds(cfg: Any) -> list[str]:
+def _validate_numerical_bounds(cfg: Config) -> list[str]:
     """Errors for knob values that would run to a silently wrong answer.
 
     A value that raises later or ends in a visibly failed run (no
@@ -205,7 +246,7 @@ def _validate_numerical_bounds(cfg: Any) -> list[str]:
     return errors
 
 
-def _validate_condensation(cfg: Any) -> list[str]:
+def _validate_condensation(cfg: Config) -> list[str]:
     """Return errors for an unsupported or silently-inert condensation config.
 
     Forward-run validation only, applied to every consumer identically.
@@ -265,7 +306,7 @@ def _validate_condensation(cfg: Any) -> list[str]:
 
 
 # size-limit-ok: one refusal per knob, in order
-def validate_runtime_config(cfg: Any) -> None:  # noqa: C901 (one refusal per knob, in order)
+def validate_runtime_config(cfg: Config) -> None:  # noqa: C901 (one refusal per knob, in order)
     """Raise `RuntimeConfigError` if cfg is unsupported or required files are missing.
 
     Aggregates every configuration error (flag consistency, required
@@ -375,7 +416,7 @@ def validate_runtime_config(cfg: Any) -> None:  # noqa: C901 (one refusal per kn
         raise RuntimeConfigError("Unsupported or invalid VULCAN3 runtime configuration:\n- " + "\n- ".join(errors))
 
 
-def rate_temp_range_exposure(net: Any, Tco: jnp.ndarray) -> dict:
+def rate_temp_range_exposure(net: Network, Tco: jnp.ndarray) -> dict:
     """Count thermal rows evaluated outside their documented T ranges on `Tco`.
 
     Advisory only (no rate is altered). For consumers: jwst-transit-authority's `forward.run_model` calls it.

@@ -36,7 +36,8 @@ def _pin_cfg(**extra):
     """Small photo-on batched config: isothermal, const_mix init.
 
     Fixed diffusion scheme (the hybrid flips schemes per lane), photo cadence low enough to fire within COUNT_MAX.
-    `T_cross_sp=["H2O"]` gives the two Tiso lanes different cross sections.
+    `T_cross_sp=["H2O"]` gives the two Tiso lanes different cross sections. Above about 1300 K this start freezes at
+    `dt_min` and the lane never moves.
     """
     return fast_cfg(
         **{
@@ -73,7 +74,7 @@ def test_photo_lane_matches_its_solo_run():
     integA = _build_integ()
     sA, atmA = integA.prepare_runstate(rsA)
 
-    rsB = _build_rs(vulcan_cfg, Tiso=1600.0)
+    rsB = _build_rs(vulcan_cfg, Tiso=1200.0)
     # Route B through integA too (the batch-driver pattern; exercises the
     # same-star guard's accept path) AND through its own integB for the solo.
     sB, atmB = integA.prepare_runstate(rsB)
@@ -217,7 +218,7 @@ def test_queue_on_photo_lanes_matches_the_batch():
     vulcan_cfg = _pin_cfg()
     integ = _build_integ()
     sA, atmA = integ.prepare_runstate(_build_rs(vulcan_cfg, Tiso=900.0))
-    sB, atmB = integ.prepare_runstate(_build_rs(vulcan_cfg, Tiso=1600.0))
+    sB, atmB = integ.prepare_runstate(_build_rs(vulcan_cfg, Tiso=1200.0))
     init_b = stack_integ_states([sA, sB])
     atm_b = stack_atm_statics([atmA, atmB])
     ref = integ.run_batch(init_b, atm_b)
@@ -261,7 +262,7 @@ def test_refill_on_a_photo_tick_applies_photolysis_once():
     vulcan_cfg = _pin_cfg(ini_update_photo_frq=1, final_update_photo_frq=1, update_frq=1)
     integ = _build_integ()
     sA, atmA = integ.prepare_runstate(_build_rs(vulcan_cfg, Tiso=900.0))
-    sB, atmB = integ.prepare_runstate(_build_rs(vulcan_cfg, Tiso=1600.0))
+    sB, atmB = integ.prepare_runstate(_build_rs(vulcan_cfg, Tiso=1200.0))
     fields = ("y", "t", "accept_count", "termination_reason", "aflux_change")
 
     def out_fn(f):

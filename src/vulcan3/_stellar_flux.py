@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import numpy as np
 
 from ._paths import resolve_data_path
 from .phy_const import au, r_sun
+
+if TYPE_CHECKING:
+    from .config import Config
 
 __all__ = ["read_sflux_binned"]
 
@@ -19,10 +22,10 @@ logger = logging.getLogger(__name__)
 
 # size-limit-ok: one binning pass, in the order the bit-parity tests pin
 def read_sflux_binned(
-    cfg: Any,
+    cfg: Config,
     bins: np.ndarray,
     sflux_raw: np.ndarray | None = None,
-) -> dict[str, Any]:
+) -> dict[str, np.ndarray | int | float]:
     """Interpolate the stellar flux onto VULCAN's uniform photo bins grid.
 
     Returns sflux_top and the dbin1 -> dbin2 transition index. `sflux_raw`

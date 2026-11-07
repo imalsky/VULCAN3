@@ -131,7 +131,8 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
 
 ### Certificates and differentiation
 
-- A run ends only on the certificate or a cap (`use_conv_stall` is refused). The certificate adds two terms to VULCAN
+- A run ends only on the certificate or a cap (`use_conv_stall` is refused), or raises `DtMinFrozenError` when a trial
+  keeps failing at `dt_min` (under an outer jit the caller calls `raise_if_frozen`). The certificate adds two terms to VULCAN
   2.0's, both inert below `count_min` (notes "Certificates"): geometry (C21: refreshed on a certificate candidate
   whatever `update_frq` says, judged by `geom_conv_tol`) and the element budget (C23: each element's operator-weighted
   column relative to H, accumulated per step on that step's grid; never the absolute column, and `loss_eps` is no

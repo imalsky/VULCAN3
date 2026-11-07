@@ -9,7 +9,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import jax
 
@@ -17,12 +17,15 @@ from . import _settings, legacy_io, op_jax, outer_loop
 from .config import _FROZEN_ENV, dump_config, load_config
 from .state import RunState, _frozen_mismatch
 
+if TYPE_CHECKING:
+    from .config import Config
+
 __all__ = ["cli_main"]
 
 _RELAUNCH_GUARD = _settings.RELAUNCH_GUARD
 
 
-def _frozen_knob_mismatch(cfg: Any) -> Any:
+def _frozen_knob_mismatch(cfg: Config) -> dict[str, str]:
     """Import-frozen knobs `cfg` disagrees with (`state._frozen_mismatch`), as ``{env var: cfg's value}``.
 
     `load_config` folds ``$VULCAN3_*`` over the YAML before returning, so a
@@ -35,7 +38,7 @@ def _frozen_knob_mismatch(cfg: Any) -> Any:
     }
 
 
-def _relaunch_for_frozen_knobs(cfg: Any, config_ref: Any) -> None:
+def _relaunch_for_frozen_knobs(cfg: Config, config_ref: str) -> None:
     """Re-exec with ``$VULCAN3_*`` set when the config needs a different network.
 
     ``network`` / ``atom_list`` / ``com_file`` are read once at the first
@@ -82,7 +85,7 @@ def _relaunch_for_frozen_knobs(cfg: Any, config_ref: Any) -> None:
     )
 
 
-def cli_main(argv: Any = None) -> None:
+def cli_main(argv: list[str] | None = None) -> None:
     """Entry point for the ``vulcan3`` console script.
 
     ``--config`` selects a config by name (``default``, ``W39b``, ...; resolved
@@ -158,7 +161,7 @@ def cli_main(argv: Any = None) -> None:
     print(f"Total wall time: {time.time() - runstate.metadata.start_time:.1f}s")
 
 
-def _drop_into_repl(namespace: Any) -> None:
+def _drop_into_repl(namespace: dict[str, object]) -> None:
     """IPython if installed, else the standard console with line editing."""
     try:
         from IPython import embed

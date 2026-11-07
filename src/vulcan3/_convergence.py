@@ -11,7 +11,16 @@ import jax.numpy as jnp
 import numpy as np
 
 from .phy_const import UNDERFLOW_DENOM
-from .state import TERM_CONVERGED, TERM_NONFINITE, TERM_RUNNING, TERM_RUNTIME, TERM_STEP_COUNT
+from .state import (
+    _FROZEN_WHY,
+    _NEARER_BALANCE,
+    TERM_CONVERGED,
+    TERM_DT_MIN_FROZEN,
+    TERM_NONFINITE,
+    TERM_RUNNING,
+    TERM_RUNTIME,
+    TERM_STEP_COUNT,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -29,6 +38,15 @@ _SLOPE_MIN_HP_FRAC = 0.1
 _SLOPE_MIN_CAP = 1e-8
 
 _SLOPE_MIN_FLOOR = 1e-10
+
+# Force-accepts at dt_min that keep the state before a run stops: the second repeats the first's trial.
+_FROZEN_REPEATS = 2
+
+
+def _frozen(s: JaxIntegState) -> jnp.ndarray:
+    """Test whether the trial has failed at `dt_min`, keeping the state, `_FROZEN_REPEATS` times since a real accept."""
+    frozen: jnp.ndarray = s.keep_prev_run >= jnp.int32(_FROZEN_REPEATS)
+    return frozen
 
 
 # In the certificate functions below, `c` is the runner's `_Statics` or a config: both carry yconv_cri, yconv_min,
@@ -58,16 +76,18 @@ def _convergence_ok(s: JaxIntegState, c: _Statics | Config) -> jnp.ndarray:
     the loose branch.
     """
     tight, loose = _branches(s.longdy, s.longdydt, _slope_min(s), c)
-    return (tight | loose) & (s.aflux_change < jnp.float64(c.flux_cri))
+    ok: jnp.ndarray = (tight | loose) & (s.aflux_change < jnp.float64(c.flux_cri))
+    return ok
 
 
 def _certified(s: JaxIntegState, c: _Statics | Config) -> jnp.ndarray:
     """`_convergence_ok` AND the geometry and element-budget terms.
 
     `geom_ok` / `budget_ok` are written by the body on the candidate step (see there): the refreshed geometry agreed
-    with the composition, and the column kept its elements since t=0.
+    with the composition, and the column kept its elements since t=0. A column idling at `dt_min` is not one, though its
+    state does not move and its longdy can read 0.
     """
-    return _convergence_ok(s, c) & s.geom_ok & s.budget_ok
+    return _convergence_ok(s, c) & s.geom_ok & s.budget_ok & jnp.logical_not(_frozen(s))
 
 
 def conv_normal(final: JaxIntegState, cfg: Config) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -75,8 +95,8 @@ def conv_normal(final: JaxIntegState, cfg: Config) -> tuple[jnp.ndarray, jnp.nda
 
     The terms `real_terminate` ends a run on, read with `cfg`'s thresholds:
     tight OR loose branch, the photo-flux gate, and the geometry and
-    element-budget terms. Not its ready gate, hybrid-phase gate or
-    non-finite exit; a forward-mode caller ANDs in `run_jvp`'s tangent
+    element-budget terms, and not frozen at `dt_min`. Not its ready gate,
+    hybrid-phase gate or non-finite exit; a forward-mode caller ANDs in `run_jvp`'s tangent
     certificate itself. On a finished non-hybrid run `ok` is
     `termination_reason == 1`: the body sets `geom_ok` / `budget_ok` only on
     a step past the ready gate.
@@ -114,6 +134,8 @@ def certificate_failures(
     i = int(np.argmax(drift))
     if not drift[i] < float(cfg.element_budget_tol):
         out.append((f"element budget {atom_order[i]}/H", float(drift[i]), float(cfg.element_budget_tol)))
+    if bool(_frozen(final)):
+        out.append(("trial repeats at dt_min", float(final.keep_prev_run), float(_FROZEN_REPEATS)))
     if not out and not bool(final.geom_ok):
         out.append(("geometry", float("nan"), float(cfg.geom_conv_tol)))
     return out
@@ -146,7 +168,7 @@ def _longdy_reduce(
         longdy_arr = jnp.where(condense_mask, 0.0, longdy_arr)
 
     # Zeroed numerator -> denominator 1, for the same reason as in
-    # `_make_aggregate_delta_fn`: a sub-mtol_conv ymix would make the tangent
+    # `_make_delta_ratio_fn`: a sub-mtol_conv ymix would make the tangent
     # `0 * inf` and the max JVP does not discard it. Primal unchanged.
     den = jnp.where(longdy_arr == 0.0, 1.0, jnp.maximum(ymix, UNDERFLOW_DENOM))
     ratio = jnp.where(ymix > 0, longdy_arr / den, 0.0)
@@ -234,8 +256,8 @@ def real_terminate(
     Reason priority matches master's stop() (op.py:1065-1085): converged
     over runtime over step-count, so a step that is both converged and at
     a cap reports success. Codes: 0 running, 1 converged, 2 runtime
-    exceeded, 3 step-count exceeded, 5 non-finite (which outranks the
-    rest); 4 is unassigned.
+    exceeded, 3 step-count exceeded, 4 frozen at `dt_min` (which outranks
+    those), 5 non-finite (which outranks the rest).
 
     `tangent_ok` is the sensitivity certificate of `runner_jvp`; the
     primal runner passes the default, which folds away at trace time.
@@ -261,21 +283,51 @@ def real_terminate(
     # step budget. A bypass exit: OR'd after the hybrid gate, and it
     # outranks every other code (nothing NaN converged or timed out).
     non_finite = jnp.logical_not(jnp.all(jnp.isfinite(s.y)))
-    real_term = real_term | non_finite
+    # A frozen column repeats one failing trial, and is the same kind of exit.
+    frozen = _frozen(s)
+    real_term = real_term | non_finite | frozen
     reason = jnp.where(
         non_finite,
         jnp.int32(TERM_NONFINITE),
         jnp.where(
-            conv_term,
-            jnp.int32(TERM_CONVERGED),
+            frozen,
+            jnp.int32(TERM_DT_MIN_FROZEN),
             jnp.where(
-                too_long,
-                jnp.int32(TERM_RUNTIME),
-                jnp.where(too_many, jnp.int32(TERM_STEP_COUNT), jnp.int32(TERM_RUNNING)),
+                conv_term,
+                jnp.int32(TERM_CONVERGED),
+                jnp.where(
+                    too_long,
+                    jnp.int32(TERM_RUNTIME),
+                    jnp.where(too_many, jnp.int32(TERM_STEP_COUNT), jnp.int32(TERM_RUNNING)),
+                ),
             ),
         ),
     )
     return real_term, reason
+
+
+def frozen_column_message(
+    ratio: np.ndarray,
+    sol_clip: np.ndarray,
+    loss_change: np.ndarray,
+    statics: _Statics,
+    species: Sequence[str],
+    atom_order: Sequence[str],
+) -> str:
+    """State why the repeated trial of a frozen column fails: its error estimate, a negative cell or an atom's loss."""
+    z, i = (int(v) for v in np.unravel_index(np.argmax(ratio), ratio.shape))
+    if ratio[z, i] > statics.rtol_accept:
+        why = f"{species[i]} at layer {z} has error ratio {ratio[z, i]:.3g} against rtol {statics.rtol_accept:g}"
+        remedy = f"raise `rtol` above the ratio, lower `dt_min`, or {_NEARER_BALANCE}"
+    elif np.any(sol_clip < 0):
+        z, i = (int(v) for v in np.unravel_index(np.argmin(sol_clip), sol_clip.shape))
+        why = f"{species[i]} at layer {z} goes to {sol_clip[z, i]:.3g} cm^-3, below nega_cut {statics.nega_cut:g}"
+        remedy = f"lower `nega_cut`, or {_NEARER_BALANCE}"
+    else:
+        a = int(np.argmax(loss_change))
+        why = f"{atom_order[a]}'s atom loss moves {loss_change[a]:.3g} against loss_eps {statics.loss_eps:g}"
+        remedy = f"raise `loss_eps`, or {_NEARER_BALANCE}"
+    return f"Column frozen at dt_min = {statics.dt_min:g} s: {why}. {_FROZEN_WHY} To try: {remedy}."
 
 
 def cond_fn(statics: _Statics, s: JaxIntegState) -> jnp.ndarray:

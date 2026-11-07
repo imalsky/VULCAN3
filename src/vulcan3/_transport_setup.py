@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -22,7 +22,9 @@ from .atm_refresh import hydrostatic_step, recompute_vm_jax
 from .phy_const import BAR_CGS, Navo, kb
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
+
+    from .config import Config
 
 __all__ = [
     "VISCOSITY_TABLE",
@@ -49,7 +51,7 @@ def compute_mean_mass(ymix: jnp.ndarray, ms_arr: jnp.ndarray) -> jnp.ndarray:
 def _scan_up_mu_dz_g(
     pref_indx: int,
     gs: float | jnp.ndarray,
-    Rp: float,
+    Rp: float | jnp.ndarray,
     Tco: jnp.ndarray,
     mu: jnp.ndarray,
     pico: jnp.ndarray,
@@ -61,7 +63,10 @@ def _scan_up_mu_dz_g(
     pico_up_lo = pico[pref_indx:nz]
     pico_up_hi = pico[pref_indx + 1 : nz + 1]
 
-    def body(carry: Any, scan_in: Any) -> Any:
+    def body(
+        carry: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray],
+        scan_in: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
+    ) -> tuple[tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]]:
         z_prev, _gz_prev, _Hp_prev = carry
         i, T_i, mu_i, p_lo, p_hi = scan_in
         is_first = i == 0
@@ -82,7 +87,7 @@ def _scan_up_mu_dz_g(
 def _scan_down_mu_dz_g(
     pref_indx: int,
     gs: float | jnp.ndarray,
-    Rp: float,
+    Rp: float | jnp.ndarray,
     Tco: jnp.ndarray,
     mu: jnp.ndarray,
     pico: jnp.ndarray,
@@ -97,7 +102,9 @@ def _scan_down_mu_dz_g(
     pico_lo_rev = pico[:pref_indx][::-1]
     pico_hi_rev = pico[1 : pref_indx + 1][::-1]
 
-    def body(carry: Any, scan_in: Any) -> Any:
+    def body(
+        carry: jnp.ndarray, scan_in: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]
+    ) -> tuple[jnp.ndarray, tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]]:
         z_above = carry
         T_i, mu_i, p_lo, p_hi = scan_in
         gz_i = gs * (Rp / (Rp + z_above)) ** 2
@@ -111,8 +118,14 @@ def _scan_down_mu_dz_g(
 
 
 def mu_dz_g_jax(
-    pref_indx: int, gs: float | jnp.ndarray, Rp: Any, Tco: jnp.ndarray, mu: jnp.ndarray, pico: jnp.ndarray, nz: int
-) -> Any:
+    pref_indx: int,
+    gs: float | jnp.ndarray,
+    Rp: float | jnp.ndarray,
+    Tco: jnp.ndarray,
+    mu: jnp.ndarray,
+    pico: jnp.ndarray,
+    nz: int,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Hydrostatic height integration on the JAX graph, anchored at `pref_indx`.
 
     The host setup path (:func:`compute_mu_dz_g`) runs it on the graph too, so
@@ -143,7 +156,7 @@ def mu_dz_g_jax(
 
 
 def compute_mu_dz_g(
-    cfg: Any,
+    cfg: Config,
     ymix: np.ndarray,
     ms_arr: np.ndarray,
     pico: np.ndarray,
@@ -224,7 +237,7 @@ def settling_velocity_jax(
 
 
 def compute_settling_velocity(
-    cfg: Any,
+    cfg: Config,
     Tco: np.ndarray,
     g: np.ndarray,
     species_list: list[str],
@@ -251,7 +264,7 @@ def compute_settling_velocity(
 
 
 def settling_coeff_array(
-    cfg: Any,
+    cfg: Config,
     species_list: list[str],
     rho_p: Mapping[str, float],
     r_p: Mapping[str, float],
@@ -274,7 +287,7 @@ def settling_coeff_array(
     return settle_coeff
 
 
-def _Dzz_gen_for_base(atm_base: str) -> Any:
+def _Dzz_gen_for_base(atm_base: str) -> Callable[[jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray]:
     """Return a JAX lambda `(T, n_tot, mi) -> Dzz` for an atm_base.
 
     Coefficients are species-pair fits from Moses 2000a (H2 base) and the
@@ -291,7 +304,7 @@ def _Dzz_gen_for_base(atm_base: str) -> Any:
     raise OSError(f"\n Unknown atm_base={atm_base!r}!")
 
 
-def _alpha_array_for_base(atm_base: str, species_list: list[str], mol_mass: Any) -> np.ndarray:
+def _alpha_array_for_base(atm_base: str, species_list: list[str], mol_mass: Callable[[str], float]) -> np.ndarray:
     """Thermal-diffusion factor per species, atm_base-dependent. Returns (ni,).
 
     Defaults to zero. H2 base: H = -0.1, He = 0.145, then every species over
@@ -328,10 +341,10 @@ def mol_diff_jax(
     dz: jnp.ndarray,
     ms: jnp.ndarray,
     alpha: jnp.ndarray,
-    nongas_mask: Any,
+    nongas_mask: jnp.ndarray,
     *,
     use_vm_mol: bool,
-) -> Any:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Molecular diffusion on the JAX graph: (Dzz, Dzz_cen, vm).
 
     Shared by the host setup path (:func:`compute_mol_diff`) and the
@@ -367,7 +380,7 @@ def mol_diff_jax(
 
 
 def compute_mol_diff(
-    cfg: Any,
+    cfg: Config,
     Tco: np.ndarray,
     n_0: np.ndarray,
     g: np.ndarray,
@@ -428,7 +441,7 @@ def _bc_species_index(sp: str, species_list: list[str], path: str) -> int:
     return species_list.index(sp)
 
 
-def read_bc_flux(cfg: Any, species_list: list[str]) -> dict[str, np.ndarray]:
+def read_bc_flux(cfg: Config, species_list: list[str]) -> dict[str, np.ndarray]:
     """Build (top_flux, bot_flux, bot_vdep, bot_fix_sp).
 
     use_topflux and use_botflux each fill their section from a file. bot_fix_sp

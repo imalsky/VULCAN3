@@ -9,11 +9,16 @@ Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, l
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import jax.numpy as jnp
 
 from .phy_const import UNDERFLOW_DENOM, Navo, kb
+
+if TYPE_CHECKING:
+    import types
+
+    from .config import Config
 
 __all__ = [
     "GAS_MASS_G_PER_MOL",
@@ -109,13 +114,15 @@ class CondenProfile(NamedTuple):
     fix_species_sat_mix: jnp.ndarray  # (n_fix, nz)
 
 
-def _m_over_rho_r2(atm: Any, gas_sp: str) -> float:
+def _m_over_rho_r2(atm: types.SimpleNamespace, gas_sp: str) -> float:
     """`m / (rho_p * r_p**2)` for `gas_sp` and its condensate, in cgs."""
     c = GAS_TO_CONDENSATE[gas_sp]
     return (GAS_MASS_G_PER_MOL[gas_sp] / Navo) / (float(atm.rho_p[c]) * float(atm.r_p[c]) ** 2)
 
 
-def make_conden_spec(cfg: Any, var: Any, atm: Any, species_idx: Any) -> CondenSpec:
+def make_conden_spec(
+    cfg: Config, var: types.SimpleNamespace, atm: types.SimpleNamespace, species_idx: dict[str, int]
+) -> CondenSpec:
     """Extract the static condensation metadata from a completed setup.
 
     Walks `var.conden_re_list`: a reaction
@@ -335,14 +342,14 @@ def _relax(
     y: jnp.ndarray,
     ymix: jnp.ndarray,
     dt: jnp.ndarray,
-    st: Any,
-    idx: Any,
-    l_s: Any,
-    Dg: Any,
-    sat: Any,
-    m_over: Any,
-    conden_top: Any = None,
-) -> Any:
+    st: CondenStatic,
+    idx: int,
+    l_s: int,
+    Dg: jnp.ndarray,
+    sat: jnp.ndarray,
+    m_over: float | jnp.ndarray,
+    conden_top: int | jnp.ndarray | None = None,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Implicit-Euler cold-trap relaxation of gas `idx` toward `sat`.
 
     Condense where `tau > 0` (y > sat), evaporate where `tau < 0`; mass

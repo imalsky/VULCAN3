@@ -12,6 +12,7 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
         with:
@@ -24,17 +25,14 @@ jobs:
       - name: Format, lint, types, spelling
         run: uvx pre-commit run --all-files --show-diff-on-failure
         env:
-          SKIP: clang-tidy,check-size-limits,mypy
+          SKIP: clang-tidy,check-size-limits
       - name: Size limits
         run: python3 tools/check_size_limits.py
-      # Report only until the 157 findings left after the first annotation pass are fixed.
-      - name: Types
-        continue-on-error: true
-        run: uvx pre-commit run mypy --all-files --hook-stage manual
 
   tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # The normal tier is 59 test-minutes on daw: 20 at three workers, doubled for the runner, plus the install.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

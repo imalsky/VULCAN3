@@ -15,7 +15,10 @@ from .phy_const import UNDERFLOW_DENOM as _UNDERFLOW_DENOM
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from ._adjoint_core import PhotoRecomputeArg
+    from ._carry import JaxIntegState
     from .chem import NetworkArrays
+    from .config import Config
     from .jax_step import AtmStatic
 
 __all__ = ["audit_adjoint_scope"]
@@ -41,7 +44,10 @@ logger = logging.getLogger(__name__)
 
 # size-limit-ok: one check per process
 def _adjoint_scope_findings(  # noqa: C901 (one check per process)
-    cfg: Any, final_state: Any = None, photo_recompute_k: Any = None, body_terms: Any = None
+    cfg: Config,
+    final_state: JaxIntegState | None = None,
+    photo_recompute_k: PhotoRecomputeArg = None,
+    body_terms: BodyTerms | None = None,
 ) -> list:
     """Run static scope checks: which runner processes are OUTSIDE the adjoint's body map for this configuration.
 
@@ -57,7 +63,7 @@ def _adjoint_scope_findings(  # noqa: C901 (one check per process)
     def add(code: str, severity: str, message: str) -> None:
         findings.append({"code": code, "severity": severity, "message": message})
 
-    def state_bool(name: str) -> Any:
+    def state_bool(name: str) -> bool | None:
         if final_state is None:
             return None
         return bool(np.asarray(getattr(final_state, name)))
@@ -200,14 +206,14 @@ def audit_adjoint_scope(  # noqa: C901 (four checks in order)
     atm: AtmStatic,
     net: NetworkArrays,
     *,
-    cfg: Any = None,
-    final_state: Any = None,
+    cfg: Config | None = None,
+    final_state: JaxIntegState | None = None,
     loss_fn: Callable[[jnp.ndarray], jnp.ndarray] | None = None,
     photo_recompute_k: Callable[[jnp.ndarray], jnp.ndarray] | None = None,
     body_terms: BodyTerms | None = None,
     body_dt: float = BODY_MAP_DT,
     print_report: bool = True,
-) -> Any:
+) -> dict[str, Any]:
     """Scan a run for physics the adjoint's body map drops, before trusting it.
 
     The adjoint linearizes `G = ros2_step (+ renorm) (+ photo) (+ body_terms)` at `y_star`;

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from .jax_step import AtmStatic
 
@@ -15,6 +15,9 @@ if TYPE_CHECKING:
     from .chem import NetworkArrays
 
 __all__ = ["ATM_STATIC_BATCH_AXES", "JaxIntegState", "ProfileVars"]
+
+# JAX publishes no pytree type. A caller's jobs, summaries and tangent trees can be any tree of arrays.
+PyTree = Any
 
 
 class ProfileVars(NamedTuple):
@@ -74,6 +77,7 @@ class JaxIntegState(NamedTuple):
     delta: jnp.ndarray  # ()              truncation-error proxy of last attempt
     accept_count: jnp.ndarray  # ()  int32       accepted steps
     retry_count: jnp.ndarray  # ()  int32       retries on the in-flight step
+    keep_prev_run: jnp.ndarray  # ()  int32     force-accepts at dt_min that kept the state, since the last real accept
     atom_loss: jnp.ndarray  # (n_atoms,)
     atom_loss_prev: jnp.ndarray  # (n_atoms,)
     nega_count: jnp.ndarray  # ()  int32       cumulative over the run
@@ -305,6 +309,7 @@ class RunnerEnv(NamedTuple):
     refresh_static: _atm_refresh_mod.AtmRefreshStatic
     clip_fn: Callable[[jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]]
     agg_delta_fn: Callable[[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray | None, jnp.ndarray], jnp.ndarray]
+    delta_ratio_fn: Callable[[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray | None, jnp.ndarray], jnp.ndarray]
     photo_branch: Callable[[JaxIntegState], JaxIntegState] | None
     conden_branch: Callable[[JaxIntegState], JaxIntegState] | None
 

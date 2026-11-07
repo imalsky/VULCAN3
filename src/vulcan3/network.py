@@ -9,9 +9,12 @@ import re
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 __all__ = ["Network", "parse_network"]
 
@@ -103,6 +106,12 @@ class Network:
     # written from a stale id column selects the wrong reaction; the setup
     # path announces it via `legacy_io._warn_stale_reaction_ids`.
     stale_ids: tuple[tuple[int, int, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        """Make the tables read-only: one parse serves the whole process (`chem_funs.NETWORK`)."""
+        for value in vars(self).values():
+            if isinstance(value, np.ndarray):
+                value.setflags(write=False)
 
 
 _RE_LINE = re.compile(r"^\s*(\d*)\s*\[\s*([^\]]+)\s*\]\s*(.*)$")
@@ -264,7 +273,7 @@ def _enter_section(st: _ParseState, section: str, network_path: str, lineno: int
         st.photo_indx = st.parser_i
 
 
-def _collapse_side(side: Any, species_idx: dict[str, int]) -> dict[int, float]:
+def _collapse_side(side: Iterable[tuple[float, str]], species_idx: dict[str, int]) -> dict[int, float]:
     """Collapse one side of a reaction to species index -> stoichiometry, without M."""
     collapsed: dict[int, float] = {}
     for stoich, sp in side:

@@ -54,7 +54,7 @@ class _StrictLoader(yaml.SafeLoader):
     2. Duplicate keys raise instead of last-wins.
     """
 
-    def construct_mapping(self, node: Any, deep: bool = False) -> Any:
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
         seen: set = set()
         for key_node, _ in node.value:
             key = self.construct_object(key_node, deep=deep)
@@ -190,7 +190,8 @@ def _known_config_keys() -> frozenset[str]:
 def _packaged_defaults() -> dict[str, Any]:
     """Return the packaged ``default.yaml``, read raw once: the value of every knob a config file omits."""
     pkg = resources.files("vulcan3").joinpath("configs", "default.yaml")
-    return yaml.load(pkg.read_text(), Loader=_StrictLoader)
+    defaults: dict[str, Any] = yaml.load(pkg.read_text(), Loader=_StrictLoader)
+    return defaults
 
 
 def _validate_keys(d: dict[str, Any], source: str) -> list[str]:

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import jax.scipy.special as jsp_special
@@ -15,6 +15,9 @@ import numpy as np
 
 from ._paths import resolve_data_path
 from .phy_const import BAR_CGS, G_grav, kb
+
+if TYPE_CHECKING:
+    from .config import Config
 
 __all__ = [
     "analytical_TP_H14",
@@ -48,7 +51,7 @@ def compute_pico(pco: jnp.ndarray) -> jnp.ndarray:
     )
 
 
-def surface_gravity(cfg: Any) -> float:
+def surface_gravity(cfg: Config) -> float:
     """Surface gravity at the reference level (cm/s^2): ``g = G*Mp/Rp**2``.
 
     Single source of gravity (upstream vm_branch); there is no ``gs`` knob.
@@ -87,7 +90,9 @@ def high_temp_cut_regrid(
     return np.logspace(np.log10(new_P_b), np.log10(P_t), int(nz))
 
 
-def analytical_TP_H14(pco: jnp.ndarray, params: Any, *, gs: float, Pb: float) -> jnp.ndarray:
+def analytical_TP_H14(
+    pco: jnp.ndarray, params: tuple[float, float, float, float, float, float], *, gs: float, Pb: float
+) -> jnp.ndarray:
     """Heng et al. 2014 analytical T(P) profile.
 
     `params` is the 6-tuple `(T_int, T_irr, ka_0, ka_s, beta_s, beta_l)`.
@@ -106,14 +111,15 @@ def analytical_TP_H14(pco: jnp.ndarray, params: Any, *, gs: float, Pb: float) ->
     ka_l = ka_0 + ka_CIA * m / m_0
     term1 = T_int**4 / 4.0 * (1.0 / eps_L + m / (eps_L3 * beta_l**2) * (ka_0 + ka_CIA * m / (2.0 * m_0)))
     arg = ka_s * m / beta_s
-    expn2 = jsp_special.expn(2, arg)
-    expn4 = jsp_special.expn(4, arg)
+    expn2: jnp.ndarray = jsp_special.expn(2, arg)
+    expn4: jnp.ndarray = jsp_special.expn(4, arg)
     term2 = 1.0 / (2.0 * eps_L) + expn2 * (
         ka_s / (ka_l * beta_s) - ka_CIA * m * beta_s / (eps_L3 * ka_s * m_0 * beta_l**2)
     )
     term3 = ka_0 * beta_s / (eps_L3 * ka_s * beta_l**2) * (1.0 / 3.0 - expn4)
     term4 = 0.0
-    return (term1 + T_irr_eff**4 / 8.0 * (term2 + term3 + term4)) ** 0.25
+    T: jnp.ndarray = (term1 + T_irr_eff**4 / 8.0 * (term2 + term3 + term4)) ** 0.25
+    return T
 
 
 def kzz_profile_jax(
@@ -192,9 +198,9 @@ def _read_atm_table(atm_file: str) -> dict[str, np.ndarray]:
         "Pressure": np.asarray(table["Pressure"], dtype=np.float64),
         "Temp": np.asarray(table["Temp"], dtype=np.float64),
     }
-    if "Kzz" in table.dtype.names:
+    if "Kzz" in table.dtype.names:  # type: ignore[operator]  # a structured array has names
         out["Kzz"] = np.asarray(table["Kzz"], dtype=np.float64)
-    if "vz" in table.dtype.names:
+    if "vz" in table.dtype.names:  # type: ignore[operator]  # a structured array has names
         out["vz"] = np.asarray(table["vz"], dtype=np.float64)
     nrow = out["Pressure"].size
     if out["Pressure"].ndim != 1 or nrow < 2:
@@ -216,7 +222,7 @@ def _read_atm_table(atm_file: str) -> dict[str, np.ndarray]:
 
 
 # size-limit-ok: one branch per atm_type and Kzz_prof, as master
-def load_TPK(cfg: Any, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, np.ndarray]:  # noqa: C901 (one branch per atm_type and Kzz_prof, as master)
+def load_TPK(cfg: Config, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, np.ndarray]:  # noqa: C901 (one branch per atm_type and Kzz_prof, as master)
     """Build (Tco, Kzz, vz, M, n_0) for the configured atm/Kzz/vz modes.
 
     `pco` and `pico` are inputs because the `table` mode

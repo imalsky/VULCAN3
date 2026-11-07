@@ -106,7 +106,7 @@ def legacy_view(rs: RunState) -> tuple[types.SimpleNamespace, types.SimpleNamesp
     return var, atm, para
 
 
-class _Variables:
+class _Variables(types.SimpleNamespace):
     """Private mutable scratch container used by the pre-loop pipeline."""
 
     def __init__(self) -> None:
@@ -164,7 +164,7 @@ class _Variables:
         self.conden_re_list: list[int] = []
 
 
-class _AtmData:
+class _AtmData(types.SimpleNamespace):
     """Private mutable scratch container for atmosphere-structure arrays."""
 
     def __init__(self) -> None:

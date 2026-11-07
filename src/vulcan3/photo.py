@@ -6,13 +6,18 @@ Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, l
 from __future__ import annotations
 
 from functools import partial as _partial
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 from .phy_const import UNDERFLOW_DENOM
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from .state import PhotoStaticInputs
 
 __all__ = [
     "PhotoData",
@@ -53,7 +58,7 @@ class PhotoData(NamedTuple):
     scat_cross: jnp.ndarray
 
 
-def photo_data_from_static(static: Any, species_list: Any) -> PhotoData:
+def photo_data_from_static(static: PhotoStaticInputs, species_list: list[str]) -> PhotoData:
     """Build the runtime `PhotoData` from a `PhotoStaticInputs`."""
     T_cross_sp = set(static.absp_T_sp)
     absp_sp_non_T = [sp for sp in static.absp_sp if sp not in T_cross_sp]
@@ -154,7 +159,7 @@ def _two_stream_sweeps(
     i_u: jnp.ndarray,  # (nz, nbin)
     dflux_u_prev: jnp.ndarray,  # (nz+1, nbin); the PRIOR call's dflux_u
     mu_ang: float,
-) -> Any:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Down and up two-stream sweeps; returns (dflux_d, dflux_u), (nz+1, nbin).
 
     down: d_j = (phi[j]*d_{j+1} - xi[j]*dflux_u_prev[j] + i_d[j]/mu_ang)/chi[j],
@@ -164,7 +169,7 @@ def _two_stream_sweeps(
     """
     nbin = chi.shape[1]
 
-    def _then(f: Any, g: jnp.ndarray) -> Any:
+    def _then(f: jnp.ndarray, g: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         """Compose affine maps: apply f, then g.  g(f(x)) = ga*(fa*x + fb) + gb."""
         fa, fb = f
         ga, gb = g
@@ -196,7 +201,7 @@ def compute_flux_jax(
     hc: float,  # h*c in erg*nm
     dflux_u_prev: jnp.ndarray,  # (nz+1, nbin); pass zeros on first call
     ag0_is_zero: bool = True,
-) -> Any:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Two-stream Eddington radiative transfer.
 
     The down sweep reads dflux_u as it stood after the previous call (since
@@ -289,7 +294,7 @@ class PhotoJData(NamedTuple):
     branch_T_keys: tuple
 
 
-def photo_J_data_from_static(static: Any) -> PhotoJData:
+def photo_J_data_from_static(static: PhotoStaticInputs) -> PhotoJData:
     """Build the runtime photolysis `PhotoJData` from a `PhotoStaticInputs`."""
     if int(static.din12_indx) < 0:
         raise ValueError(
@@ -308,7 +313,7 @@ def photo_J_data_from_static(static: Any) -> PhotoJData:
     )
 
 
-def photo_ion_data_from_static(static: Any) -> PhotoJData:
+def photo_ion_data_from_static(static: PhotoStaticInputs) -> PhotoJData:
     """Build the runtime photoionization `PhotoJData` from a `PhotoStaticInputs`."""
     return photo_J_data_from_static(static)._replace(
         cross_J=static.cross_Jion,
@@ -320,8 +325,13 @@ def photo_ion_data_from_static(static: Any) -> PhotoJData:
 
 @_partial(jax.jit, static_argnames=("din12_indx",))
 def compute_J_jax_flat(
-    aflux: jnp.ndarray, cross_J: Any, cross_J_T: Any, din12_indx: Any, dbin1: Any, dbin2: Any
-) -> Any:
+    aflux: jnp.ndarray,
+    cross_J: jnp.ndarray,
+    cross_J_T: jnp.ndarray,
+    din12_indx: int | jnp.ndarray,
+    dbin1: float,
+    dbin2: float,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Per-branch J-rates by wavelength integration (trapezoid on each bin grid).
 
     Args:
@@ -366,7 +376,7 @@ def compute_J_jax_flat(
     return J_br, J_br_T
 
 
-def compute_J_jax(aflux: jnp.ndarray, photo_J: PhotoJData) -> Any:
+def compute_J_jax(aflux: jnp.ndarray, photo_J: PhotoJData) -> dict[tuple[str, int], jnp.ndarray]:
     """Compute J-rates per (species, branch) via wavelength integration.
 
     Returns a dict keyed by (species, branch) -> jnp.ndarray of shape (nz,).
@@ -386,7 +396,9 @@ def compute_J_jax(aflux: jnp.ndarray, photo_J: PhotoJData) -> Any:
     }
 
 
-def pack_branch_to_k_index_map(branch_keys: Any, rate_index: Any, remove_list: Any) -> Any:
+def pack_branch_to_k_index_map(
+    branch_keys: Sequence[tuple[str, int]], rate_index: dict[tuple[str, int], int], remove_list: Sequence[int]
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Build static branch -> k_arr row index tables for photo or ion updates.
 
     Returns (n_br,) int64 reaction indices into k_arr (1..nr) and a (n_br,)
@@ -409,14 +421,14 @@ def pack_branch_to_k_index_map(branch_keys: Any, rate_index: Any, remove_list: A
 @jax.jit
 def update_k_with_J(
     k_arr: jnp.ndarray,
-    J_br: Any,
-    J_br_T: Any,
-    branch_re_idx: Any,
-    branch_active: Any,
-    branch_T_re_idx: Any,
-    branch_T_active: Any,
-    f_diurnal: Any,
-) -> Any:
+    J_br: jnp.ndarray,
+    J_br_T: jnp.ndarray,
+    branch_re_idx: jnp.ndarray,
+    branch_active: jnp.ndarray,
+    branch_T_re_idx: jnp.ndarray,
+    branch_T_active: jnp.ndarray,
+    f_diurnal: float,
+) -> jnp.ndarray:
     """Write per-branch J-rates into k_arr via .at[].set().
 
     Inactive branches (active mask False) write k_arr[0] back into k_arr[0],

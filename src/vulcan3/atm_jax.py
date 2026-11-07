@@ -9,12 +9,17 @@ the host setup runs. The hydrostatic column on the graph is
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import jax.numpy as jnp
 import numpy as np
 
 from .atm_setup import mol_diff_jax, settling_coeff_array, surface_gravity
+
+if TYPE_CHECKING:
+    import types
+
+    from .config import Config
 
 __all__ = ["AtmSpec", "PhysicalInputs", "make_physical_inputs", "mol_diff"]
 
@@ -57,7 +62,9 @@ class AtmSpec(NamedTuple):
     use_settling: bool
 
 
-def mol_diff(phys: PhysicalInputs, spec: AtmSpec, n_0: jnp.ndarray, gz: Any, Hp: jnp.ndarray, dz: jnp.ndarray) -> Any:
+def mol_diff(
+    phys: PhysicalInputs, spec: AtmSpec, n_0: jnp.ndarray, gz: jnp.ndarray, Hp: jnp.ndarray, dz: jnp.ndarray
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Molecular diffusion on the graph: (Dzz, Dzz_cen, vm).
 
     The body is `atm_setup.mol_diff_jax`, the same one the host setup path
@@ -87,7 +94,9 @@ def mol_diff(phys: PhysicalInputs, spec: AtmSpec, n_0: jnp.ndarray, gz: Any, Hp:
 _mol_diff = mol_diff  # deprecated (docs/api.md)
 
 
-def make_physical_inputs(cfg: Any, var: Any, atm: Any, species_list: list[str]) -> tuple[PhysicalInputs, AtmSpec]:
+def make_physical_inputs(
+    cfg: Config, var: types.SimpleNamespace, atm: types.SimpleNamespace, species_list: list[str]
+) -> tuple[PhysicalInputs, AtmSpec]:
     """Bridge a legacy (cfg, var, atm) setup into (PhysicalInputs, AtmSpec).
 
     Pulls the differentiable profiles into `PhysicalInputs` and the discrete

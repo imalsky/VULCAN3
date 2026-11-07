@@ -11,8 +11,9 @@ import contextlib
 import copy
 import types
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -32,12 +33,14 @@ if TYPE_CHECKING:
 
 __all__ = [
     "TERM_CONVERGED",
+    "TERM_DT_MIN_FROZEN",
     "TERM_NONFINITE",
     "TERM_RUNNING",
     "TERM_RUNTIME",
     "TERM_STEP_COUNT",
     "AtmInputs",
     "AtomInputs",
+    "DtMinFrozenError",
     "FixSpeciesInputs",
     "IniAbunOutputs",
     "ParamInputs",
@@ -50,6 +53,7 @@ __all__ = [
     "StepInputs",
     "legacy_view",
     "load_stellar_flux",
+    "raise_if_frozen",
     "runstate_from_store",
 ]
 
@@ -158,13 +162,75 @@ class StepInputs(NamedTuple):
 
 
 # Termination codes (JaxIntegState.termination_reason, ParamInputs.end_case):
-# 1-3 are master's end_case (op.py:1072-1084); 5 (non-finite, or stopped
-# without converging and without a cap) is JAX-only; 0 means still running.
+# 1-3 are master's end_case (op.py:1072-1084); 4 (a trial that keeps failing at dt_min) and 5 (non-finite, or
+# stopped without converging and without a cap) are JAX-only; 0 means still running. `classify_end_case` reports 4 as
+# end_case 5.
 TERM_RUNNING = 0
 TERM_CONVERGED = 1
 TERM_RUNTIME = 2
 TERM_STEP_COUNT = 3
+TERM_DT_MIN_FROZEN = 4
 TERM_NONFINITE = 5
+
+
+class DtMinFrozenError(RuntimeError):
+    """A column's trial keeps failing at `dt_min`, so its state does not move and more steps repeat the failure."""
+
+
+_FROZEN_WHY = "A step cannot get shorter than dt_min, and until a refresh changes the trial more steps repeat it."
+_NEARER_BALANCE = "start nearer balance (for a composition change, take it in smaller steps)"
+
+
+def raise_if_frozen(
+    termination_reason: np.ndarray | jnp.ndarray,
+    error_ratio: np.ndarray | jnp.ndarray | None = None,
+    *,
+    rtol: float | None = None,
+) -> None:
+    """Raise `DtMinFrozenError` if any column stopped frozen at `dt_min`.
+
+    A traced runner cannot raise, so a caller that wraps a solve in `jax.jit` or `jax.vmap` calls this right after that
+    call, on the arrays it returned. Untraced, the runners do it themselves. The message names column indices, not a
+    cell: only the exit carry can name a species and layer, and that takes a solve outside the jit.
+
+    Parameters
+    ----------
+    termination_reason : array of int [...]
+        `JaxIntegState.termination_reason`, concrete, one value or one per column.
+    error_ratio : array of float [...], optional
+        `JaxIntegState.delta`, the last trial's error ratio, the same shape.
+    rtol : float, optional
+        The acceptance tolerance, for the message.
+
+    Raises
+    ------
+    DtMinFrozenError
+        If any column reads `TERM_DT_MIN_FROZEN`.
+    TypeError
+        If `termination_reason` is traced, or is not integer: it would otherwise read as not frozen.
+    ValueError
+        If `error_ratio` does not have the shape of `termination_reason`.
+    """
+    if isinstance(termination_reason, jax.core.Tracer):
+        raise TypeError("raise_if_frozen needs concrete values: call it right after the jitted call, not inside it.")
+    reason = np.asarray(termination_reason)
+    if not np.issubdtype(reason.dtype, np.integer):
+        raise TypeError(f"termination_reason must be integer, got dtype {reason.dtype}: pass the carry's own field.")
+    if error_ratio is not None and np.shape(error_ratio) != reason.shape:
+        raise ValueError(f"error_ratio has shape {np.shape(error_ratio)}, termination_reason {reason.shape}.")
+    columns = np.flatnonzero(reason.ravel() == TERM_DT_MIN_FROZEN)
+    if not columns.size:
+        return
+    last = ""
+    if error_ratio is not None:
+        last = f" (largest last ratio {float(np.max(np.ravel(error_ratio)[columns])):.3g}"
+        last += ")" if rtol is None else f", rtol {float(rtol):g})"
+    raise DtMinFrozenError(
+        f"{columns.size} of {reason.size} columns froze at dt_min, at index {columns[:8].tolist()}: a trial keeps "
+        f"failing, on the error estimate{last}, a negative cell or an atom's loss. Solving one of them alone names the "
+        f"cell. {_FROZEN_WHY} To try, if it is the estimate: raise `rtol` above the ratio or lower `dt_min`; in any "
+        f"case: {_NEARER_BALANCE}."
+    )
 
 
 class ParamInputs(NamedTuple):
@@ -288,7 +354,7 @@ _SFLUX_BIN_MIN_NM = 2.0
 _SFLUX_BIN_MAX_NM = 700.0
 
 
-def load_stellar_flux(cfg: Any) -> tuple[float, float]:
+def load_stellar_flux(cfg: Config) -> tuple[float, float]:
     """Read the stellar flux file and return the spectral-bin extents.
 
     Returns `(def_bin_min, def_bin_max)`, clamped to [2, 700] nm, or
@@ -310,7 +376,9 @@ def load_stellar_flux(cfg: Any) -> tuple[float, float]:
     )
 
 
-def _inputs_from_store(var: Any, atm: Any) -> tuple[AtmInputs, RateInputs, PhotoInputs]:
+def _inputs_from_store(
+    var: types.SimpleNamespace, atm: types.SimpleNamespace
+) -> tuple[AtmInputs, RateInputs, PhotoInputs]:
     """Snapshot the atmosphere, rate and photo inputs off a legacy (var, atm)."""
     nr = int(chem_funs.nr)
     nz = int(atm.Tco.shape[0])
@@ -374,7 +442,9 @@ def _atom_arr_to_dict(arr: np.ndarray, atom_order: tuple[str, ...]) -> dict[str,
 
 
 # size-limit-ok: each RunState slot in turn, with the fix_species and photolysis branches
-def runstate_from_store(var: Any, atm: Any, para: Any) -> RunState:
+def runstate_from_store(
+    var: types.SimpleNamespace, atm: types.SimpleNamespace, para: types.SimpleNamespace
+) -> RunState:
     """Snapshot the full runner-input state of `(var, atm, para)`.
 
     Carries pre-loop fields plus runner-state slots (step/params/atoms/
@@ -477,7 +547,7 @@ def runstate_from_store(var: Any, atm: Any, para: Any) -> RunState:
     )
 
 
-def _atm_metadata_from_atm(atm: Any) -> dict:
+def _atm_metadata_from_atm(atm: types.SimpleNamespace) -> dict:
     return {
         # Setup leaves Ti unset with molecular diffusion off; nothing reads it then.
         "Ti": jnp.asarray(getattr(atm, "Ti", atm.Tco), dtype=jnp.float64),
@@ -492,7 +562,9 @@ def _atm_metadata_from_atm(atm: Any) -> dict:
     }
 
 
-def _runmetadata_from_legacy(var: Any, atm: Any, para: Any) -> RunMetadata:
+def _runmetadata_from_legacy(
+    var: types.SimpleNamespace, atm: types.SimpleNamespace, para: types.SimpleNamespace
+) -> RunMetadata:
     """Snapshot host-side static metadata that doesn't fit the JAX pytrees."""
     atm_meta = _atm_metadata_from_atm(atm)
     return RunMetadata(
@@ -619,9 +691,10 @@ def _build_pre_loop_runstate_impl(cfg: Config) -> RunState:
     from . import legacy_io as _io, op_jax as _op_jax, photo_setup as _photo_setup, rates_jax as _rates_mod
     from .atm_setup import Atm
     from .ini_abun import InitialAbun
+    from .runtime_validation import refuse_missing_atoms
 
-    var = _Variables()
-    atm = _AtmData()
+    var: types.SimpleNamespace = _Variables()
+    atm: types.SimpleNamespace = _AtmData()
     para = types.SimpleNamespace(start_time=time.time())
 
     make_atm = Atm()
@@ -639,6 +712,7 @@ def _build_pre_loop_runstate_impl(cfg: Config) -> RunState:
     ini = InitialAbun()
     var = ini.ini_y(var, atm)
     var = ini.ele_sum(var)
+    refuse_missing_atoms(np.asarray(list(var.atom_ini.values())), list(var.atom_ini))
 
     atm = make_atm.f_mu_dz(var, atm, None)
     make_atm.mol_diff(atm)

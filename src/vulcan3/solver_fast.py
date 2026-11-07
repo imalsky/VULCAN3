@@ -18,12 +18,15 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import jax
 import jax.numpy as jnp
 
 from . import _settings, solver as _ref
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
 
 __all__ = ["BACKEND", "CUDA_MAX_NI", "Factors", "build", "factor", "solve"]
 
@@ -45,20 +48,22 @@ class Factors(NamedTuple):
     sub_d: jnp.ndarray
 
 
-def _matvec(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray, x: Any) -> Any:
+def _matvec(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray:
     out = jnp.einsum("zij,zj->zi", diag, x)
     out = out.at[:-1].add(sup_d * x[1:])
     return out.at[1:].add(sub_d * x[:-1])
 
 
-def _raw_factor(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> Any:
+def _raw_factor(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> Sequence[jnp.ndarray]:
     if BACKEND == "ffi":
         return _ffi_factor(diag, sup_d, sub_d)
     f = _ref.factor_block_thomas_diag_offdiag(diag, sup_d, sub_d)
     return f.diag_lu, f.diag_perm
 
 
-def _raw_solve(lu: jnp.ndarray, perm: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray, rhs: jnp.ndarray) -> Any:
+def _raw_solve(
+    lu: jnp.ndarray, perm: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray, rhs: jnp.ndarray
+) -> jnp.ndarray:
     if BACKEND == "ffi":
         return _ffi_solve(lu, perm, sup_d, sub_d, rhs)
     return _ref.solve_block_thomas_diag_offdiag(_ref.BlockThomasDiagFactors(lu, perm, sup_d, sub_d), rhs)
@@ -71,7 +76,9 @@ def factor(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> Factors
     return Factors(lu, perm, diag, sup_d, sub_d)
 
 
-def solve(factors: Factors, rhs: jnp.ndarray, matvec: Any = None) -> Any:
+def solve(
+    factors: Factors, rhs: jnp.ndarray, matvec: Callable[[jnp.ndarray], jnp.ndarray] | None = None
+) -> jnp.ndarray:
     """`matvec` is the operator as a function of x.
 
     The primal never runs it; the AD rules do (the tangent's `dA x`, the transpose's cotangent). The default is the
@@ -85,24 +92,26 @@ def solve(factors: Factors, rhs: jnp.ndarray, matvec: Any = None) -> Any:
     if matvec is None:
         matvec = functools.partial(_matvec, diag, sup_d, sub_d)
 
-    def solve_(_matvec: Any, b: Any) -> Any:
+    def solve_(_matvec: object, b: jnp.ndarray) -> jnp.ndarray:
         return _raw_solve(lu, perm, sup0, sub0, b)
 
-    def transpose_solve(_vecmat: Any, c: Any) -> Any:
+    def transpose_solve(_vecmat: object, c: jnp.ndarray) -> jnp.ndarray:
         # Transpose of the primal sweep on the same factors (no second
         # factorisation). The FFI call has no transpose rule, so
         # this always runs the JAX scan, on whichever backend's factors.
-        def sweep(b: Any) -> Any:
+        def sweep(b: jnp.ndarray) -> jnp.ndarray:
             return _ref.solve_block_thomas_diag_offdiag(_ref.BlockThomasDiagFactors(lu, perm, sup0, sub0), b)
 
         _, vjp = jax.vjp(sweep, c)
-        return vjp(c)[0]
+        out: jnp.ndarray = vjp(c)[0]
+        return out
 
     # Reverse mode through `ffi` is refused by leaving the transpose out: `custom_linear_solve` traces it eagerly, so a
     # raise inside it would fire on every run.
-    return jax.lax.custom_linear_solve(
+    sol: jnp.ndarray = jax.lax.custom_linear_solve(
         matvec, rhs, solve_, transpose_solve=None if BACKEND == "ffi" else transpose_solve
     )
+    return sol
 
 
 # --- C++ CPU kernel and its CUDA twin ---------------------------------------
@@ -140,7 +149,7 @@ def _nvcc_arch() -> str:
     if arch := os.environ.get("NVCC_ARCH"):
         return arch
     try:
-        cc = jax.devices("cuda")[0].compute_capability
+        cc: str = jax.devices("cuda")[0].compute_capability
     except RuntimeError:
         try:
             cc = subprocess.run(
@@ -224,7 +233,7 @@ def _on_cuda() -> bool:
     return jax.default_backend() in ("gpu", "cuda")
 
 
-def _ffi_factor(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> Any:
+def _ffi_factor(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> Sequence[jnp.ndarray]:
     ni = diag.shape[-1]
     if ni > CUDA_MAX_NI and _on_cuda():
         raise ValueError(
@@ -239,7 +248,9 @@ def _ffi_factor(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> An
     return jax.ffi.ffi_call("vulcan_bt_factor", out, vmap_method="broadcast_all")(diag, sup_d, sub_d)
 
 
-def _ffi_solve(lu: jnp.ndarray, perm: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray, rhs: jnp.ndarray) -> Any:
+def _ffi_solve(
+    lu: jnp.ndarray, perm: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray, rhs: jnp.ndarray
+) -> jnp.ndarray:
     # expand_dims, not broadcast_all: at a vmap level where only `rhs` is
     # batched (the tangent directions share one factorisation) the factors get
     # a size-1 axis instead of one copy per direction, and the handler

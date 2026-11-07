@@ -37,7 +37,7 @@ For development:
 git clone https://github.com/imalsky/VULCAN3.git
 cd VULCAN3
 python -m pip install -e ".[dev,plot]"
-python tests/gen_fixtures.py --all   # the four .npz oracles are gitignored (~3.5 min)
+python tests/gen_fixtures.py --all   # the five .npz oracles are gitignored (~4.5 min)
 python -m pytest tests -q
 ```
 
@@ -61,11 +61,12 @@ On a GPU, `VULCAN3_SOLVER=ffi` runs the block-tridiagonal solve of each
 Rosenbrock step as CUDA kernels. Build them once per host with
 `python -m vulcan3.solver_fast --cuda` (needs `nvcc`). For networks of up
 to 96 species the factorization keeps each block in registers (Gauss-Jordan);
-larger networks use a shared-memory LU kernel. On a GH200 with the WASP-39 b
+a wider network is refused while the step is traced, so use `VULCAN3_SOLVER=fast`
+there. On a GH200 with the WASP-39 b
 network (89 species, 396 columns) the factorization and the two solves of a
 step take 24.5 ms instead of 39.0 ms, and a whole step 60.7 ms instead of
-75.2 ms. `VULCAN3_BT_FACTOR=lu` selects the LU kernel for any network.
-On sm_80 and newer the Gauss-Jordan pivot search uses warp REDUX operations,
+75.2 ms.
+The kernel needs sm_80 or newer: the Gauss-Jordan pivot search uses warp REDUX operations,
 its multipliers are corrected products with the IEEE reciprocal, and the
 solve stages each layer's factors with `cp.async`; the results are bitwise
 the same. On a GH200 at 792 columns the factorization then takes 23.1 ms

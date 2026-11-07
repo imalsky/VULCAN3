@@ -92,21 +92,20 @@ def _make_clip_fn(
     return clip_fn
 
 
-def _make_aggregate_delta_fn(
+def _make_delta_ratio_fn(
     mtol: float, atol: float, zero_bot_row: bool, condense_zero_mask: jnp.ndarray
 ) -> Callable[..., jnp.ndarray]:
-    """Build the scalar `delta(sol, delta_arr, ymix_old, zero_bot, ymix_trial)` reducer.
+    """Build the per-cell `ratio(sol, delta_arr, ymix_old, zero_bot, ymix_trial)` of the error estimate.
 
     Zeros entries where both the pre-step and the trial (pre-clip) mixing ratio
     are below mtol (master masks on the pre-step one alone, op.py:2949, so a
     species the step creates escapes the estimate: notes "Parity ledger"),
     sol < atol, optionally the bottom row (use_botflux / use_fix_sp_bot),
-    and condensed species, then returns the max of (delta_arr / sol) over
-    (sol > 0) cells.
+    and condensed species, then returns (delta_arr / sol) over (sol > 0) cells.
     """
     cond_zero = jnp.asarray(condense_zero_mask, dtype=jnp.bool_)
 
-    def agg(
+    def ratio_fn(
         sol: jnp.ndarray,
         delta_arr: jnp.ndarray,
         ymix_old: jnp.ndarray,
@@ -131,8 +130,19 @@ def _make_aggregate_delta_fn(
         # `jnp.max` JVP (a multiply by 0/1, not a select) propagates. Primal
         # unchanged (0/x == 0/1); a live numerator implies den >= atol.
         den = jnp.where(masked == 0.0, 1.0, jnp.maximum(jnp.abs(sol), UNDERFLOW_DENOM))
-        ratio = jnp.where(sol > 0, masked / den, 0.0)
-        return jnp.max(ratio)
+        return jnp.where(sol > 0, masked / den, 0.0)
+
+    return ratio_fn
+
+
+def _make_aggregate_delta_fn(
+    mtol: float, atol: float, zero_bot_row: bool, condense_zero_mask: jnp.ndarray
+) -> Callable[..., jnp.ndarray]:
+    """Build the scalar error estimate: the max of `_make_delta_ratio_fn`'s ratio."""
+    ratio_fn = _make_delta_ratio_fn(mtol, atol, zero_bot_row, condense_zero_mask)
+
+    def agg(*args: jnp.ndarray | None) -> jnp.ndarray:
+        return jnp.max(ratio_fn(*args))
 
     return agg
 

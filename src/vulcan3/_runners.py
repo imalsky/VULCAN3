@@ -19,11 +19,11 @@ from ._carry import (
     _Statics,
 )
 from ._convergence import cond_fn, real_terminate
-from ._loop_body import body_fn
+from ._loop_body import body_fn, repeat_failed_trial
 from ._loop_branches import _make_conden_branch, _make_photo_branch
 from ._runner_jvp import make_runner_jvp
 from ._runner_queue import runner_queue
-from ._step_control import _make_aggregate_delta_fn, _make_clip_fn
+from ._step_control import _make_aggregate_delta_fn, _make_clip_fn, _make_delta_ratio_fn
 from .state import TERM_NONFINITE, TERM_RUNNING
 
 if TYPE_CHECKING:
@@ -73,8 +73,8 @@ def body_fn_batch(
     env: RunnerEnv,
     s: JaxIntegState,
     atm_static_: AtmStatic,
-    lane_axis: str | None = None,
-    it: jnp.ndarray | None = None,
+    lane_axis: str,
+    it: jnp.ndarray,
 ) -> JaxIntegState:
     """Advance every lane one tick and freeze the ones that are done."""
     statics = env.statics
@@ -156,13 +156,13 @@ def make_runner(
     refresh_static: _atm_refresh_mod.AtmRefreshStatic,
     photo_static: _PhotoStatic | None = None,
     conden_static: _conden_mod.CondenStatic | None = None,
-) -> tuple[Callable, Callable, Callable, Callable, Callable]:
-    """Build `(runner, runner_chunk, runner_batch, runner_queue, make_runner_jvp)`.
+) -> tuple[Callable, Callable, Callable, Callable, Callable, Callable]:
+    """Build `(runner, runner_chunk, runner_batch, runner_queue, make_runner_jvp, failed_trial)`.
 
     The JIT'd `runner(state, atm_static) -> state` runs to convergence, `count_max`, or `runtime`, and
     `runner_chunk(state, atm_static, target)` also stops when `accept_count` reaches `target`. `cond_fn` checks
     `(t > runtime_dyn) | (count > count_max_dyn) | (ready & certified)` (phase 1 only on hybrid runs), or a non-finite
-    `y`.
+    `y`, or a trial that keeps failing at `dt_min`.
     The termination test reads count_min, count_max and runtime from the carry's `*_dyn` fields (the hybrid flip extends
     them), never from `statics`.
     """
@@ -176,6 +176,7 @@ def make_runner(
         refresh_static=refresh_static,
         clip_fn=_make_clip_fn(non_gas_present, gas_indx_mask, statics.pos_cut, statics.nega_cut),
         agg_delta_fn=_make_aggregate_delta_fn(statics.mtol, statics.atol, zero_bot_row, condense_zero_mask),
+        delta_ratio_fn=_make_delta_ratio_fn(statics.mtol, statics.atol, zero_bot_row, condense_zero_mask),
         photo_branch=_make_photo_branch(photo_static) if photo_static is not None else None,
         conden_branch=_make_conden_branch(conden_static) if conden_static is not None else None,
     )
@@ -237,4 +238,5 @@ def make_runner(
         runner_batch,
         functools.partial(runner_queue, env, lane_step),
         functools.partial(make_runner_jvp, env),
+        jax.jit(functools.partial(repeat_failed_trial, env)),
     )

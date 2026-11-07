@@ -30,7 +30,11 @@ _type_list.append("float")
 compo = np.genfromtxt(resolve_data_path(_CFG.com_file), names=True, dtype=_type_list)
 compo_row = list(compo["species"])
 
-atom_list: tuple[str, ...] = tuple(name for name in compo.dtype.names if name not in ("species", "mass"))
+atom_list: tuple[str, ...] = tuple(
+    name
+    for name in compo.dtype.names  # type: ignore[union-attr]  # a structured array has names
+    if name not in ("species", "mass")
+)
 
 # Upstream lists six species twice; these three pairs disagree. Both codes
 # take the first row (`list.index`), kept for parity. Any other disagreeing

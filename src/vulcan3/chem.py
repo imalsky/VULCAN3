@@ -9,7 +9,7 @@ Public names: `NetworkArrays`, `to_jax`, `chem_jac_analytical`, `chem_jac_entrie
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -143,7 +143,7 @@ def to_jax(net: Network) -> NetworkArrays:
     )
 
 
-def _left_to_right_sum_axis1(x: Any) -> jnp.ndarray:
+def _left_to_right_sum_axis1(x: jnp.ndarray) -> jnp.ndarray:
     """Sum over axis 1 (the term axis of a column table) in one fixed order.
 
     XLA may reorder a `reduce` per program; a fixed chain of adds keeps the batch and queue runners bit-identical.
@@ -157,7 +157,7 @@ def _left_to_right_sum_axis1(x: Any) -> jnp.ndarray:
 def chem_jac_entries(
     y: jnp.ndarray,  # [nz, ni]
     M: jnp.ndarray,  # [nz]
-    k: Any,  # [nr+1, nz]
+    k: jnp.ndarray,  # [nr+1, nz]
     net: NetworkArrays,
 ) -> jnp.ndarray:
     """Return the nonzero entries of the analytical Jacobian for a whole column.
@@ -226,7 +226,7 @@ def chem_jac_entries(
 def chem_jac_analytical(
     y: jnp.ndarray,  # [nz, ni]
     M: jnp.ndarray,  # [nz]
-    k: Any,  # [nr+1, nz]
+    k: jnp.ndarray,  # [nr+1, nz]
     net: NetworkArrays,
 ) -> jnp.ndarray:
     """Stoichiometry-driven chemistry Jacobian for a whole column.

@@ -17,16 +17,20 @@ from ._version import __version__
 _config.update("jax_enable_x64", True)
 
 from .config import Config, default_config, load_config, validate_overrides  # noqa: E402 (x64 is set first)
-from .state import RunState  # noqa: E402 (x64 is set first)
+from .runtime_validation import MissingAtomError  # noqa: E402 (x64 is set first)
+from .state import DtMinFrozenError, RunState, raise_if_frozen  # noqa: E402 (x64 is set first)
 
 __all__ = [
     "Config",
+    "DtMinFrozenError",
+    "MissingAtomError",
     "RunState",
     "__version__",
     "conv_normal",
     "default_config",
     "load_config",
     "make_config",
+    "raise_if_frozen",
     "validate_overrides",
 ]
 

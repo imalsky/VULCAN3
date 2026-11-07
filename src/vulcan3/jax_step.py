@@ -11,7 +11,7 @@ Units: CGS throughout: T in K, pressure in dyn cm^-2, number density in cm^-3, l
 from __future__ import annotations
 
 import functools
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -23,6 +23,11 @@ from .chem_funs import chem_rhs_codegen as _chem_rhs, spec_list as _spec_list
 from .config import REPAIR_ABS_FLOOR, default_config
 from .phy_const import UNDERFLOW_DENOM, Navo, kb
 
+if TYPE_CHECKING:
+    import types
+
+    from .config import Config
+
 __all__ = ["IMPORT_ATOM_LIST", "AtmStatic", "DiffGrav", "compute_diff_grav", "jax_ros2_step", "make_atm_static"]
 
 _SOLVER = _settings.solver()  # import-frozen
@@ -32,7 +37,10 @@ if _SOLVER == "reference":
         solve_block_thomas_diag_offdiag,
     )
 else:  # see solver_fast.py
-    from .solver_fast import factor as factor_block_thomas_diag_offdiag, solve as solve_block_thomas_diag_offdiag
+    from .solver_fast import (  # type: ignore[assignment]  # the two kernels have one call shape
+        factor as factor_block_thomas_diag_offdiag,
+        solve as solve_block_thomas_diag_offdiag,
+    )
 
 _CFG = default_config()
 
@@ -59,7 +67,7 @@ def _build_chem_projection_tables() -> tuple[bool, jnp.ndarray, jnp.ndarray, jnp
     every atom subset: the C, N and S columns each have a single nonzero entry,
     so the solve always reduces to the invertible H/O block.
     """
-    compo_names = _composition.compo.dtype.names
+    compo_names: tuple[str, ...] = _composition.compo.dtype.names  # type: ignore[assignment]  # a structured array has names
     cfg_atoms = _CFG.atom_list
     pairs = tuple(
         (atom, reservoir)
@@ -136,8 +144,14 @@ def _projected_chem_rhs(y: jnp.ndarray, M: jnp.ndarray, k_arr: jnp.ndarray) -> j
 
 
 def _stage_defect(
-    k: Any, b_tr: Any, c0: Any, diag_d: Any, sup_d: jnp.ndarray, sub_d: jnp.ndarray, with_scale: bool = False
-) -> Any:
+    k: jnp.ndarray,
+    b_tr: jnp.ndarray,
+    c0: jnp.ndarray,
+    diag_d: jnp.ndarray,
+    sup_d: jnp.ndarray,
+    sub_d: jnp.ndarray,
+    with_scale: bool = False,
+) -> jnp.ndarray | tuple[jnp.ndarray, jnp.ndarray]:
     """Per-layer element defect `c0 a^T k - a^T (T k) - a^T b_tr` of a Ros2 stage vector, shape (nz, n_atoms).
 
     Zero for the exact solution of the stage system because the projected chemistry terms carry no element residual.
@@ -171,7 +185,7 @@ _REPAIR_MAX_CELL_FRAC = 1.0
 _REPAIR_SWEEP_UNROLL = 8
 
 
-def _tridiagonal_solve(dl: Any, d: Any, du: Any, g: jnp.ndarray) -> Any:
+def _tridiagonal_solve(dl: jnp.ndarray, d: jnp.ndarray, du: jnp.ndarray, g: jnp.ndarray) -> jnp.ndarray:
     """Solve `dl x[i-1] + d x[i] + du x[i+1] = g` along axis 0.
 
     One system per trailing index (`dl[0]`, `du[-1]` unused).
@@ -184,7 +198,10 @@ def _tridiagonal_solve(dl: Any, d: Any, du: Any, g: jnp.ndarray) -> Any:
     """
     du = du.at[-1].set(0.0)  # the last swap reads it as the fill-in
 
-    def fwd(row: Any, below: Any) -> Any:
+    def fwd(
+        row: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray],
+        below: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
+    ) -> tuple[tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]]:
         d_i, du_i, b_i = row  # row i as the sweep has left it
         a, d_n, du_n, b_n = below  # row i+1 as given; `a` is its sub-diagonal
         swap = jnp.abs(d_i) < jnp.abs(a)
@@ -210,7 +227,9 @@ def _tridiagonal_solve(dl: Any, d: Any, du: Any, g: jnp.ndarray) -> Any:
     )
     x_last = b_last / d_last
 
-    def bwd(carry: Any, row: Any) -> Any:
+    def bwd(
+        carry: tuple[jnp.ndarray, jnp.ndarray], row: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]
+    ) -> tuple[tuple[jnp.ndarray, jnp.ndarray], jnp.ndarray]:
         x1, x2 = carry  # x[i+1], x[i+2]
         d_i, du_i, du2_i, b_i = row
         x = (b_i - du_i * x1 - du2_i * x2) / d_i
@@ -227,16 +246,16 @@ def _tridiagonal_solve(dl: Any, d: Any, du: Any, g: jnp.ndarray) -> Any:
 
 
 def _repair_stage(
-    k: Any,
-    b_tr: Any,
-    c0: Any,
-    diag_d: Any,
+    k: jnp.ndarray,
+    b_tr: jnp.ndarray,
+    c0: jnp.ndarray,
+    diag_d: jnp.ndarray,
     sup_d: jnp.ndarray,
     sub_d: jnp.ndarray,
-    fix_mask: Any,
-    n_tot: Any,
+    fix_mask: jnp.ndarray | None,
+    n_tot: jnp.ndarray,
     y: jnp.ndarray,
-) -> Any:
+) -> jnp.ndarray:
     """Move a Ros2 stage vector's per-layer element defect (`_stage_defect`) onto the reservoir species.
 
     One scalar tridiagonal solve `(c0 - T_rho) c = g` per reservoir. `n_tot` is the (nz, 1) layer density;
@@ -441,7 +460,9 @@ def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
 
 
 # size-limit-ok: notes "Do not retry": transport refactors moved a tangent
-def _build_diff_coeffs_jax(y: jnp.ndarray, atm: AtmStatic, grav: DiffGrav) -> Any:
+def _build_diff_coeffs_jax(
+    y: jnp.ndarray, atm: AtmStatic, grav: DiffGrav
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Diffusion (eddy + molecular) coefficient blocks for one Ros2 stage.
 
     `grav` carries the y-independent gravity contribution; this function
@@ -544,8 +565,15 @@ def _build_diff_coeffs_jax(y: jnp.ndarray, atm: AtmStatic, grav: DiffGrav) -> An
 
 
 def _apply_diffusion_jax(
-    y: jnp.ndarray, A_eddy: Any, B_eddy: Any, C_eddy: Any, A_mol: Any, B_mol: Any, C_mol: Any, atm: AtmStatic
-) -> Any:
+    y: jnp.ndarray,
+    A_eddy: jnp.ndarray,
+    B_eddy: jnp.ndarray,
+    C_eddy: jnp.ndarray,
+    A_mol: jnp.ndarray,
+    B_mol: jnp.ndarray,
+    C_mol: jnp.ndarray,
+    atm: AtmStatic,
+) -> jnp.ndarray:
     """diff[j] = (A+Ai)*y[j] + (B+Bi)*y[j+1] + (C+Ci)*y[j-1], plus BC fluxes."""
     A_total = A_eddy[:, None] + A_mol
     B_total = B_eddy[:, None] + B_mol
@@ -577,9 +605,9 @@ def _ros2_stages(
     dt: jnp.ndarray,
     atm: AtmStatic,
     net: NetworkArrays,
-    fix_mask: Any,
+    fix_mask: jnp.ndarray | None,
     matrix_free: bool = True,
-) -> Any:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, tuple[jnp.ndarray, ...]]:
     """Return the two Ros2 stage solves.
 
     Returns (k1, k2, yk2, ident) with `ident` = (c0, diag_d, sup_d, sub_d, b_tr1, b_tr2): the matrix's transport
@@ -646,7 +674,7 @@ def _ros2_stages(
         sup_neg = jnp.where(fix_mask[:-1], 0.0, sup_neg)
         sub_neg = jnp.where(fix_mask[1:], 0.0, sub_neg)
 
-    def matvec(x: Any) -> Any:
+    def matvec(x: jnp.ndarray) -> jnp.ndarray:
         # The same operator without its dense block, for the tangent's dA x.
         # The chemistry part is the jvp of the RHS that `chem_J`
         # differentiates analytically (they agree to ~1e-13), so a tangent
@@ -691,9 +719,9 @@ def jax_ros2_step(
     dt: jnp.ndarray,
     atm: AtmStatic,
     net: NetworkArrays,
-    fix_mask: Any = None,
+    fix_mask: jnp.ndarray | None = None,
     matrix_free: bool = True,
-) -> Any:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """One 2nd-order Rosenbrock step.
 
     Returns (sol, delta_arr), both (nz, ni). `fix_mask` (nz, ni) optionally
@@ -709,7 +737,7 @@ def jax_ros2_step(
     return sol, delta_arr
 
 
-def make_atm_static(atm: Any, ni: int, nz: int, cfg: Any = None) -> AtmStatic:
+def make_atm_static(atm: types.SimpleNamespace, ni: int, nz: int, cfg: Config | None = None) -> AtmStatic:
     """Build an AtmStatic from a legacy AtmData container.
 
     `cfg` defaults to the process default; OuterLoop passes its own cfg so the

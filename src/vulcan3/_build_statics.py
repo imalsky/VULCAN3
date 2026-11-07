@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import numpy as np
@@ -12,6 +12,8 @@ from ._carry import _PhotoStatic, _Statics
 from .chem_funs import NETWORK
 
 if TYPE_CHECKING:
+    import types
+
     from .outer_loop import OuterLoop
 
 # Condensates pinned over the whole column once fix_species fires: master's list (exoclime@80f75b9 op.py:878).
@@ -19,7 +21,7 @@ _WHOLE_COLUMN_CONDENSATES = {"H2O_l_s", "H2SO4_l", "NH3_l_s", "S8_l_s"}
 
 
 # size-limit-ok: packs one long NamedTuple, one field per line
-def build_statics(integ: OuterLoop, var: Any, atm: Any) -> _Statics:
+def build_statics(integ: OuterLoop, var: types.SimpleNamespace, atm: types.SimpleNamespace) -> _Statics:
     """Pack scalar config + per-run arrays into the closure inputs."""
     ni = NETWORK.ni
     atom_ini_arr = np.asarray(
@@ -181,7 +183,7 @@ def build_statics(integ: OuterLoop, var: Any, atm: Any) -> _Statics:
     )
 
 
-def gas_mask(integ: OuterLoop, atm: Any) -> np.ndarray:
+def gas_mask(integ: OuterLoop, atm: types.SimpleNamespace) -> np.ndarray:
     """(ni,) gas-species mask.
 
     `atm.gas_indx` when `non_gas_sp` is set, else all True.
@@ -194,7 +196,7 @@ def gas_mask(integ: OuterLoop, atm: Any) -> np.ndarray:
 
 
 # size-limit-ok: packs one long NamedTuple, one field per line
-def build_photo_static(integ: OuterLoop, var: Any, atm: Any) -> _PhotoStatic | None:
+def build_photo_static(integ: OuterLoop, var: types.SimpleNamespace, atm: types.SimpleNamespace) -> _PhotoStatic | None:
     """Pack photo cross sections + scalar configs into a `_PhotoStatic`.
 
     Returns None if `use_photo=False` (the runner skips the photo branch
@@ -280,7 +282,7 @@ def build_photo_static(integ: OuterLoop, var: Any, atm: Any) -> _PhotoStatic | N
     )
 
 
-def build_refresh_static(integ: OuterLoop, atm: Any) -> _atm_refresh_mod.AtmRefreshStatic:
+def build_refresh_static(integ: OuterLoop, atm: types.SimpleNamespace) -> _atm_refresh_mod.AtmRefreshStatic:
     """Pack the static inputs to `atm_refresh.update_mu_dz_jax`.
 
     Captures the T-P profile, planetary constants, species masses, and
@@ -314,7 +316,9 @@ def build_refresh_static(integ: OuterLoop, atm: Any) -> _atm_refresh_mod.AtmRefr
     )
 
 
-def build_conden_static(integ: OuterLoop, var: Any, atm: Any, gas_mask_jnp: Any) -> _conden_mod.CondenStatic | None:
+def build_conden_static(
+    integ: OuterLoop, var: types.SimpleNamespace, atm: types.SimpleNamespace, gas_mask_jnp: jnp.ndarray
+) -> _conden_mod.CondenStatic | None:
     """Pack the conden tables into a `CondenStatic`.
 
     None when `use_condense=False`; the runner then omits the conden branch.

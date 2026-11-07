@@ -12,7 +12,14 @@ from ._carry import _ATM_ARRAY_FIELDS, _PHOTO_FIELDS, _QUEUE_STOP_FIELDS, ATM_ST
 from .jax_step import AtmStatic
 
 if TYPE_CHECKING:
-    from ._carry import RunnerEnv
+    from collections.abc import Callable
+
+    from ._carry import JaxIntegState, PyTree, RunnerEnv
+
+    _AtmArrays = dict[str, jnp.ndarray]
+    _InitFn = Callable[[PyTree], tuple[JaxIntegState, AtmStatic]]
+    # tick, lanes, their atmospheres, job per lane, next job, results
+    _QueueCarry = tuple[jnp.ndarray, JaxIntegState, _AtmArrays, jnp.ndarray, jnp.ndarray, PyTree]
 
 # run_queue's refill cadence: refill once this many lanes are free (or every
 # lane still holding a job is), and at least every _QUEUE_REFILL_EVERY loop
@@ -22,7 +29,7 @@ _QUEUE_REFILL_CHUNK = 8
 _QUEUE_REFILL_EVERY = 100
 
 
-def _queue_compact_rungs(spec: Any, n_lanes: int) -> tuple:
+def _queue_compact_rungs(spec: Any, n_lanes: int) -> tuple[int, ...]:  # the raw config value, checked here
     """run_queue's tail-compaction ladder (config `queue_compact`).
 
     The distinct lane counts of `spec` below `n_lanes`, widest first. A rung at or above the lane count is dropped,
@@ -44,8 +51,15 @@ def _queue_compact_rungs(spec: Any, n_lanes: int) -> tuple:
 
 # size-limit-ok: one loop program; its closures share the queue's shapes
 def runner_queue(  # noqa: C901 (one loop program)
-    env: RunnerEnv, lane_step: Any, jobs: Any, n_lanes: int, chunk: int, init_fn: Any, out_fn: Any, compact: Any = ()
-) -> Any:
+    env: RunnerEnv,
+    lane_step: Callable[[jnp.ndarray, JaxIntegState, AtmStatic], JaxIntegState],
+    jobs: PyTree,
+    n_lanes: int,
+    chunk: int,
+    init_fn: _InitFn,
+    out_fn: Callable[[JaxIntegState], PyTree],
+    compact: tuple[int, ...] = (),
+) -> tuple[PyTree, jnp.ndarray]:
     """Run the loop behind `OuterLoop.run_queue` (contract there).
 
     Finished lanes are written out and refilled inside this one while
@@ -80,7 +94,7 @@ def runner_queue(  # noqa: C901 (one loop program)
         raise ValueError(f"run_queue: n_lanes must be >= 1; got {n_lanes}. With no lane the queue is never drained.")
     chunk = int(max(1, min(int(chunk), n_lanes)))
 
-    def job_at(j: Any) -> Any:
+    def job_at(j: jnp.ndarray) -> PyTree:
         """Job `j` with no leading axis.
 
         Leaves that carry no job axis (the AtmStatic toggles are Python scalars) pass through.
@@ -88,7 +102,7 @@ def runner_queue(  # noqa: C901 (one loop program)
         j = jnp.clip(j, 0, n_jobs - 1)
         return jax.tree_util.tree_map(lambda x: x[j] if jnp.ndim(x) > 0 else x, jobs)
 
-    def fresh(j: Any, *, first_tick: Any) -> Any:
+    def fresh(j: jnp.ndarray, *, first_tick: int | jnp.ndarray) -> tuple[JaxIntegState, _AtmArrays, AtmStatic]:
         """(k,) job ids -> k fresh lane states, their atmosphere arrays and their AtmStatic.
 
         The toggles of the AtmStatic are unmapped.
@@ -134,10 +148,12 @@ def runner_queue(  # noqa: C901 (one loop program)
     )
     nxt = jnp.int32(min(n_lanes, n_jobs))
 
-    def with_atm(al: Any) -> Any:
-        return AtmStatic(**al, **toggles)
+    def with_atm(al: _AtmArrays) -> AtmStatic:
+        return AtmStatic(**al, **toggles)  # type: ignore[arg-type]  # `al` holds the array fields, `toggles` the rest
 
-    def write_out(out: Any, lanes: Any, dst_lane: Any, dst_job: Any, valid: Any) -> Any:
+    def write_out(
+        out: PyTree, lanes: JaxIntegState, dst_lane: jnp.ndarray, dst_job: jnp.ndarray, valid: jnp.ndarray
+    ) -> PyTree:
         """Write `dst_lane`'s summaries to their jobs.
 
         An invalid slot is sent to the out-of-bounds index `n_jobs`, which `mode="drop"` discards.
@@ -146,7 +162,7 @@ def runner_queue(  # noqa: C901 (one loop program)
         dst = jnp.where(valid, dst_job, jnp.int32(n_jobs))
         return jax.tree_util.tree_map(lambda o, v: o.at[dst].set(v, mode="drop"), out, summ)
 
-    def refill(c: Any) -> Any:
+    def refill(c: _QueueCarry) -> _QueueCarry:
         it, lanes, atm_l, lane_job, nxt, out = c
         # The carry's width: n_lanes, or a compaction rung's (the tail
         # loops run `body` too, see there; with nothing pending this
@@ -165,7 +181,7 @@ def runner_queue(  # noqa: C901 (one loop program)
         # `init_fn` runs on every slot, valid or not: shapes are fixed.
         new_st, new_atm, _ = fresh(job_ids, first_tick=it)
 
-        def put(lane_arr: Any, new: Any) -> Any:
+        def put(lane_arr: jnp.ndarray, new: jnp.ndarray) -> jnp.ndarray:
             g = refilled.reshape((-1,) + (1,) * (new.ndim - 1))
             return lane_arr.at[slots].set(jnp.where(g, new, lane_arr[slots]))
 
@@ -178,7 +194,7 @@ def runner_queue(  # noqa: C901 (one loop program)
         )
         return (it, lanes, atm_l, lane_job, nxt + jnp.sum(refilled, dtype=jnp.int32), out)
 
-    def body(c: Any) -> Any:
+    def body(c: _QueueCarry) -> _QueueCarry:
         it, lanes, atm_l, lane_job, nxt, out = c
         lanes = lane_step(it, lanes, with_atm(atm_l))
         lanes = lanes._replace(**{f: jax.lax.stop_gradient(getattr(lanes, f)) for f in _QUEUE_STOP_FIELDS})
@@ -196,18 +212,20 @@ def runner_queue(  # noqa: C901 (one loop program)
             & (n_free > 0)
             & ((n_free >= want) | (n_free == n_held) | (jnp.mod(it, jnp.int32(_QUEUE_REFILL_EVERY)) == jnp.int32(0)))
         )
-        return jax.lax.cond(trigger, refill, lambda cc: cc, c)
+        c_next: _QueueCarry = jax.lax.cond(trigger, refill, lambda cc: cc, c)
+        return c_next
 
-    def cond(c: Any) -> Any:
+    def cond(c: _QueueCarry) -> jnp.ndarray:
         _it, lanes, _atm_l, lane_job, nxt, _out = c
         live = jnp.logical_not(lanes.is_done) & (lane_job >= 0)
-        return (nxt < jnp.int32(n_jobs)) | jnp.any(live)
+        unfinished: jnp.ndarray = (nxt < jnp.int32(n_jobs)) | jnp.any(live)
+        return unfinished
 
     # ---- tail compaction (see the docstring)
-    def n_live(lanes: Any, lane_job: Any) -> Any:
+    def n_live(lanes: JaxIntegState, lane_job: jnp.ndarray) -> jnp.ndarray:
         return jnp.sum(jnp.logical_not(lanes.is_done) & (lane_job >= 0), dtype=jnp.int32)
 
-    def until(width: int | None) -> Any:
+    def until(width: int | None) -> Callable[[_QueueCarry], jnp.ndarray]:
         """`cond`, also ending once no job is pending and the live lanes fit `width`.
 
         `width` None is the last rung, run to the end.
@@ -215,14 +233,14 @@ def runner_queue(  # noqa: C901 (one loop program)
         if width is None:
             return cond
 
-        def f(c: Any) -> Any:
+        def f(c: _QueueCarry) -> jnp.ndarray:
             _it, lanes, _atm_l, lane_job, nxt, _out = c
             fits = (nxt >= jnp.int32(n_jobs)) & (n_live(lanes, lane_job) <= jnp.int32(width))
             return cond(c) & jnp.logical_not(fits)
 
         return f
 
-    def gather(c: Any, width_from: Any, width_to: Any) -> Any:
+    def gather(c: _QueueCarry, width_from: int, width_to: int) -> _QueueCarry:
         """Write out the done lanes holding a job.
 
         Keep the live lanes (lane order) in a carry of `width_to` lanes; the slots past them take

@@ -245,3 +245,17 @@ def test_network_species_without_composition_row_refuse():
     )
     assert proc.returncode != 0, "C3 network loaded despite having no C3 composition row"
     assert "C3" in proc.stderr, proc.stderr
+
+
+def test_the_shared_network_tables_are_read_only():
+    """`setup_var_k` hands every caller the one parse in `chem_funs.NETWORK`: a write reaches the next rate build."""
+    import dataclasses
+
+    from vulcan3.chem_funs import NETWORK
+
+    arrays = [getattr(NETWORK, f.name) for f in dataclasses.fields(NETWORK)]
+    arrays = [a for a in arrays if isinstance(a, np.ndarray)]
+    assert len(arrays) >= 16
+    for a in arrays:
+        with pytest.raises(ValueError, match="read-only"):
+            a.flat[0] = a.flat[0]

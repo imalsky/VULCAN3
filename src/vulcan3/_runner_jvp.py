@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -15,9 +15,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from ._carry import JaxIntegState, RunnerEnv, _Statics
+    from .jax_step import AtmStatic
+
+    _JvpCarry = tuple[JaxIntegState, list[jnp.ndarray], jnp.ndarray, jnp.ndarray]
 
 
-def _tangent_conv(statics: _Statics, s_next: JaxIntegState, ds_next: JaxIntegState) -> Any:
+def _tangent_conv(statics: _Statics, s_next: JaxIntegState, ds_next: JaxIntegState) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Return the primal's longdy reduction on the tangent.
 
     `dy - dy_lookback` over `y`, on the cells the primal certifies on. Per cell and absolute, so the tangent
@@ -31,7 +34,7 @@ def _tangent_conv(statics: _Statics, s_next: JaxIntegState, ds_next: JaxIntegSta
     indx = lookback_index(statics, s_next, s_next.accept_count)
     dt_lookback = jnp.maximum(s_next.t - s_next.t_time_ring[indx], UNDERFLOW_DENOM)
 
-    def one_dir(dy: Any, dy_ring: Any) -> Any:
+    def one_dir(dy: jnp.ndarray, dy_ring: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         tangent_longdy, _ = _longdy_reduce(
             s_next.y,
             s_next.ymix,
@@ -59,15 +62,17 @@ def _make_jvp_step(env: RunnerEnv, active_state: tuple[bool, ...], active_atm: t
     computed once for all D directions.
     """
 
-    def _merge(flat: list, leaves: list, active: tuple[bool, ...]) -> list:
+    def _merge(flat: list[jnp.ndarray], leaves: list[jnp.ndarray], active: tuple[bool, ...]) -> list[jnp.ndarray]:
         nxt = iter(flat)
         return [next(nxt) if a else x for x, a in zip(leaves, active, strict=False)]
 
-    def _step(s: JaxIntegState, atm_static: Any, ds_active: Any, datm_active: Any) -> Any:
+    def _step(
+        s: JaxIntegState, atm_static: AtmStatic, ds_active: list[jnp.ndarray], datm_active: list[jnp.ndarray]
+    ) -> tuple[JaxIntegState, list[jnp.ndarray], JaxIntegState]:
         s_def = jax.tree_util.tree_structure(s)
         a_leaves, a_def = jax.tree_util.tree_flatten(atm_static)
 
-        def f(s_act: Any, a_act: Any) -> Any:
+        def f(s_act: list[jnp.ndarray], a_act: list[jnp.ndarray]) -> tuple[list[jnp.ndarray], list[jnp.ndarray]]:
             s_in = jax.tree_util.tree_unflatten(s_def, _merge(s_act, jax.tree_util.tree_leaves(s), active_state))
             a_in = jax.tree_util.tree_unflatten(a_def, _merge(a_act, a_leaves, active_atm))
             o_leaves = jax.tree_util.tree_leaves(body_fn(env, s_in, a_in)[0])
@@ -107,8 +112,10 @@ def make_runner_jvp(env: RunnerEnv, active_state: tuple[bool, ...], active_atm: 
     _step = _make_jvp_step(env, active_state, active_atm)
 
     @jax.jit
-    def runner_jvp(state: Any, atm_static: Any, dstate_active: Any, datm_active: Any) -> Any:
-        def body(carry: Any) -> Any:
+    def runner_jvp(
+        state: JaxIntegState, atm_static: AtmStatic, dstate_active: list[jnp.ndarray], datm_active: list[jnp.ndarray]
+    ) -> tuple[JaxIntegState, list[jnp.ndarray], jnp.ndarray, jnp.ndarray]:
+        def body(carry: _JvpCarry) -> _JvpCarry:
             s, ds_active, tangent_longdy, tangent_longdydt = carry
             s_next, dact_out, ds_next = _step(s, atm_static, ds_active, datm_active)
             tangent_longdy_new, tangent_longdydt_new = _tangent_conv(statics, s_next, ds_next)
@@ -120,7 +127,7 @@ def make_runner_jvp(env: RunnerEnv, active_state: tuple[bool, ...], active_atm: 
                 jnp.where(accepted, tangent_longdydt_new, tangent_longdydt),
             )
 
-        def cond(carry: Any) -> Any:
+        def cond(carry: _JvpCarry) -> jnp.ndarray:
             s, _ds, tangent_longdy, tangent_longdydt = carry
             real_term, _ = real_terminate(
                 statics, s, jnp.all(two_branch(statics, tangent_longdy, tangent_longdydt, _slope_min(s)))

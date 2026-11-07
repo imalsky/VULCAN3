@@ -56,7 +56,8 @@ cfg = default_config()
 cfg.use_photo = True
 cfg.use_ion = True
 cfg.use_condense = False
-cfg.atm_type = "isothermal"; cfg.Tiso = 1500.0
+# Cool enough to move: at 1500 K this start freezes at dt_min on its first steps.
+cfg.atm_type = "isothermal"; cfg.Tiso = 1000.0
 cfg.atm_base = "H2"
 cfg.use_moldiff = False
 cfg.use_Kzz = True; cfg.Kzz_prof = "const"; cfg.const_Kzz = 1e9; cfg.use_vz = False
@@ -71,8 +72,8 @@ cfg.use_topflux = False; cfg.use_botflux = False
 cfg.use_fix_sp_bot = {}; cfg.use_ini_cold_trap = False
 # Bounded run: enough steps + frequent photo/ion updates to accumulate ions,
 # without converging on full HD189 timescales.
-cfg.count_min = 150; cfg.count_max = 400
-cfg.ini_update_photo_frq = 20; cfg.final_update_photo_frq = 5
+cfg.count_min = 30; cfg.count_max = 60
+cfg.ini_update_photo_frq = 5; cfg.final_update_photo_frq = 5
 cfg.use_print_prog = False
 
 # cfg is the process default config (mutated above); the runner/printer read it

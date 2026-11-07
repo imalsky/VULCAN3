@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import numpy as np
@@ -20,6 +20,11 @@ import numpy as np
 from ._paths import resolve_data_path
 from .config import default_config
 from .state import PhotoStaticInputs
+
+if TYPE_CHECKING:
+    import types
+    from collections.abc import Collection, Iterable
+    from typing import Literal
 
 __all__ = ["populate_photo"]
 
@@ -44,19 +49,21 @@ def _cross_folder() -> str:
     return p if p.endswith("/") else p + "/"
 
 
-def _load_thresholds(species_in_network: Any) -> dict[str, float]:
+def _load_thresholds(species_in_network: Iterable[str]) -> dict[str, float]:
     """Read `cross_folder/thresholds.txt`; return per-species photodissociation wavelength threshold (nm).
 
     Filtered to species in the network.
     """
     folder = _cross_folder()
-    sp_label = np.genfromtxt(folder + "thresholds.txt", dtype=str, usecols=0)
+    sp_label = np.genfromtxt(  # type: ignore[call-overload]  # numpy documents an int usecols; its stubs omit it
+        folder + "thresholds.txt", dtype=str, usecols=0
+    )
     lmd_data = np.genfromtxt(folder + "thresholds.txt", skip_header=1)[:, 1]
     species_set = set(species_in_network)
     return {str(label): float(row) for label, row in zip(sp_label, lmd_data, strict=False) if str(label) in species_set}
 
 
-def _read_table(path: str, names: Any, delimiter: str | None = ",") -> np.ndarray:
+def _read_table(path: str, names: Collection[str] | Literal[True], delimiter: str | None = ",") -> np.ndarray:
     """Read a cross-section / branch-ratio / Rayleigh table with a one-line header.
 
     `names` lists the columns, or True to take them from the header.
@@ -123,7 +130,8 @@ def _sort_pairs(xp: np.ndarray, fp: np.ndarray) -> tuple[np.ndarray, np.ndarray]
 def _interp_zero_extrap(xp: np.ndarray, fp: np.ndarray, x: np.ndarray) -> np.ndarray:
     """Linear interpolation with `fill_value=0` outside [xp[0], xp[-1]]."""
     xp_s, fp_s = _sort_pairs(xp, fp)
-    return np.interp(x, xp_s, fp_s, left=0.0, right=0.0)
+    out: np.ndarray = np.interp(x, xp_s, fp_s, left=0.0, right=0.0)
+    return out
 
 
 def _interp_edge_extrap(xp: np.ndarray, fp: np.ndarray, x: np.ndarray) -> np.ndarray:
@@ -137,7 +145,8 @@ def _interp_edge_extrap(xp: np.ndarray, fp: np.ndarray, x: np.ndarray) -> np.nda
     left = float(fp[0])
     right = float(fp[-1])
     xp_s, fp_s = _sort_pairs(xp, fp)
-    return np.interp(x, xp_s, fp_s, left=left, right=right)
+    out: np.ndarray = np.interp(x, xp_s, fp_s, left=left, right=right)
+    return out
 
 
 def _interp_T_log_pair(
@@ -313,7 +322,7 @@ def _bin_T_dependent(
 
 
 # size-limit-ok: packs one long pytree, one field per line
-def _build_photo_static_dense(var: Any, atm: Any) -> PhotoStaticInputs:  # noqa: C901 (packs one long pytree, one field per line)
+def _build_photo_static_dense(var: types.SimpleNamespace, atm: types.SimpleNamespace) -> PhotoStaticInputs:  # noqa: C901 (packs one long pytree, one field per line)
     """Pure builder of the dense `PhotoStaticInputs` pytree.
 
     `din12_indx` initializes to `-1`; the caller sets it with
@@ -463,7 +472,7 @@ def _build_photo_static_dense(var: Any, atm: Any) -> PhotoStaticInputs:  # noqa:
         ion_branch_keys_ordered = ()
 
     # An empty row list gives shape (0,); the reshape restores the (0, ...) shape.
-    def _rows(rows: Any, *shape: Any) -> Any:
+    def _rows(rows: list, *shape: int) -> np.ndarray:
         return np.array(rows, dtype=np.float64).reshape(-1, *shape)
 
     absp_cross = _rows([cross_per_sp[sp] for sp in absp_sp_ordered], nbin)
@@ -494,7 +503,7 @@ def _build_photo_static_dense(var: Any, atm: Any) -> PhotoStaticInputs:  # noqa:
     )
 
 
-def _alloc_runtime_buffers(var: Any, nbin: int, nz: int) -> None:
+def _alloc_runtime_buffers(var: types.SimpleNamespace, nbin: int, nz: int) -> None:
     """Zero-allocate the host-side runtime mutable buffers on `var`."""
     var.sflux = np.zeros((nz + 1, nbin), dtype=np.float64)
     var.dflux_u = np.zeros((nz + 1, nbin), dtype=np.float64)
@@ -503,7 +512,7 @@ def _alloc_runtime_buffers(var: Any, nbin: int, nz: int) -> None:
     var.sflux_top = np.zeros(nbin, dtype=np.float64)
 
 
-def populate_photo(var: Any, atm: Any) -> PhotoStaticInputs:
+def populate_photo(var: types.SimpleNamespace, atm: types.SimpleNamespace) -> PhotoStaticInputs:
     """Build the dense `PhotoStaticInputs` pytree and write scalar grid metadata to `var`.
 
     Also zero-allocates the runtime mutable buffers.

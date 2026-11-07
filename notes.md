@@ -17,7 +17,7 @@ notes (the NAS `analysis/` tree no longer exists).
   ran the 2021 file, ni 89; `ffi`, grouped RHS).
 - Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209 1206, W39b 1084 on x86-64 [M]
   ("Parity ledger", below table A); arm64 not read at this code (todo). HD189_vulcan3 is not in that test: 2603 on
-  arm64 before C25; on x86-64 it certifies at 7802 steps with the nega_cut of -1e4 [M].
+  arm64 before C25; on x86-64 it certifies at 7801 steps on one CPU, 7802 on three, with the nega_cut of -1e4 [M].
 - The arm64 full tier fails one W39b case (todo). `oracle.yml` is `workflow_dispatch` only; last green dispatch at
   `b372e65`. On daw (x86-64, CPU) the full tier with the pinned clone gives 441 passed, 38 skipped [M]; every
   skip is a GPU or arm64 case. The two oracle tests of todo 6 pass only through the delta.
@@ -42,9 +42,7 @@ program of `runner` is equal once instruction names are stripped, and a 30-step 
 Inlining `body_fn`'s helpers at the same point in the step leaves the lowered text equal, so the tracing order is what
 HLO sees [M].
 
-mypy runs by hand: JAX leaves public functions such as `lax.psum`, `ffi.pycapsule` and `config.update` unannotated, so the
-config excludes those calls (13 findings). What is left is mostly its stubs returning `Any`, and optionals narrowed by a mode
-flag (`lane_axis`) or by `prepare_runstate` having run.
+mypy is a pre-commit hook and a CI step, at zero: the config names the five unannotated JAX functions it cannot type (13 calls), and each `type: ignore` says why.
 
 ## Efficiency program
 
@@ -161,7 +159,7 @@ Integrator
   reject from `DT_MAX_S` 1e15 (the 84th from the retrieval's 1e11) would take dt
   below `dt_min` 1e-14, and that ends the chain first, as in master. Kept as the
   loop guard (a jitted `while_loop` cannot raise). Provenance not recorded. A
-  force-accepted step keeps the previous state (C29).
+  force-accepted step keeps the previous state; a second at `dt_min` stops the run (C29).
 - Step control C29: master's rules let a wrong step through or accept a rejected
   composition ("Parity ledger"). `nega_cut` is -1e4 cm^-3 against master's -1, which only
   C29 made live: at -1 HD189 photo off stalls ("Forward mode").
@@ -310,7 +308,7 @@ A. Upstream errors corrected in the port
 | C30 | no rate may exceed collision rates: a rate fit extrapolated far from its range (the reverse of CH + M -> C + H + M is ~6e-5 cm3/s at 300 K, 1 bar) | `rates_jax.build_rate_array` | `apply_collision_limit`: each thermal pair scaled by c = min(1, 1e-9 cm3/s / q), q the larger direction's bimolecular-equivalent rate (k M^three-body M^(molecules - 2), two or more molecules); both directions scaled, so K_eq and the equilibrium are kept; `tests/test_collision_limit.py`, the only check of its effect, as the oracle copy gets it too through `ORACLE_CODE_DELTAS` | acts in NCHO on the CH + M and C2H + M reverses (CH below ~560-650 K, C2H below ~900 K at 1 bar, ~1830 K at 100 bar), NH + M (<= 4x, <= 351 K), and the forward fits of NCO + NH2 (<= 2x, >= 1880 K) and CN + C2H6 (<= 1.2x, >= 2890 K); SNCHO adds SH + O2 and S + CS + M, TiSNCHO C + SH and Ti + CN; the limit 1e-9 is a regularization ceiling, not a measured rate | no |
 | C31 | `C2H + C -> C3H + H` does not balance hydrogen (SNCHO_photo_network_C3 only) | `thermo/SNCHO_photo_network_C3.txt` row 861 | written `C2H + C -> C3 + H` (Hickson et al. 2016, the row's reference) | the file had no consumer that checks balance | no |
 | C32 | HNO3 NASA-9 file holds three sets (below 200 K, 200-1000 K, 1000-6000 K); the readers take the first two as the T < 1000 / T >= 1000 K fits | `thermo/NASA9/HNO3.txt` | the below-200 K set dropped; `hno3_thermo`, declared | Cp/R at 500 K 19.8 -> 8.67; HNO3 K_eq against FastChem +7.6 dex at 999 K, -0.42 at 3000 K before, within 0.03 dex after (maxichem's end-to-end tests, 2026-11-05); NCHO_full_photo and SNCHO_DMS only; no column rerun | no (the three pinned clones carry the same file) |
-| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_aggregate_delta_fn` masks where the old and the pre-clip trial ymix are both < mtol; `_clip_prologue` keeps values < nega_cut (step rejected; cut -1e4 cm^-3, master's -1 never fires, notes "Forward mode"); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`; a non-finite gas sum stays non-finite in the condensing clip; `steady_state_grad._clip_dead_mask` matches; `tests/test_step_control.py`; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes) | no |
+| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_delta_ratio_fn` masks where the old and the pre-clip trial ymix are both < mtol; `_clip_prologue` keeps values < nega_cut (step rejected; cut -1e4 cm^-3, master's -1 never fires, notes "Forward mode"); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`, so a second force-accept at exactly `dt_min` with no real accept between ends the run (reason 4; `DtMinFrozenError`, or `raise_if_frozen` after an outer jit; `tests/test_dt_min_frozen.py`). Six shipped runs: 0 force-accepts [M]. 16 cold W39b draws at rtol 0.05: 5 froze, all in stage 2 from its first step; one force-accepted once and recovered; none recovered after two or more [M]. Exact only between refreshes: a photolysis or geometry refresh can change a mid-run trial (none seen frozen mid-run), and dt held just above the floor (h in (1, 2), so adaptive rtol or a failure outside the estimate) never counts and idles to the cap as before. A column holding none of a conserved atom would read a NaN loss, so `MissingAtomError` refuses it at setup unless the atom is in `loss_ex`; a non-finite gas sum stays non-finite in the condensing clip; `steady_state_grad._clip_dead_mask` matches; `tests/test_step_control.py`; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes) | no |
 | L1 | `diffdf_settling_vm` drops the `vm` drift at the bottom interface | `op.py:1845-1848` | consistent; `test_diffusion`; silent | one cell, `use_settling` only | no |
 | L2 | vm_branch setup `vm` rolls a 2-D array without `axis=0` | `vulcan3_vm_branch/build_atm.py:803` | `axis=0`; silent | 5e-10 at step 2 | no |
 | P18 | `sflux-GJ1214.txt` pads 133.75-181.55 nm with 464 zero rows | `atm/stellar_flux/sflux-GJ1214.txt` | upstream's regenerated file, `gj1214_upstream_regenerated`; declared | 0 shipped; regeneration lowers every flux 1.392x | bb9255b1 |
@@ -653,8 +651,10 @@ C21 (geometry) and C22 (tangent); C23 is in "Stage repair and element budget".
   The operator's flaw remains: CO stays 0 at layer 148 against 3.6e-7 at nz 600 (no stall and no C<0 cell there; moldiff off
   certifies in 641), HD189 photo on holds the same zero cell behind a rate 7 orders smaller, and the clip adds mass there. Upper-cell
   drift: "Ideas not adopted". Against -1 the shipped runs keep every array bit for bit with their step counts (1495, 1206, 1084,
-  HD189_vulcan3 4057); only `parameter/nega_y` moves (HD189 17 to 6.7e4, W39b unchanged), a running sum of clipped negatives that
-  includes trials the estimate rejects. The runner's lowered program differs in that one constant. The 0-D case behind C29 (VULCAN-0D,
+  HD189_vulcan3 7801 on one CPU); only `parameter/nega_y` moves (HD189 17 to 6.7e4, W39b unchanged), a running sum of clipped negatives that
+  includes trials the estimate rejects. That holds on shipped configs only [M]: HD189 at T x0.90, Kzz x0.3 goes from a stall (10001 steps,
+  long dy 0.86) to certified at 3265, HD189_vulcan3 photo off from 2437 to 632, and vulcan-retrieval's smoke truth moves log L by 0.919.
+  The runner's lowered program differs in that one constant. The 0-D case behind C29 (VULCAN-0D,
   300 K, 35.5 bar, atomic-H start, CH4 0.66 dex) did not reproduce to its end on this code: on the current NCHO network CH4 ends at
   3.40e-7 under VULCAN 2's step control and under every cut from -1 to -1e8, so there is no error left to catch; on its own 53-species
   network the corrected estimate idles at `dt_min`. Its first trials there reach CH4 -5.5e13 to -1.56e5 (dt 1.2e-14 s, just before
@@ -856,6 +856,7 @@ network drops) is not ported: the seed is ExoGibbs over the network's elements.
   lanes, untiled-vs-tiled throughput, GPU parity, exhaustive config-combination
   oracle sweeps, long oracles for every vendored example, the nonsense-value
   config space, whether the `update_frq` refresh cadence costs convergence.
+- `photo_setup`'s T-dependent cross sections follow `cfg.cross_folder`, as its other files do (they read the packaged folder before); shipped configs are unchanged.
 - The `run_queue` refill defaults (`_QUEUE_REFILL_CHUNK` 8, `_QUEUE_REFILL_EVERY` 100)
   are untuned; the `save_evolution` buffer is sized from the static `count_max`.
 - Pin configs only: `steady_state_grad`'s body map sets the layer-0 pins after the
@@ -921,6 +922,7 @@ network drops) is not ported: the seed is ExoGibbs over the network's elements.
 
 ## Do not retry
 
+- A host callback to raise `DtMinFrozenError` under an outer jit: the program never enters JAX's persistent cache [M, CPU, jit(eval_batch) at 1 lane: compile 80-83 s on every process, no file; without it 147 s writing 1.39 GB, then a hit in 31 s].
 - `nega_cut` as a share of the layer (`y < -1e-6 n`): it certifies HD189 photo off, but it is -8.6e14 cm^-3 at the 0-D atomic-H start's
   n, past every CH4 trial of that start (-5.5e13 to -1.56e5) [M]. An absolute -1e3 ends on the step cap, -1100 clears HD189's -1075 by 2%.
 One line each, with the measured reason.

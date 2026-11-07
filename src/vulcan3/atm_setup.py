@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import numpy as np
@@ -43,6 +43,9 @@ from ._transport_setup import (
 from .config import default_config
 from .gibbs import _GIBBS_T_MAX_K, _GIBBS_T_MIN_K
 from .phy_const import BAR_CGS
+
+if TYPE_CHECKING:
+    import types
 
 _VISCOSITY_TABLE = VISCOSITY_TABLE  # deprecated (docs/api.md)
 
@@ -84,12 +87,12 @@ class Atm:
     containers.
     """
 
-    def f_pico(self, data_atm: Any) -> Any:
+    def f_pico(self, data_atm: types.SimpleNamespace) -> types.SimpleNamespace:
         """Stagger pressure to interfaces and write to `data_atm.pico`."""
         data_atm.pico = np.asarray(compute_pico(jnp.asarray(data_atm.pco)))
         return data_atm
 
-    def load_TPK(self, data_atm: Any) -> Any:
+    def load_TPK(self, data_atm: types.SimpleNamespace) -> types.SimpleNamespace:
         """Populate `Tco / Kzz / vz / M / n_0` per `atm_type` (isothermal, analytical, file, vulcan_ini, or table)."""
         out = load_TPK(_CFG, np.asarray(data_atm.pco), pico=np.asarray(data_atm.pico))
         # `atm_type='table'` rewrites pco from a saved file.
@@ -99,7 +102,7 @@ class Atm:
             setattr(data_atm, k, out[k])
         return data_atm
 
-    def apply_high_temp_cut(self, data_atm: Any) -> Any:
+    def apply_high_temp_cut(self, data_atm: types.SimpleNamespace) -> types.SimpleNamespace:
         """Lower the bottom pressure so deep T does not exceed ``high_temp_cut_K``.
 
         Matches vm_branch ``build_atm.apply_high_temp_cut``.
@@ -135,13 +138,14 @@ class Atm:
             )
         return data_atm
 
-    def mol_mass(self, sp: str) -> Any:
+    def mol_mass(self, sp: str) -> float:
         """Molecular mass (amu) for species `sp` from the composition table."""
         from .composition import compo, compo_row
 
-        return compo["mass"][compo_row.index(sp)]
+        mass: float = compo["mass"][compo_row.index(sp)]
+        return mass
 
-    def mean_mass(self, var: Any, atm: Any, ni: int) -> Any:
+    def mean_mass(self, var: types.SimpleNamespace, atm: types.SimpleNamespace, ni: int) -> types.SimpleNamespace:
         """Compute per-layer mean molecular mass (amu, (nz,)) and write `atm.mu`.
 
         Master's `op.Integration.update_mu_dz` (op.py:951) calls this on our `Atm` in the parity test
@@ -157,7 +161,9 @@ class Atm:
         )
         return atm
 
-    def f_mu_dz(self, data_var: Any, data_atm: Any, output: Any) -> Any:
+    def f_mu_dz(
+        self, data_var: types.SimpleNamespace, data_atm: types.SimpleNamespace, output: object
+    ) -> types.SimpleNamespace:
         """Hydrostatic-balance refresh: rebuild `mu, g, Hp, dz, zco, vs` and friends."""
         del output  # build_atm.py:527 signature; master uses it only for plot_TP (:616)
         from .composition import species, species_mass
@@ -198,7 +204,7 @@ class Atm:
             )
         return data_atm
 
-    def mol_diff(self, atm: Any) -> None:
+    def mol_diff(self, atm: types.SimpleNamespace) -> None:
         """Compute molecular-diffusion coefficients and write `atm.Dzz / Dzz_cen / vm`."""
         from .composition import species, species_mass
 
@@ -225,7 +231,7 @@ class Atm:
         atm.Dzz_cen = out["Dzz_cen"]
         atm.vm = out["vm"]
 
-    def BC_flux(self, atm: Any) -> None:
+    def BC_flux(self, atm: types.SimpleNamespace) -> None:
         """Read top/bottom boundary-condition fluxes from the configured files."""
         from .composition import species
 
@@ -235,13 +241,13 @@ class Atm:
         atm.bot_vdep = out["bot_vdep"]
         atm.bot_fix_sp = out["bot_fix_sp"]
 
-    def sp_sat(self, atm: Any) -> None:
+    def sp_sat(self, atm: types.SimpleNamespace) -> None:
         """Populate `atm.sat_p[sp]` for each condensable species."""
         out = compute_sat_p(list(_CFG.condense_sp), np.asarray(atm.Tco))
         for sp, sp_arr in out.items():
             atm.sat_p[sp] = sp_arr
 
-    def read_sflux(self, var: Any, atm: Any) -> None:  # noqa: ARG002 (master's signature; legacy callers pass atm)
+    def read_sflux(self, var: types.SimpleNamespace, atm: types.SimpleNamespace) -> None:  # noqa: ARG002 (master's signature; legacy callers pass atm)
         """Read the stellar flux file, rebin onto `var.bins`, and write to var/atm."""
         out = read_sflux_binned(_CFG, np.asarray(var.bins))
         var.sflux_top = out["sflux_top"]

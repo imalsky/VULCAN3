@@ -8,7 +8,7 @@ Evidence for these items is in `notes.md` (this repo's, unless another repo is n
 4. [owed] Re-baseline after the C25-C29 data and step-control fixes: the arm64 fixture manifest, the arm64 gate reading and the oracle comparisons (`oracle.yml`).
 5. [owed] Rebuild the CUDA kernel on the NAS and check `ffi` on a GH200: the code cleanup changed the kernel sources, and its proof of `ffi` ran on CPU only.
 6. [decision] Confirm or replace the collision limit C30 in the oracle copy: `oracle.yml` passes `test_gibbs` and the HD189 19-step case only because the copy now applies the limit too, so no oracle checks its effect.
-7. [decision] Step control at `dt_min`: since C29 a forced accept keeps the previous state, so a column whose trial fails at the floor repeats the same trial until the step cap. WASP-39b cold chunks at rtol 0.05 hit it (vulcan-retrieval's production test fails).
+7. [decision] How to solve a column frozen at `dt_min`: the run now stops and raises `DtMinFrozenError`. WASP-39b cold chunks at rtol 0.05 hit it (vulcan-retrieval's production test raises).
 
 ## 1. vulcan3 on PyPI
 
@@ -83,15 +83,17 @@ maintainer, not to be re-opened".
 
 ## 7. A column frozen at `dt_min`
 
+Since C29 a forced accept keeps the previous state, so a column whose trial fails at the floor can only repeat it. The
+guard is in: a second force-accept at `dt_min` with no real accept between stops the run (`termination_reason` 4) and
+raises `DtMinFrozenError` (notes "Parity ledger" C29, docs/api.md). How to solve those columns stays open, and a run at
+rtol 0.05 cannot pass this: 5 of 16 cold draws froze, all in stage 2 [M], so a first chunk of a batch aborts, once a consumer that jits
+its solve calls `raise_if_frozen` after that call (without it, these rows still read as rejected).
 Measured on CPU: the WASP-39b draw in vulcan-retrieval's
-`test_production_case_assembles_and_evaluates_one_finite_likelihood` exits stage 2 at the step
-cap with `t` = 5001 x `dt_min` and max|dy/y| 2e-16; S4 at the bottom layer has an error ratio
-of 0.081 against rtol 0.05. Before C29 the same column leaves the floor, and the current code
-with only this fallback reverted (`_loop_body`, `keep_prev`) certifies it in 607 stage 2 steps.
-Three of eight cold draws solved froze, all with high total sulfur; a share of 17 to 23 % of
-cold prior draws is an estimate. The HPC pin (`2441e6c`) predates C29, so production has not
-met this; the next pin move would. The survey's rtol 0.2 is probably clear (unverified).
-Choose: change how a floor force-accept behaves when it cannot progress; or change the guess
-(a sulfur increment that respects each species' order, or a stepped stage 2); or stop a stuck
-lane early. C29 has reasons of its own (HD189 photo off). Done when the choice is made and the
-test passes without a changed bar.
+`test_production_case_assembles_and_evaluates_one_finite_likelihood` froze on stage 2, with S4 at the bottom layer at an
+error ratio of 0.081 against rtol 0.05. Before C29 the same column leaves the floor, and the current code with only this
+fallback reverted (`_loop_body`, `keep_prev`) certifies it in 607 stage 2 steps. Three of eight cold draws solved froze,
+all with high total sulfur; a share of 17 to 23 % of cold prior draws is an estimate. The HPC pin (`2441e6c`) predates
+C29, so production has not met this; the next pin move would. The survey's rtol 0.2 is probably clear (unverified).
+Choose: change how a floor force-accept behaves when it cannot progress; or change the guess (a sulfur increment that
+respects each species' order, or a stepped stage 2). C29 has reasons of its own (HD189 photo off). Done when the choice is
+made and the test passes without a changed bar.

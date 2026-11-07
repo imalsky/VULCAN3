@@ -6,7 +6,7 @@ differentiable and JIT-friendly. The elimination is in docs/method.md.
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -14,7 +14,7 @@ import jax.numpy as jnp
 __all__ = ["BlockThomasDiagFactors", "factor_block_thomas_diag_offdiag", "solve_block_thomas_diag_offdiag"]
 
 
-def _lu_solve_perm(lu: jnp.ndarray, perm: jnp.ndarray, b: Any) -> Any:
+def _lu_solve_perm(lu: jnp.ndarray, perm: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
     """lu_solve with the row permutation already materialized.
 
     `jax.scipy.linalg.lu_solve` (jax 0.6.2) rebuilds it from the pivots on
@@ -54,7 +54,9 @@ def factor_block_thomas_diag_offdiag(
 
     A0_lu, _, A0_perm = jax.lax.linalg.lu(diag[0])
 
-    def fwd_step(carry: Any, inputs: Any) -> Any:
+    def fwd_step(
+        carry: tuple[jnp.ndarray, jnp.ndarray], inputs: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]
+    ) -> tuple[tuple[jnp.ndarray, jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray]]:
         A_prev_lu, A_prev_perm = carry
         A_j, b_jm1, c_j = inputs
         A_prev_inv = _lu_solve_perm(A_prev_lu, A_prev_perm, eye_ni)
@@ -82,7 +84,9 @@ def solve_block_thomas_diag_offdiag(factors: BlockThomasDiagFactors, rhs: jnp.nd
     """Solve a diagonal-offdiag block-tridiagonal system for a new RHS."""
     rhs0 = rhs[0]
 
-    def fwd_rhs_step(rhs_prev: Any, inputs: Any) -> Any:
+    def fwd_rhs_step(
+        rhs_prev: jnp.ndarray, inputs: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
         A_prev_lu, A_prev_perm, c_j, rhs_j = inputs
         invA_r = _lu_solve_perm(A_prev_lu, A_prev_perm, rhs_prev)
         rhs_new = rhs_j - c_j * invA_r
@@ -106,7 +110,9 @@ def solve_block_thomas_diag_offdiag(factors: BlockThomasDiagFactors, rhs: jnp.nd
         rhs_mod_full[-1],
     )
 
-    def bwd_step(k_next: Any, inputs: Any) -> Any:
+    def bwd_step(
+        k_next: jnp.ndarray, inputs: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
         A_lu, A_perm, rhs_mod, b_j = inputs
         rhs_local = rhs_mod - b_j * k_next
         k_curr = _lu_solve_perm(A_lu, A_perm, rhs_local)

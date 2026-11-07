@@ -114,7 +114,7 @@ def _ros2_solve(
         step_mask = s.fix_mask
     sol, delta_arr = jax_ros2_step(s.y, s.k_arr, s.dt, atm_step, net, fix_mask=step_mask, matrix_free=matrix_free)
     if statics.use_ion:
-        delta_arr = jnp.where(step_mask, 0.0, delta_arr)
+        delta_arr = jnp.where(step_mask, 0.0, delta_arr)  # type: ignore[arg-type]  # set whenever use_ion
         if statics.use_fix_species:
             sol = jnp.where(s.fix_mask, s.fix_y, sol)
     elif statics.use_fix_species:
@@ -164,11 +164,78 @@ def _bottom_pins(
     return sol, h2he_pinned_next, h2he_mix_next, zero_bot_dyn
 
 
+class _Trial(NamedTuple):
+    """One Ros2 trial and what it was clipped and estimated from, before any accept or reject."""
+
+    atm_step: AtmStatic
+    sol: jnp.ndarray
+    delta_arr: jnp.ndarray
+    h2he_pinned_next: jnp.ndarray
+    h2he_mix_next: jnp.ndarray
+    zero_bot_dyn: jnp.ndarray | None
+    sol_clip: jnp.ndarray
+    ymix_new: jnp.ndarray
+    small_y_inc: jnp.ndarray
+    nega_y_inc: jnp.ndarray
+    atom_loss_new: jnp.ndarray
+    ymix_trial: jnp.ndarray
+
+
+def _trial(env: RunnerEnv, s: JaxIntegState, atm_static_: AtmStatic, matrix_free: bool) -> _Trial:
+    """Solve, pin and clip one trial from the carry, and form the inputs of its error estimate."""
+    statics = env.statics
+    atm_step = _splice_step_atm(atm_static_, s, statics.use_vm_mol, env.refresh_static.kb, env.refresh_static.Navo)
+    sol, delta_arr = _ros2_solve(env, s, atm_step, matrix_free)
+    sol, h2he_pinned_next, h2he_mix_next, zero_bot_dyn = _bottom_pins(statics, s, sol)
+    sol_clip, ymix_new, small_y_inc, nega_y_inc = env.clip_fn(sol)
+
+    # Per-atom relative conservation residual, (n_atoms,).
+    atom_sum = jnp.einsum("zi,ia->a", sol_clip, statics.compo_arr)
+    atom_loss_new = (atom_sum - s.pv.atom_ini) / s.pv.atom_ini
+    # delta uses the pre-clip sol (master computes it before clip): sol_clip would erase the truncation error of cells
+    # about to clip to zero and let overly aggressive steps through (HD209 exercises this). The trial mixing ratio of
+    # the mask is pre-clip too: the clip zeroes a species the step creates below pos_cut (notes "Parity ledger"). Its
+    # denominator is the clip's: the gas species only when condensates exist.
+    gas_sum = jnp.sum(
+        jnp.where(env.gas_indx_mask[None, :], sol, 0.0) if env.non_gas_present else sol, axis=1, keepdims=True
+    )
+    ymix_trial = sol / jnp.maximum(gas_sum, UNDERFLOW_DENOM)
+    return _Trial(
+        atm_step,
+        sol,
+        delta_arr,
+        h2he_pinned_next,
+        h2he_mix_next,
+        zero_bot_dyn,
+        sol_clip,
+        ymix_new,
+        small_y_inc,
+        nega_y_inc,
+        atom_loss_new,
+        ymix_trial,
+    )
+
+
+def repeat_failed_trial(
+    env: RunnerEnv, s: JaxIntegState, atm_static_: AtmStatic
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Repeat the trial a frozen exit carry keeps failing; return `(error ratio (nz, ni), sol_clip, atom loss change)`.
+
+    Outside the loop, so nothing in the running program pays for the error message. No photolysis update comes first:
+    the carry's `k_arr` is the last trial's, unless condensation just wrote it. Its `dt` is the next one, not the
+    `dt_min` that failed.
+    """
+    t = _trial(env, s._replace(dt=jnp.float64(env.statics.dt_min)), atm_static_, matrix_free=False)
+    ratio = env.delta_ratio_fn(t.sol, t.delta_arr, s.ymix, t.zero_bot_dyn, t.ymix_trial)
+    return ratio, t.sol_clip, jnp.abs(t.atom_loss_new - s.atom_loss_prev)
+
+
 class _StepDecision(NamedTuple):
     """The accept or reject outcome of one trial."""
 
     accept: jnp.ndarray
     force_accept: jnp.ndarray
+    keep_prev_run: jnp.ndarray
     do_accept: jnp.ndarray
     next_dt_if_reject: jnp.ndarray
     delta_count_inc: jnp.ndarray
@@ -232,9 +299,15 @@ def _decide_step(
     y_post_clip = jnp.where(force_accept, y_prev_clipped, sol_clip)
     keep_prev = force_accept & jnp.all(jnp.isfinite(sol))
     ymix_new = jnp.where(keep_prev, s.ymix, ymix_new)
+    # Counted only at dt_min itself, where the second is the first's trial again: same state and dt. A force-accept
+    # just above the floor is a different trial and the next dt can pass. A rejected trial between two does not reset
+    # the count: dt can grow after a failure that is not the error estimate, then fall back.
+    at_floor = s.dt == jnp.float64(statics.dt_min)
+    keep_prev_run = jnp.where(accept, jnp.int32(0), s.keep_prev_run + (keep_prev & at_floor).astype(jnp.int32))
     return _StepDecision(
         accept,
         force_accept,
+        keep_prev_run,
         do_accept,
         next_dt_if_reject,
         delta_count_inc,
@@ -265,7 +338,7 @@ def _refresh_geometry(
     lane refreshes on the same iteration.
     """
     statics, refresh_static = env.statics, env.refresh_static
-    cadence_count = s.accept_count if lane_axis is None else it
+    cadence_count = s.accept_count if it is None else it
     refresh_due = do_accept & ((jnp.mod(cadence_count, jnp.int32(statics.update_frq)) == jnp.int32(0)) | candidate)
     if lane_axis is not None:
         # A done lane always reads as a candidate and would pull the batch into the refresh.
@@ -366,25 +439,11 @@ def body_fn(
     """
     statics, gas_indx_mask = env.statics, env.gas_indx_mask
     s = _photo_update(env, s, lane_axis, photo_take)
-    atm_step = _splice_step_atm(atm_static_, s, statics.use_vm_mol, env.refresh_static.kb, env.refresh_static.Navo)
-    sol, delta_arr = _ros2_solve(env, s, atm_step, matrix_free)
-    sol, h2he_pinned_next, h2he_mix_next, zero_bot_dyn = _bottom_pins(statics, s, sol)
-    sol_clip, ymix_new, small_y_inc, nega_y_inc = env.clip_fn(sol)
+    trial = _trial(env, s, atm_static_, matrix_free)
+    atm_step, sol, sol_clip, atom_loss_new = trial.atm_step, trial.sol, trial.sol_clip, trial.atom_loss_new
+    delta = env.agg_delta_fn(sol, trial.delta_arr, s.ymix, trial.zero_bot_dyn, trial.ymix_trial)
 
-    # Per-atom relative conservation residual, (n_atoms,).
-    atom_sum = jnp.einsum("zi,ia->a", sol_clip, statics.compo_arr)
-    atom_loss_new = (atom_sum - s.pv.atom_ini) / s.pv.atom_ini
-    # delta uses the pre-clip sol (master computes it before clip): sol_clip would erase the truncation error of cells
-    # about to clip to zero and let overly aggressive steps through (HD209 exercises this). The trial mixing ratio of
-    # the mask is pre-clip too: the clip zeroes a species the step creates below pos_cut (notes "Parity ledger"). Its
-    # denominator is the clip's: the gas species only when condensates exist.
-    gas_sum = jnp.sum(
-        jnp.where(gas_indx_mask[None, :], sol, 0.0) if env.non_gas_present else sol, axis=1, keepdims=True
-    )
-    ymix_trial = sol / jnp.maximum(gas_sum, UNDERFLOW_DENOM)
-    delta = env.agg_delta_fn(sol, delta_arr, s.ymix, zero_bot_dyn, ymix_trial)
-
-    d = _decide_step(statics, s, sol, sol_clip, ymix_new, atom_loss_new, delta)
+    d = _decide_step(statics, s, sol, sol_clip, trial.ymix_new, atom_loss_new, delta)
     do_accept, t_next = d.do_accept, d.t_next
 
     # Condensation gates on the pre-step `s.t`, not `t_next`: master's save_step advances var.t after conden runs.
@@ -463,7 +522,7 @@ def body_fn(
             & (jnp.mod(accept_count_next - jnp.int32(1), jnp.int32(statics.save_evo_frq)) == jnp.int32(0))
             & (s.evo_idx < jnp.int32(statics.save_evo_n_max))
         )
-        if hold is not None:
+        if keep is not None:
             # The batched freeze passes the buffer through (see the ring).
             do_evo_append = do_evo_append & jnp.logical_not(keep)
         evo_slot = s.evo_idx
@@ -524,6 +583,7 @@ def body_fn(
     count_min_dyn_next = s.count_min_dyn
     count_max_dyn_next = s.count_max_dyn
     runtime_dyn_next = s.runtime_dyn
+    keep_prev_run_next = d.keep_prev_run
     if statics.hybrid_vm_mol:
         is_conv_after = _convergence_ok(s_cand._replace(Hp=s_geom.Hp), statics)
         in_phase0 = s.hybrid_use_vm > jnp.float64(0.5)
@@ -548,6 +608,8 @@ def body_fn(
             s.runtime_dyn * jnp.float64(_HYBRID_FLIP_RUNTIME_FACTOR),
             s.runtime_dyn,
         )
+        # The central scheme has not tried this state yet.
+        keep_prev_run_next = jnp.where(do_flip, jnp.int32(0), keep_prev_run_next)
         longdy_next = jnp.where(do_flip, jnp.float64(jnp.inf), longdy_next)
         longdydt_next = jnp.where(do_flip, jnp.float64(jnp.inf), longdydt_next)
 
@@ -577,13 +639,14 @@ def body_fn(
         delta=delta,
         accept_count=accept_count_next,
         retry_count=retry_count_next,
+        keep_prev_run=keep_prev_run_next,
         atom_loss=atom_loss_next,
         atom_loss_prev=atom_loss_prev_next,
         nega_count=s.nega_count + d.nega_count_inc,
         loss_count=s.loss_count + d.loss_count_inc,
         delta_count=s.delta_count + d.delta_count_inc,
-        small_y=s.small_y + small_y_inc,
-        nega_y=s.nega_y + nega_y_inc,
+        small_y=s.small_y + trial.small_y_inc,
+        nega_y=s.nega_y + trial.nega_y_inc,
         k_arr=s_post.k_arr,
         fix_species_started=s_post.fix_species_started,
         fix_y=s_post.fix_y,
@@ -600,8 +663,8 @@ def body_fn(
         where_varies_most=where_varies_most_next,
         rtol=rtol_next,
         loss_criteria=loss_criteria_next,
-        h2he_pinned=h2he_pinned_next,
-        h2he_mix=h2he_mix_next,
+        h2he_pinned=trial.h2he_pinned_next,
+        h2he_mix=trial.h2he_mix_next,
         budget_err=budget_err_next,
         budget_drift=budget_drift_next,
         budget_ok=budget_ok_next,

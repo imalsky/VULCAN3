@@ -11,7 +11,16 @@ import pytest
 
 # module -> names read by a consumer, with the deprecated aliases that released consumers read (docs/api.md).
 _CONSUMED = {
-    "vulcan3": ["__version__", "conv_normal", "load_config", "validate_overrides", "RunState"],
+    "vulcan3": [
+        "__version__",
+        "conv_normal",
+        "load_config",
+        "validate_overrides",
+        "RunState",
+        "DtMinFrozenError",
+        "MissingAtomError",
+        "raise_if_frozen",
+    ],
     "vulcan3.paths": ["resolve_data_path"],
     "vulcan3._paths": ["resolve_data_path"],
     "vulcan3.atm_jax": ["make_physical_inputs", "mol_diff", "_mol_diff"],

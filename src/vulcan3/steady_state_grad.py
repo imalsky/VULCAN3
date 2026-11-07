@@ -21,18 +21,16 @@ from .phy_const import UNDERFLOW_DENOM as _UNDERFLOW_DENOM
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from ._carry import JaxIntegState, PyTree, _PhotoStatic
+    from .atm_refresh import AtmRefreshStatic
     from .chem import NetworkArrays
     from .jax_step import AtmStatic
+    from .outer_loop import OuterLoop
 
 from ._adjoint_audit import audit_adjoint_scope
 from ._adjoint_core import (
     _TOP_K,
     BODY_MAP_DT,
-    LGMRES_CYCLES,
-    LGMRES_INNER_M,
-    LGMRES_MAXITER,
-    LGMRES_OUTER_K,
-    LGMRES_RTOL,
     N_SOLVES_DEFAULT,
     SOLVER_MAP,
     BodyTerms,
@@ -46,11 +44,6 @@ from ._adjoint_core import (
 __all__ = [
     "BODY_MAP_DT",
     "BODY_MAP_DT_CANDIDATES",
-    "LGMRES_CYCLES",
-    "LGMRES_INNER_M",
-    "LGMRES_MAXITER",
-    "LGMRES_OUTER_K",
-    "LGMRES_RTOL",
     "N_SOLVES_DEFAULT",
     "SOLVER_MAP",
     "BodyTerms",
@@ -97,7 +90,7 @@ def steady_state_reaction_sensitivity(
     body_terms: BodyTerms | None = None,
     n_solves: int = N_SOLVES_DEFAULT,
     return_info: bool = False,
-) -> Any:
+) -> jnp.ndarray | tuple[jnp.ndarray, dict[str, Any]]:
     """Reverse-mode `dL/d(ln k_r)` at a converged steady state.
 
     Sensitivity of a scalar loss of the converged composition to every
@@ -212,7 +205,7 @@ def steady_state_reaction_sensitivity(
     grads = [np.asarray((k_arr * vjp_Gk(lam)[0]).sum(axis=1)) for lam in lams]
 
     g_stack = np.stack(grads, axis=0)  # (n_solves, nr+1)
-    dL_dlnk = jnp.asarray(g_stack.mean(axis=0))
+    dL_dlnk: jnp.ndarray = jnp.asarray(g_stack.mean(axis=0))
 
     # Twin-to-twin disagreement on the reactions one would actually report.
     ensemble_spread = _topk_ensemble_spread(g_stack)
@@ -255,7 +248,7 @@ def steady_state_reaction_sensitivity(
     return dL_dlnk, info
 
 
-def _worst_rel(a: Any, b: Any) -> float:
+def _worst_rel(a: jnp.ndarray, b: jnp.ndarray) -> float:
     """Return the largest cell-wise relative difference; inf for mismatched shapes or a non-finite entry."""
     a_np = np.asarray(a, dtype=np.float64)
     b_np = np.asarray(b, dtype=np.float64)
@@ -273,7 +266,7 @@ def steady_state_input_sensitivity(
     k_arr: jnp.ndarray,
     atm: AtmStatic,
     net: NetworkArrays,
-    p0: Any,
+    p0: PyTree,
     rebuild: Callable,
     *,
     compo_array: jnp.ndarray,
@@ -283,7 +276,7 @@ def steady_state_input_sensitivity(
     body_terms: BodyTerms | None = None,
     n_solves: int = N_SOLVES_DEFAULT,
     return_info: bool = False,
-) -> Any:
+) -> jnp.ndarray | tuple[jnp.ndarray, dict[str, Any]]:
     """Reverse-mode `dL/dp` at a converged steady state.
 
     For an arbitrary physical input pytree `p` (a (nz,) temperature profile, ln Kzz, ...).
@@ -406,13 +399,14 @@ def steady_state_input_sensitivity(
     )
 
     # Parameter map at the fixed point; photolysis rows ride k(p) frozen.
-    def G_p(p: Any) -> Any:
+    def G_p(p: PyTree) -> jnp.ndarray:
         k_p, atm_p = rebuild(p)
-        return apply_post(step_fn(y_star, k_p, atm_p), M_col=atm_p.M[:, None])
+        mapped: jnp.ndarray = apply_post(step_fn(y_star, k_p, atm_p), M_col=atm_p.M[:, None])
+        return mapped
 
     _, pullback = jax.vjp(G_p, p0)
     twin_grads = [pullback(lam)[0] for lam in lams]
-    dL_dp = jax.tree_util.tree_map(lambda *leaves: jnp.mean(jnp.stack(leaves), axis=0), *twin_grads)
+    dL_dp: jnp.ndarray = jax.tree_util.tree_map(lambda *leaves: jnp.mean(jnp.stack(leaves), axis=0), *twin_grads)
 
     flat = [np.concatenate([np.ravel(np.asarray(leaf)) for leaf in jax.tree_util.tree_leaves(g)]) for g in twin_grads]
     ensemble_spread = _topk_ensemble_spread(np.stack(flat, axis=0))
@@ -433,7 +427,9 @@ def steady_state_input_sensitivity(
     return dL_dp, info
 
 
-def make_photo_recompute_k(runner_photo_static: Any, converged_state: Any) -> Any:
+def make_photo_recompute_k(
+    runner_photo_static: _PhotoStatic, converged_state: JaxIntegState
+) -> Callable[[jnp.ndarray], jnp.ndarray]:
     """Build a differentiable `k(y)` that rebuilds the photolysis rows from y.
 
     Reuses the runner's own in-loop photo branch so the recompute is
@@ -461,7 +457,7 @@ def make_photo_recompute_k(runner_photo_static: Any, converged_state: Any) -> An
 
     photo_branch = _make_photo_branch(runner_photo_static)
 
-    def recompute_k(y: jnp.ndarray) -> Any:
+    def recompute_k(y: jnp.ndarray) -> jnp.ndarray:
         ymix = y / jnp.sum(y, axis=1, keepdims=True)
         return photo_branch(converged_state._replace(y=y, ymix=ymix)).k_arr
 
@@ -469,7 +465,9 @@ def make_photo_recompute_k(runner_photo_static: Any, converged_state: Any) -> An
 
 
 # size-limit-ok: one branch per process, with its doc
-def make_body_terms(integ: Any, converged_state: Any, atm_static: Any) -> Any:
+def make_body_terms(
+    integ: OuterLoop, converged_state: JaxIntegState, atm_static: AtmStatic
+) -> tuple[AtmStatic, BodyTerms]:
     """Build `(atm_step, BodyTerms)` for the adjoint from a finished runner.
 
     Packs every supported per-step process the runner's configuration turns
@@ -521,11 +519,10 @@ def make_body_terms(integ: Any, converged_state: Any, atm_static: Any) -> Any:
     # hybrid vm_mol phase it converged on (a hybrid run ends in phase 1) ---
     from ._loop_branches import _splice_conden, _splice_step_atm  # lazy: acyclic
 
-    atm_step = _splice_step_atm(
-        atm_static, s, bool(st.use_vm_mol), integ._refresh_static.kb, integ._refresh_static.Navo
-    )
+    refresh: AtmRefreshStatic = integ._refresh_static  # type: ignore[assignment]  # built with _statics, checked above
+    atm_step = _splice_step_atm(atm_static, s, bool(st.use_vm_mol), refresh.kb, refresh.Navo)
 
-    if int(np.asarray(integ._refresh_static.diff_esc_idx).size) > 0:
+    if int(np.asarray(refresh.diff_esc_idx).size) > 0:
         warnings.warn(
             "diff_esc is active: the runner recomputes the diffusion-"
             "limited escape flux from the top-layer densities; the "

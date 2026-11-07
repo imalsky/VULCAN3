@@ -35,13 +35,12 @@ repos:
     rev: "v2.4.0"
     hooks:
       - id: mypy
-        # Manual: findings are left where the JAX and NumPy stubs return Any (notes "Cleanup proofs"), so this reports.
-        stages: [manual]
         files: ^src/
         args: []
         additional_dependencies:
           - numpy
           - jax==0.6.2
+          - types-PyYAML
 
   - repo: https://github.com/codespell-project/codespell
     rev: "v2.4.3"

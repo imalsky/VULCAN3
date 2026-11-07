@@ -50,6 +50,7 @@ def test_shipped_cut_rejects_a_too_negative_step():
         atom_loss_prev=jnp.zeros(1),
         dt=jnp.float64(1.0),
         retry_count=jnp.int32(0),
+        keep_prev_run=jnp.int32(0),
         t=jnp.float64(0.0),
         y_prev=jnp.ones((1, 2)),
         ymix=jnp.ones((1, 2)),

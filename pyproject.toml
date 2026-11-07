@@ -225,7 +225,14 @@ disallow_incomplete_defs = false
 # ndarray type parameters add nothing here: shapes and dtypes are in the comments beside each array.
 disallow_any_generics = false
 ignore_missing_imports = true
-untyped_calls_exclude = ["jax"]  # JAX leaves some public functions unannotated
+# JAX's own public functions with no annotations, named one by one: nothing here can type them.
+untyped_calls_exclude = [
+  "jax._src.config.Config.update",
+  "jax._src.lax.parallel.psum",
+  "jax._src.ffi.pycapsule",
+  "jax._src.api.ShapeDtypeStruct",
+  "jax._src.lax.lax.optimization_barrier",
+]
 
 [[tool.mypy.overrides]]
 module = "vulcan3.*"

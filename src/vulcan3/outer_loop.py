@@ -15,37 +15,53 @@ from __future__ import annotations
 import functools
 import logging
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 from . import _build_statics, _pack_state, state as _state_mod
-from ._carry import ATM_STATIC_BATCH_AXES, JaxIntegState, ProfileVars, _PhotoStatic, _Statics
-from ._convergence import certificate_failures, conv_normal
+from ._carry import _ATM_ARRAY_FIELDS, ATM_STATIC_BATCH_AXES, JaxIntegState, ProfileVars, _PhotoStatic, _Statics
+from ._convergence import certificate_failures, conv_normal, frozen_column_message
 from ._runner_queue import _QUEUE_REFILL_CHUNK, _queue_compact_rungs
 from ._runners import make_runner
 from .chem_funs import NET_JAX, NETWORK
 from .config import DT_MAX_S, default_config
 from .jax_step import AtmStatic, make_atm_static
-from .runtime_validation import validate_runtime_config
-from .state import TERM_CONVERGED
+from .runtime_validation import refuse_missing_atoms, validate_runtime_config
+from .state import TERM_CONVERGED, TERM_DT_MIN_FROZEN, DtMinFrozenError, raise_if_frozen
 
 if TYPE_CHECKING:
+    import types
     from collections.abc import Callable, Sequence
 
     from . import atm_refresh as _atm_refresh_mod, conden as _conden_mod
+    from ._carry import PyTree
     from .config import Config
     from .legacy_io import Output
     from .op_jax import Ros2JAX
     from .state import RunState
 
-__all__ = ["ATM_STATIC_BATCH_AXES", "JaxIntegState", "OuterLoop", "ProfileVars", "certificate_failures", "conv_normal"]
+__all__ = [
+    "ATM_STATIC_BATCH_AXES",
+    "DtMinFrozenError",
+    "JaxIntegState",
+    "OuterLoop",
+    "ProfileVars",
+    "certificate_failures",
+    "conv_normal",
+    "raise_if_frozen",
+]
 
 logger = logging.getLogger(__name__)
 
 _ATM_STATIC_BATCH_AXES = ATM_STATIC_BATCH_AXES  # deprecated (docs/api.md)
+
+_TRACED_CHECK = (
+    "A runner is traced under an outer jit or vmap, so it cannot raise DtMinFrozenError. Unless the caller already "
+    "does, call vulcan3.raise_if_frozen on termination_reason right after that call."
+)
 
 
 class OuterLoop:
@@ -105,6 +121,7 @@ class OuterLoop:
         self._runner: Callable[[JaxIntegState, AtmStatic], JaxIntegState] | None = None
         self._runner_chunk: Callable[[JaxIntegState, AtmStatic, jnp.ndarray], JaxIntegState] | None = None
         self._make_runner_jvp: Callable[[tuple[bool, ...], tuple[bool, ...]], Callable] | None = None
+        self._failed_trial: Callable[[JaxIntegState, AtmStatic], tuple[jnp.ndarray, ...]] | None = None
         # `integ(rs, chunk=N)` stores the last finished chunk here as a
         # RunState when Ctrl+C stops the run.
         self.interrupted_runstate: RunState | None = None
@@ -126,7 +143,7 @@ class OuterLoop:
         # rejects later profiles with a different star (see the guard there).
         self._sflux_top_ref: np.ndarray | None = None
 
-    def ensure_runner(self, var: Any, atm: Any) -> None:
+    def ensure_runner(self, var: types.SimpleNamespace, atm: types.SimpleNamespace) -> None:
         """Build the JIT'd runner on the first call; cached for subsequent."""
         if self._runner is not None:
             return
@@ -154,6 +171,7 @@ class OuterLoop:
             self._runner_batch,
             self._runner_queue,
             self._make_runner_jvp,
+            self._failed_trial,
         ) = make_runner(
             NET_JAX,
             self._statics,
@@ -170,8 +188,8 @@ class OuterLoop:
 
     # size-limit-ok: the tangent contract, then the leaf bookkeeping of the one call to the jvp runner
     def run_jvp(
-        self, state: JaxIntegState, atm_static: AtmStatic, dstate: Any, datm: Any
-    ) -> tuple[JaxIntegState, Any, jnp.ndarray, jnp.ndarray]:
+        self, state: JaxIntegState, atm_static: AtmStatic, dstate: PyTree, datm: PyTree
+    ) -> tuple[JaxIntegState, PyTree, jnp.ndarray, jnp.ndarray]:
         """Forward-mode integration certified on the tangent.
 
         `dstate` / `datm` mirror `state` / `atm_static` leaf for leaf, as
@@ -196,13 +214,13 @@ class OuterLoop:
         integrates the primal D times.
         """
 
-        def _mask(dtree: Any, tree: Any) -> tuple[bool, ...]:
+        def _mask(dtree: PyTree, tree: PyTree) -> tuple[bool, ...]:
             leaves = jax.tree_util.tree_leaves(tree)
             dleaves = jax.tree_util.tree_leaves(dtree)
             if len(leaves) != len(dleaves):
                 raise ValueError(f"tangent tree has {len(dleaves)} leaves, primal {len(leaves)}")
 
-            def _is_float(x: Any) -> bool:
+            def _is_float(x: PyTree) -> bool:
                 return (
                     getattr(x, "dtype", None) is not None
                     and x.dtype != jax.dtypes.float0
@@ -225,12 +243,13 @@ class OuterLoop:
             raise RuntimeError(
                 "run_jvp called before the runner was built; call prepare_runstate on at least one profile first."
             )
+        self._refuse_missing_atoms(state)
         act_s, act_a = _mask(dstate, state), _mask(datm, atm_static)
         key = (act_s, act_a)
         if key not in self._runner_jvp_cache:
             self._runner_jvp_cache[key] = self._make_runner_jvp(act_s, act_a)
 
-        def pick(dtree: Any, act: tuple[bool, ...]) -> list[jnp.ndarray]:
+        def pick(dtree: PyTree, act: tuple[bool, ...]) -> list[jnp.ndarray]:
             return [d for d, a in zip(jax.tree_util.tree_leaves(dtree), act, strict=False) if a]
 
         ds_act, da_act = pick(dstate, act_s), pick(datm, act_a)
@@ -244,6 +263,7 @@ class OuterLoop:
         final, dfinal_active, tangent_longdy, tangent_ok = self._runner_jvp_cache[key](
             state, atm_static, ds_act, da_act
         )
+        self._raise_if_frozen(final, atm_static)
         if one_dir:
             dfinal_active = [jnp.squeeze(d, 0) for d in dfinal_active]
             tangent_longdy = jnp.squeeze(tangent_longdy, 0)
@@ -259,7 +279,59 @@ class OuterLoop:
         )
         return final, dfinal, tangent_longdy, tangent_ok
 
-    def build_refresh_static(self, atm: Any) -> _atm_refresh_mod.AtmRefreshStatic:
+    def _refuse_missing_atoms(self, state: JaxIntegState) -> None:
+        """Refuse a column with none of a conserved atom before its loop; a traced column is checked by its freeze."""
+        atom_ini = jax.lax.stop_gradient(state.pv.atom_ini)
+        if not isinstance(atom_ini, jax.core.Tracer):
+            refuse_missing_atoms(np.asarray(atom_ini), self._atom_order)
+
+    def _check_queue_exit(self, reason: jnp.ndarray, delta: jnp.ndarray, atom_ini: jnp.ndarray) -> None:
+        """Refuse or raise from the jobs' returned arrays; traced, say who has to.
+
+        A job's column exists only inside the program, so its atom totals are read here, after the loop.
+        """
+        if isinstance(reason, jax.core.Tracer):
+            logger.warning(_TRACED_CHECK)
+            return
+        refuse_missing_atoms(np.asarray(atom_ini), self._atom_order)
+        delta = jax.lax.stop_gradient(delta)
+        raise_if_frozen(np.asarray(reason), np.asarray(delta), rtol=_pack_state._built_statics(self).rtol_accept)
+
+    def _raise_if_frozen(self, final: JaxIntegState, atm_static: AtmStatic) -> None:
+        """Raise `DtMinFrozenError` if the exit carry, one column or a stack of lanes, froze at `dt_min`.
+
+        No host callback: a program holding one stays out of JAX's persistent compile cache. Under an outer jit the
+        values do not exist yet, so the caller checks them after the jitted call (`raise_if_frozen`).
+        """
+        reason = final.termination_reason
+        if isinstance(reason, jax.core.Tracer):
+            logger.warning(_TRACED_CHECK)
+            return
+        frozen = np.flatnonzero(np.ravel(reason) == TERM_DT_MIN_FROZEN)
+        if not frozen.size:
+            return
+        statics = _pack_state._built_statics(self)
+        message = ""
+        if jnp.ndim(reason) > 0:
+            lane = int(frozen[0])
+            message = f"{frozen.size} of {jnp.size(reason)} lanes froze, at {frozen[:8].tolist()}. Lane {lane}: "
+            final = jax.tree_util.tree_map(lambda x: x[lane], final)
+            atm_static = atm_static._replace(**{f: getattr(atm_static, f)[lane] for f in _ATM_ARRAY_FIELDS})
+        # Under a plain jax.jvp the integer reason comes back concrete while the arrays still carry tangents.
+        final, atm_static = jax.lax.stop_gradient((final, atm_static))
+        failed = self._failed_trial(final, atm_static)  # type: ignore[misc]  # the exit carry came from a built runner
+        ratio, sol_clip, loss_change = (np.asarray(x) for x in failed)
+        raise DtMinFrozenError(
+            message + frozen_column_message(ratio, sol_clip, loss_change, statics, self._species, self._atom_order)
+        )
+
+    def _checked_runner(self, state: JaxIntegState, atm_static: AtmStatic) -> JaxIntegState:
+        self._refuse_missing_atoms(state)
+        final = self._runner(state, atm_static)  # type: ignore[misc]  # the caller holds this through `runner`, built
+        self._raise_if_frozen(final, atm_static)
+        return final
+
+    def build_refresh_static(self, atm: types.SimpleNamespace) -> _atm_refresh_mod.AtmRefreshStatic:
         """Pack the static inputs to `atm_refresh.update_mu_dz_jax`."""
         return _build_statics.build_refresh_static(self, atm)
 
@@ -315,8 +387,11 @@ class OuterLoop:
 
     @property
     def runner(self) -> Callable[[JaxIntegState, AtmStatic], JaxIntegState] | None:
-        """The compiled `runner(state, atm_static) -> state`; None before `prepare_runstate`."""
-        return self._runner
+        """The compiled `runner(state, atm_static) -> state`; None before `prepare_runstate`.
+
+        It raises `DtMinFrozenError` (see `_raise_if_frozen`); `_runner` is the bare program.
+        """
+        return None if self._runner is None else self._checked_runner
 
     @property
     def config(self) -> Config:
@@ -341,7 +416,8 @@ class OuterLoop:
     def __call__(self, rs: RunState, chunk: int | None = None) -> RunState:
         """Integrate a fresh `RunState` to convergence or a cap and return a new `RunState`.
 
-        Raise `ValueError` if `rs` has already run (`params.count > 0`). The caps are runtime and step count.
+        Raise `ValueError` if `rs` has already run (`params.count > 0`), and `DtMinFrozenError`, with no result, if the
+        column's trial keeps failing at `dt_min`. The caps are runtime and step count.
 
         `chunk=None` runs one compiled loop. `chunk=N` runs the same loop in
         pieces of N accepted steps, prints a progress block after each (when
@@ -361,10 +437,12 @@ class OuterLoop:
             )
         self.interrupted_runstate = None
         init_state, atm_static = self.prepare_runstate(rs)
+        self._refuse_missing_atoms(init_state)
         if chunk is None:
-            final = self._runner(init_state, atm_static)
+            final = self._runner(init_state, atm_static)  # type: ignore[misc]  # prepare_runstate built it
         else:
             final = self._run_chunked(init_state, atm_static, rs, int(chunk))
+        self._raise_if_frozen(final, atm_static)
         rs_out = _pack_state.unpack_state(self, final, rs)
         self._report_end(rs_out, final)
         return rs_out
@@ -382,7 +460,8 @@ class OuterLoop:
         try:
             while True:
                 target = int(state.accept_count) + chunk
-                nxt = self._runner_chunk(state, atm_static, jnp.asarray(target, state.accept_count.dtype))
+                target_ = jnp.asarray(target, state.accept_count.dtype)
+                nxt = self._runner_chunk(state, atm_static, target_)  # type: ignore[misc]  # prepare_runstate built it
                 done = int(nxt.accept_count) < target
                 state = nxt
                 if done:
@@ -445,7 +524,7 @@ class OuterLoop:
         # The refresh closure bakes the first profile's `pref_indx` (it sizes
         # a `jnp.arange`, so it cannot ride ProfileVars); reject a lane that
         # differs instead of silently anchoring it at lane 0's layer.
-        baked_pref = int(self._refresh_static.pref_indx)
+        baked_pref = int(self._refresh_static.pref_indx)  # type: ignore[union-attr]  # ensure_runner just built it
         if int(atm.pref_indx) != baked_pref:
             raise ValueError(
                 "run_batch lanes must share pref_indx: this profile has "
@@ -472,26 +551,31 @@ class OuterLoop:
         geometry cadences follow the loop's iteration tick here, not the
         lane's accept count), and the call returns once the slowest
         lane finishes. Lanes are never compacted or refilled here; feed a
-        queue of profiles through `run_queue` for that.
+        queue of profiles through `run_queue` for that. A lane frozen at `dt_min`
+        stops with `termination_reason` 4, and `DtMinFrozenError` follows the loop. Under an outer jit the caller
+        checks the returned carry (`raise_if_frozen`).
         """
         if self._runner_batch is None:
             raise RuntimeError(
                 "run_batch called before the runner was built; call prepare_runstate on at least one profile first."
             )
+        self._refuse_missing_atoms(states_batched)
         if self._vrunner is None:
             self._vrunner = jax.jit(self._runner_batch)
-        return self._vrunner(states_batched, atm_static_batched)
+        final_b = self._vrunner(states_batched, atm_static_batched)
+        self._raise_if_frozen(final_b, atm_static_batched)
+        return final_b
 
     def run_queue(
         self,
-        init_fn: Callable[[Any], tuple[JaxIntegState, AtmStatic]],
-        jobs: Any,
+        init_fn: Callable[[PyTree], tuple[JaxIntegState, AtmStatic]],
+        jobs: PyTree,
         n_lanes: int,
-        out_fn: Callable[[JaxIntegState], Any],
+        out_fn: Callable[[JaxIntegState], PyTree],
         *,
         chunk: int = _QUEUE_REFILL_CHUNK,
         compact: Sequence[int] | None = None,
-    ) -> tuple[Any, jnp.ndarray]:
+    ) -> tuple[PyTree, jnp.ndarray]:
         """Integrate `n_jobs` independent profiles on `n_lanes` lanes with refill.
 
         `init_fn(job) -> (JaxIntegState, AtmStatic)` builds one job's initial
@@ -499,7 +583,9 @@ class OuterLoop:
         array leaf; `out_fn(final_lane_state) -> pytree` is what is kept per
         job. Returns `(out, n_iter)`: `out_fn`'s pytree stacked in job order
         and the loop's iteration count. A job whose lane went non-finite comes
-        back with `termination_reason` 5.
+        back with `termination_reason` 5. A job frozen at `dt_min` gives up its lane
+        like a finished one, and `DtMinFrozenError` follows the loop, naming its index. Under an outer jit,
+        `out_fn` keeps `termination_reason` and the caller checks it (`raise_if_frozen`).
 
         A finished lane is written out and refilled with the next pending job
         once `chunk` lanes are free, when every lane still holding a job is
@@ -540,15 +626,22 @@ class OuterLoop:
                 logger.info(
                     "run_queue: tail compaction %s -> %s lanes", int(n_lanes), " -> ".join(str(r) for r in rungs)
                 )
+
+            def out_and_stop(final: JaxIntegState) -> tuple[PyTree, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+                delta, atom_ini = jax.lax.stop_gradient((final.delta, final.pv.atom_ini))
+                return out_fn(final), final.termination_reason, delta, atom_ini
+
             fn = jax.jit(
                 functools.partial(
                     self._runner_queue,
                     n_lanes=int(n_lanes),
                     chunk=int(chunk),
                     init_fn=init_fn,
-                    out_fn=out_fn,
+                    out_fn=out_and_stop,
                     compact=rungs,
                 )
             )
             self._vrunner_queue[key] = fn
-        return fn(jobs)
+        (out, reason, delta, atom_ini), n_iter = fn(jobs)
+        self._check_queue_exit(reason, delta, atom_ini)
+        return out, n_iter
