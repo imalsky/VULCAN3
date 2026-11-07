@@ -16,7 +16,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from _helpers import fast_cfg, stack_atm_statics, stack_integ_states
+from _helpers import fast_cfg, run_child, stack_atm_statics, stack_integ_states
 
 from vulcan3 import DtMinFrozenError, MissingAtomError, RunState, legacy_io, op_jax, raise_if_frozen
 from vulcan3.outer_loop import ATM_STATIC_BATCH_AXES, OuterLoop, certificate_failures, conv_normal
@@ -350,3 +350,67 @@ def test_the_count_is_kept_at_the_floor_only():
     assert run_after(0, dt=1.5e-14) == 0  # a force-accept just above dt_min: the next dt is another trial
     assert run_after(0, dt=1e-12, retry=3) == 0  # the retry budget, above the floor: another dt follows
     assert run_after(0, sol=jnp.nan) == 0  # a non-finite solve goes through and ends as non-finite
+
+
+# The network is import-frozen, so this column needs its own process. Isothermal, const_mix, no photolysis; atol is
+# above the species this start creates from nothing, so that S4 alone sets the step.
+_FAST_SULFUR_CHILD = r"""
+import os, sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+sys.path.insert(0, str(repo / "src"))
+os.chdir(repo / "src" / "vulcan3")
+
+import numpy as np
+
+from vulcan3.config import default_config
+
+cfg = default_config()
+cfg.atom_list = ["H", "O", "C", "N", "S"]
+cfg.atm_type = "isothermal"; cfg.Tiso = 2900.0
+cfg.atm_base = "H2"; cfg.use_moldiff = False
+cfg.use_Kzz = True; cfg.Kzz_prof = "const"; cfg.const_Kzz = 1e9; cfg.use_vz = False
+cfg.use_photo = False; cfg.use_ion = False; cfg.use_condense = False
+cfg.ini_mix = "const_mix"
+cfg.const_mix = {"H2": 0.85, "He": 0.149, "H2O": 5e-4, "CO": 2e-4, "CH4": 1e-5, "N2": 1e-4, "H2S": 3e-4, "S2": 3e-4,
+                 "S4": 1e-14}
+cfg.nz = 12; cfg.P_b = 7.6e6; cfg.P_t = 1e6
+cfg.use_topflux = False; cfg.use_botflux = False
+cfg.use_fix_sp_bot = {}; cfg.use_ini_cold_trap = False; cfg.use_print_prog = False
+cfg.rtol = 0.05; cfg.atol = 1e4; cfg.count_min = 6; cfg.count_max = 6
+
+from vulcan3 import RunState, legacy_io, op_jax
+from vulcan3.chem_funs import spec_list
+from vulcan3.outer_loop import OuterLoop
+from vulcan3.state import TERM_DT_MIN_FROZEN, TERM_STEP_COUNT
+
+i_s4 = spec_list.index("S4")
+
+
+def solve():
+    integ = OuterLoop(op_jax.Ros2JAX(), legacy_io.Output(), cfg=cfg)
+    state, atm_static = integ.prepare_runstate(RunState.with_pre_loop_setup(cfg))
+    return integ, state, atm_static, integ._runner(state, atm_static)
+
+
+_, state, _, final = solve()
+assert int(final.termination_reason) == TERM_STEP_COUNT, (int(final.termination_reason), float(final.delta), cfg.dt_min)
+assert float(final.delta) <= cfg.rtol
+assert float(final.y[0, i_s4]) > 10.0 * float(state.y[0, i_s4])
+
+cfg.dt_min = 1e-14
+integ, _, atm_static, final = solve()
+assert int(final.termination_reason) == TERM_DT_MIN_FROZEN, int(final.termination_reason)
+ratio = np.asarray(integ._failed_trial(final, atm_static)[0])
+assert np.unravel_index(np.argmax(ratio), ratio.shape) == (0, i_s4), np.argmax(ratio)
+"""
+
+
+def test_a_short_sulfur_lifetime_can_step_at_the_default_floor():
+    """S4 + M -> S2 + S2 + M at 2900 K and 7.6 bar: 4e-14 s. S4 starts 50 times below its balance with S2.
+
+    S4 passes rtol 0.05 at the default floor and steps; the same column at 1e-14 s freezes on S4 (notes
+    "Differences from VULCAN master").
+    """
+    run_child(_FAST_SULFUR_CHILD, network="thermo/SNCHO_photo_network_2025.txt", label="fast sulfur lifetime")

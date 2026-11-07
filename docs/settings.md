@@ -24,5 +24,5 @@ the step. It is one threshold for the whole column, not a share of the layer: -1
 `atm/BC_bot_Earth.txt` names H2SO4, which no shipped network holds, and NO3 and HNO3, which the default network does not, so
 copy the file and delete those rows.
 
-`dt_min` (s, default 1e-14) is the shortest step. A trial that fails there is force-accepted and keeps the previous state, so
+`dt_min` (s, default 1e-15, master's is 1e-14) is the shortest step. A trial that fails there is force-accepted and keeps the previous state, so
 a second such failure stops the run with `DtMinFrozenError`, which a caller that jits its solve raises itself (docs/api.md).

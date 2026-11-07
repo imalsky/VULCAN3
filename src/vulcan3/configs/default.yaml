@@ -136,7 +136,9 @@ print_prog_num: 500
 dttry: 1.0e-10
 trun_min: 100.0
 runtime: 1.0e+22
-dt_min: 1.0e-14
+# s. Under the shortest chemical lifetime on a shipped network by enough for the error estimate to pass: a failure at
+# the floor keeps the state (notes "Differences from VULCAN master").
+dt_min: 1.0e-15
 dt_var_max: 2.0
 dt_var_min: 0.5
 count_min: 120

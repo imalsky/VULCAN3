@@ -37,6 +37,7 @@ INTENTIONAL_JAX_DELTAS = {
     "bot_BC_flux_file",
     "dt_max",  # capped at config.DT_MAX_S = 1e15 s; master derives 1e17
     "nega_cut",  # -1e4 cm^-3; master's -1 never fires (notes "Parity ledger")
+    "dt_min",  # 1e-15 s; a floor above the step S4's estimate accepts freezes it under C29 (notes "Parity ledger")
 }
 
 # Network files carrying master's CH2CN + H + M correction (k0 1.00E-29,

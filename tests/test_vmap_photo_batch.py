@@ -36,7 +36,7 @@ def _pin_cfg(**extra):
     """Small photo-on batched config: isothermal, const_mix init.
 
     Fixed diffusion scheme (the hybrid flips schemes per lane), photo cadence low enough to fire within COUNT_MAX.
-    `T_cross_sp=["H2O"]` gives the two Tiso lanes different cross sections. Above about 1300 K this start freezes at
+    `T_cross_sp=["H2O"]` gives the two Tiso lanes different cross sections. By 1600 K this start freezes at
     `dt_min` and the lane never moves.
     """
     return fast_cfg(

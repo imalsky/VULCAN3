@@ -56,7 +56,7 @@ cfg = default_config()
 cfg.use_photo = True
 cfg.use_ion = True
 cfg.use_condense = False
-# Cool enough to move: at 1500 K this start freezes at dt_min on its first steps.
+# Cool enough for this start to move.
 cfg.atm_type = "isothermal"; cfg.Tiso = 1000.0
 cfg.atm_base = "H2"
 cfg.use_moldiff = False
