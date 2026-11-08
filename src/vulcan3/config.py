@@ -223,6 +223,16 @@ def validate_overrides(overrides: dict[str, Any]) -> None:
 
     For a caller that applies the dict to a loaded Config with ``setattr`` (which checks nothing). Display-only keys
     are refused here: setattr would apply them, and code has no reason to pass one.
+
+    Parameters
+    ----------
+    overrides : dict of str to Any
+        Config key to value.
+
+    Raises
+    ------
+    ValueError
+        If a key is display-only, removed or unknown.
     """
     ignored = sorted(set(overrides) & _IGNORED_KEYS)
     if ignored:
@@ -320,6 +330,13 @@ def dump_config(cfg: Config, path: str | os.PathLike) -> None:
 
     Dumps the full attribute set (including the derived values), so re-loading
     the file with ``load_config`` reconstructs the same run inputs verbatim.
+
+    Parameters
+    ----------
+    cfg : Config
+        The resolved config.
+    path : str or os.PathLike
+        The YAML file to write.
     """
     d = {k: v for k, v in vars(cfg).items() if not k.startswith("_") and not callable(v)}
     Path(path).write_text(yaml.safe_dump(d, sort_keys=False, default_flow_style=False, width=100))

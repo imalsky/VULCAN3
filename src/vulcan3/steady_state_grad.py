@@ -289,13 +289,24 @@ def steady_state_input_sensitivity(
 
     so all components of `p` cost one solve plus one VJP. The renormalization
     uses `atm(p).M`, so an input that moves the total density (temperature:
-    M = pco/(kb T)) is differentiated through the rebalance too.
+    M = pco/(kb T)) is differentiated through the rebalance too. The arguments shared with
+    `steady_state_reaction_sensitivity` are documented in full there.
 
-    Parameters (beyond the shared ones)
-    -----------------------------------
-    p0
+    Parameters
+    ----------
+    loss_fn : callable
+        `loss_fn(y) -> scalar` on the `[nz, ni]` number-density state.
+    y_star : jnp.ndarray [nz, ni]
+        Converged number densities, cm^-3; a tight fixed point of the body map.
+    k_arr : jnp.ndarray [nr + 1, nz]
+        Converged rate constants in the units of `rates_jax.build_rate_array`, row 0 unused.
+    atm : AtmStatic
+        Atmosphere with the converged refresh fields, as fed to the runner's body map.
+    net : NetworkArrays
+        Active network.
+    p0 : PyTree
         The input value the state was converged at (array or pytree).
-    rebuild
+    rebuild : callable
         `rebuild(p) -> (k_arr_p, atm_p)`: a JAX-differentiable rebuild of the
         full rate table and `AtmStatic` at input `p`. Must reproduce the
         converged inputs at `p0` (warn above `_REBUILD_CONSISTENCY_WARN`,
@@ -312,16 +323,37 @@ def steady_state_input_sensitivity(
                 # photo-on columns: k = jnp.where(photo_rows[:, None], k_arr, k)
                 return k, atm._replace(Tco=T, Ti=0.5 * (T[:-1] + T[1:]), M=M)
 
+    compo_array : jnp.ndarray [ni, n_atoms]
+        Per-species atom counts.
+    dz : jnp.ndarray [nz]
+        Layer thickness, cm.
+    body_dt : float, optional
+        Adjoint-only probe step, s.
+    photo_recompute_k : callable or None, optional
+        `make_photo_recompute_k(...)` on a photo-on column; None means no photolysis feedback.
+    body_terms : BodyTerms or None, optional
+        Condensation, fix_species and bottom-pin terms of the body map.
+    n_solves : int, optional
+        Twin-ensemble size.
+    return_info : bool, optional
+        Also return the diagnostics dict.
+
     Returns
     -------
-    dL_dp
+    dL_dp : PyTree
         Same pytree structure as `p0`; ensemble mean over `n_solves` twins.
     info : dict, optional
-        The shared adjoint diagnostics plus `rebuild_consistency` (worst
-        relative mismatch of `rebuild(p0)` per field).
+        The shared adjoint diagnostics plus `ensemble_spread` and `rebuild_consistency` (worst
+        relative mismatch of `rebuild(p0)` per field); only with `return_info`.
 
-    Scope and accuracy notes
-    ------------------------
+    Raises
+    ------
+    ValueError
+        If condensation is active at the state, `rebuild(p0)` does not reproduce the converged inputs, or the
+        gradient is non-finite.
+
+    Notes
+    -----
     * Chemistry path only: `(dL/dy*) . (dy*/dp)`. A loss with a direct `p`
       dependence (e.g. T in the RT opacities of a spectrum chi-square) needs
       that term added separately (`jax.grad` w.r.t. p at fixed `y_star`).

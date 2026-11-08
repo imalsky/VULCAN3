@@ -20,6 +20,16 @@ def legacy_view(rs: RunState) -> tuple[types.SimpleNamespace, types.SimpleNamesp
     """Return a `(var, atm, para)` SimpleNamespace shim built from `rs`.
 
     Mutations to the shim do not round-trip back to `rs`.
+
+    Parameters
+    ----------
+    rs : RunState
+        The run state to view.
+
+    Returns
+    -------
+    var, atm, para : types.SimpleNamespace
+        Master's state, atmosphere and parameter containers, as NumPy copies.
     """
     md = rs.metadata
     var = types.SimpleNamespace()

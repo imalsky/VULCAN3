@@ -325,6 +325,16 @@ def validate_runtime_config(cfg: Config) -> None:  # noqa: C901 (one refusal per
     so the user sees all problems at once; returns None on success. Relative
     asset paths resolve as the run resolves them (`resolve_data_path`: the
     current directory first, then the package data).
+
+    Parameters
+    ----------
+    cfg : Config
+        The run's config.
+
+    Raises
+    ------
+    RuntimeConfigError
+        If a list knob is None, or any check fails; the message lists every failure.
     """
     none_lists = [key for key in _LIST_KNOBS if getattr(cfg, key) is None]
     if none_lists:
@@ -437,6 +447,18 @@ def rate_temp_range_exposure(net: Network, Tco: jnp.ndarray) -> dict:
     A bare measurement temperature parses as a degenerate (T, T) range, so
     room-temperature-only rates count as out-of-range on hot profiles
     rather than hiding in the no-range bucket.
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network, with its documented T ranges.
+    Tco : jnp.ndarray [nz]
+        Layer temperature, K.
+
+    Returns
+    -------
+    dict of str to int
+        Row counts: `thermal_rows`, `no_range`, `any_outside` (some layer outside) and `all_outside` (every layer).
     """
     T = np.asarray(Tco, dtype=np.float64)
     no_range = any_outside = all_outside = 0

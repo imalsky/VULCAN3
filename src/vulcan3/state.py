@@ -357,9 +357,16 @@ _SFLUX_BIN_MAX_NM = 700.0
 def load_stellar_flux(cfg: Config) -> tuple[float, float]:
     """Read the stellar flux file and return the spectral-bin extents.
 
-    Returns `(def_bin_min, def_bin_max)`, clamped to [2, 700] nm, or
-    `(0.0, 0.0)` when `cfg.use_photo` is False so callers can call
-    unconditionally.
+    Parameters
+    ----------
+    cfg : Config
+        The run's config: `use_photo`, `sflux_file`.
+
+    Returns
+    -------
+    def_bin_min, def_bin_max : float
+        The file's first and last wavelength, clamped to [2, 700] nm; `(0.0, 0.0)` when `cfg.use_photo` is False,
+        so callers can call unconditionally.
     """
     if not bool(cfg.use_photo):
         return 0.0, 0.0
@@ -449,6 +456,25 @@ def runstate_from_store(
     Carries pre-loop fields plus runner-state slots (step/params/atoms/
     photo_runtime/fix_species). Anything the runner needs at entry comes
     from here.
+
+    Parameters
+    ----------
+    var : types.SimpleNamespace
+        Legacy state container.
+    atm : types.SimpleNamespace
+        Legacy atmosphere container.
+    para : types.SimpleNamespace
+        Legacy parameter container; counters it lacks read zero.
+
+    Returns
+    -------
+    RunState
+        The runner's input state, with `photo_static` None.
+
+    Raises
+    ------
+    ValueError
+        If `fix_species` has already frozen in `para`: the legacy view does not carry the pin.
     """
     _cfg = default_config()
 

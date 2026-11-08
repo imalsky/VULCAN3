@@ -471,6 +471,18 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
     Raises ValueError if a reaction is duplicated within one section (its
     contribution would be silently double-counted); `duplicates_ok=True`
     downgrades that to a RuntimeWarning for inspection/file-sweep uses.
+
+    Parameters
+    ----------
+    network_path : str or Path
+        The network file, resolved by `resolve_data_path`.
+    duplicates_ok : bool, optional
+        Warn on a duplicated reaction instead of raising.
+
+    Returns
+    -------
+    Network
+        Species, the stoichiometry and rate-coefficient tables ([nr + 1, ...], row 0 unused) and the section indices.
     """
     from ._paths import resolve_data_path
 

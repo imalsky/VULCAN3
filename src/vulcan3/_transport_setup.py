@@ -44,7 +44,20 @@ logger = logging.getLogger(__name__)
 
 
 def compute_mean_mass(ymix: jnp.ndarray, ms_arr: jnp.ndarray) -> jnp.ndarray:
-    """Mean molecular weight (g/mol) per layer. ymix (nz, ni), ms_arr (ni,) -> (nz,)."""
+    """Mean molecular weight per layer.
+
+    Parameters
+    ----------
+    ymix : jnp.ndarray [nz, ni]
+        Mixing ratios.
+    ms_arr : jnp.ndarray [ni]
+        Molar mass per species, g/mol.
+
+    Returns
+    -------
+    jnp.ndarray [nz]
+        Mean molar mass, g/mol.
+    """
     return jnp.einsum("zi,i->z", jnp.asarray(ymix), jnp.asarray(ms_arr))
 
 
@@ -132,7 +145,41 @@ def mu_dz_g_jax(
     a traced caller gets the same float64 bits. `pref_indx` is a discrete
     host-side choice and is passed in.
 
-    Returns (g, Hp, dz, zco, zmco, dzi, Ti, Hpi) as jnp arrays.
+    Parameters
+    ----------
+    pref_indx : int
+        Reference index: ``zco[pref_indx] = 0`` and ``g[pref_indx] = gs``.
+    gs : float or jnp.ndarray
+        Gravity at the reference level, cm/s^2.
+    Rp : float or jnp.ndarray
+        Planet radius, cm.
+    Tco : jnp.ndarray [nz]
+        Layer temperature, K.
+    mu : jnp.ndarray [nz]
+        Mean molar mass, g/mol.
+    pico : jnp.ndarray [nz + 1]
+        Interface pressure, dyne/cm^2, bottom first.
+    nz : int
+        Number of layers.
+
+    Returns
+    -------
+    g : jnp.ndarray [nz]
+        Gravity, cm/s^2.
+    Hp : jnp.ndarray [nz]
+        Pressure scale height, cm.
+    dz : jnp.ndarray [nz]
+        Layer thickness, cm.
+    zco : jnp.ndarray [nz + 1]
+        Interface height above `pref_indx`, cm.
+    zmco : jnp.ndarray [nz]
+        Layer-centre height, cm.
+    dzi : jnp.ndarray [nz - 1]
+        Spacing of layer centres across each interior interface, cm.
+    Ti : jnp.ndarray [nz - 1]
+        Interior-interface temperature, K.
+    Hpi : jnp.ndarray [nz - 1]
+        Interior-interface scale height, cm.
     """
     gz_up, Hp_up, dz_up, z_after_up = _scan_up_mu_dz_g(pref_indx, gs, Rp, Tco, mu, pico, nz)
     gz = jnp.zeros(nz, dtype=jnp.float64).at[pref_indx:nz].set(gz_up)
@@ -162,10 +209,29 @@ def compute_mu_dz_g(
     pico: np.ndarray,
     Tco: np.ndarray,
 ) -> dict[str, np.ndarray | int | float]:
-    """Build (mu, g, gs, Hp, dz, dzi, zco, zmco, pref_indx, [Ti, Hpi]).
+    """Build the hydrostatic column structure.
 
     Host wrapper over :func:`mu_dz_g_jax`: it picks the discrete `pref_indx`
     and freezes the result to NumPy.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run's config: `Mp`, `Rp`, `rocky`, `P_b`, `use_moldiff`.
+    ymix : np.ndarray [nz, ni]
+        Mixing ratios.
+    ms_arr : np.ndarray [ni]
+        Molar mass per species, g/mol.
+    pico : np.ndarray [nz + 1]
+        Interface pressure, dyne/cm^2, bottom first.
+    Tco : np.ndarray [nz]
+        Layer temperature, K.
+
+    Returns
+    -------
+    dict
+        `mu` (g/mol), `g`, `Hp`, `dz`, `dzi`, `zco`, `zmco` as :func:`mu_dz_g_jax` gives them, `gs` (float, cm/s^2),
+        `pref_indx` (int), and `Ti`, `Hpi` only when `use_moldiff` is on.
     """
     nz = int(Tco.shape[0])
     pico_j = jnp.asarray(pico, dtype=jnp.float64)
@@ -220,13 +286,30 @@ def settling_velocity_jax(
     g: jnp.ndarray,
     settle_coeff: jnp.ndarray,
 ) -> jnp.ndarray:
-    """JAX core of the Stokes-regime settling velocity. Returns (nz-1, ni), cm/s.
+    """JAX core of the Stokes-regime settling velocity.
 
-    `settle_coeff` is the per-species ``rho_p * r_p**2`` (g/cm, zero for gas
-    species); `(na, a, b)` is the Cloutman dynamic-viscosity polynomial for
-    the background gas. Single source for :func:`compute_settling_velocity`,
-    in ``jnp`` so the fall speed is differentiable w.r.t. temperature, gravity
-    and particle size/density.
+    Single source for :func:`compute_settling_velocity`, in ``jnp`` so the fall speed is differentiable w.r.t.
+    temperature, gravity and particle size/density.
+
+    Parameters
+    ----------
+    na : float
+        Exponent of the background gas's Cloutman dynamic viscosity ``a * T**na / (b + T)``, g/(cm s).
+    a : float
+        Its coefficient, g cm^-1 s^-1 K^(1-na).
+    b : float
+        Its temperature offset, K.
+    Tco : jnp.ndarray [nz]
+        Layer temperature, K.
+    g : jnp.ndarray [nz]
+        Gravity, cm/s^2.
+    settle_coeff : jnp.ndarray [ni]
+        Per-species ``rho_p * r_p**2``, g/cm, zero for gas species.
+
+    Returns
+    -------
+    jnp.ndarray [nz - 1, ni]
+        Settling velocity at the interior interfaces, cm/s, negative (downward).
     """
     Tco = jnp.asarray(Tco, dtype=jnp.float64)
     g = jnp.asarray(g, dtype=jnp.float64)
@@ -246,7 +329,31 @@ def compute_settling_velocity(
 ) -> np.ndarray:
     """Per-species terminal-fall velocity (Stokes regime).
 
-    Returns (nz-1, ni); only `non_gas_sp` entries are non-zero.
+    Parameters
+    ----------
+    cfg : Config
+        The run's config: `use_settling`, `atm_base`, `non_gas_sp`.
+    Tco : np.ndarray [nz]
+        Layer temperature, K.
+    g : np.ndarray [nz]
+        Gravity, cm/s^2.
+    species_list : list of str [ni]
+        Network species.
+    rho_p : mapping of str to float
+        Particle density per condensate, g/cm^3.
+    r_p : mapping of str to float
+        Particle radius per condensate, cm.
+
+    Returns
+    -------
+    np.ndarray [nz - 1, ni]
+        Settling velocity at the interior interfaces, cm/s, negative (downward); non-zero only for `non_gas_sp`, and
+        all zero when `use_settling` is off.
+
+    Raises
+    ------
+    OSError
+        If `atm_base` has no viscosity polynomial.
     """
     nz = int(Tco.shape[0])
     ni = len(species_list)
@@ -269,12 +376,33 @@ def settling_coeff_array(
     rho_p: Mapping[str, float],
     r_p: Mapping[str, float],
 ) -> np.ndarray:
-    """Per-species ``rho_p * r_p**2`` (g/cm), zero for gas species. (ni,).
+    """Per-species ``rho_p * r_p**2``, zero for gas species.
 
     The static, host-side half of the settling velocity: it validates that
     every condensible in ``non_gas_sp`` has a prescribed size and density.
     Split out so the differentiable builder can reuse it without re-running
     the validation each step.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run's config: `non_gas_sp`.
+    species_list : list of str [ni]
+        Network species.
+    rho_p : mapping of str to float
+        Particle density per condensate, g/cm^3.
+    r_p : mapping of str to float
+        Particle radius per condensate, cm.
+
+    Returns
+    -------
+    np.ndarray [ni]
+        ``rho_p * r_p**2``, g/cm.
+
+    Raises
+    ------
+    OSError
+        If a network species in `non_gas_sp` lacks a size or density.
     """
     ni = len(species_list)
     settle_coeff = np.zeros(ni, dtype=np.float64)
@@ -348,10 +476,39 @@ def mol_diff_jax(
     """Molecular diffusion on the JAX graph: (Dzz, Dzz_cen, vm).
 
     Shared by the host setup path (:func:`compute_mol_diff`) and the
-    on-graph `atm_jax.mol_diff`. Callers gate
-    `use_moldiff` themselves. `Dzz` is on the cell interfaces (nz-1, ni),
-    `Dzz_cen` the cell-centered companion kept for the `.vul` diagnostic
-    surface, `vm` the interface-centered advective (drift) component.
+    on-graph `atm_jax.mol_diff`. Callers gate `use_moldiff` themselves.
+
+    Parameters
+    ----------
+    atm_base : str
+        Background gas: ``H2``, ``N2``, ``O2`` or ``CO2``.
+    Tco : jnp.ndarray [nz]
+        Layer temperature, K.
+    n_0 : jnp.ndarray [nz]
+        Total number density, cm^-3.
+    g : jnp.ndarray [nz]
+        Gravity, cm/s^2.
+    Hp : jnp.ndarray [nz]
+        Pressure scale height, cm.
+    dz : jnp.ndarray [nz]
+        Layer thickness, cm.
+    ms : jnp.ndarray [ni]
+        Molar mass per species, g/mol.
+    alpha : jnp.ndarray [ni]
+        Thermal-diffusion factor per species.
+    nongas_mask : jnp.ndarray [ni]
+        bool, True for condensates; their interface `Dzz` (and so `vm`) is zero.
+    use_vm_mol : bool
+        Compute the drift `vm`; zero otherwise.
+
+    Returns
+    -------
+    Dzz : jnp.ndarray [nz - 1, ni]
+        Molecular diffusion coefficient at the interior interfaces, cm^2/s.
+    Dzz_cen : jnp.ndarray [nz, ni]
+        The same at layer centres, cm^2/s, kept for the `.vul` diagnostic surface.
+    vm : jnp.ndarray [nz - 1, ni]
+        Interface drift (advective) velocity of molecular diffusion, cm/s.
     """
     Dzz_gen = _Dzz_gen_for_base(atm_base)
 
@@ -394,6 +551,32 @@ def compute_mol_diff(
 
     Host wrapper over :func:`mol_diff_jax`; all three are zeros when
     `use_moldiff` is off.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run's config: `use_moldiff`, `atm_base`, `non_gas_sp`, `use_vm_mol`.
+    Tco : np.ndarray [nz]
+        Layer temperature, K.
+    n_0 : np.ndarray [nz]
+        Total number density, cm^-3.
+    g : np.ndarray [nz]
+        Gravity, cm/s^2.
+    Hp : np.ndarray [nz]
+        Pressure scale height, cm.
+    dz : np.ndarray [nz]
+        Layer thickness, cm.
+    ms_arr : np.ndarray [ni]
+        Molar mass per species, g/mol.
+    alpha_arr : np.ndarray [ni]
+        Thermal-diffusion factor per species.
+    species_list : list of str [ni]
+        Network species.
+
+    Returns
+    -------
+    dict of str to np.ndarray
+        `Dzz` [nz - 1, ni] and `Dzz_cen` [nz, ni] (cm^2/s), `vm` [nz - 1, ni] (cm/s).
     """
     nz = int(Tco.shape[0])
     ni = len(species_list)
@@ -446,6 +629,18 @@ def read_bc_flux(cfg: Config, species_list: list[str]) -> dict[str, np.ndarray]:
 
     use_topflux and use_botflux each fill their section from a file. bot_fix_sp
     stays zero: OuterLoop pins the `use_fix_sp_bot` dict entries itself.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run's config: `use_topflux`, `use_botflux` and their files.
+    species_list : list of str [ni]
+        Network species.
+
+    Returns
+    -------
+    dict of str to np.ndarray [ni]
+        `top_flux` and `bot_flux` (cm^-2 s^-1), `bot_vdep` (deposition velocity, cm/s) and `bot_fix_sp` (zero).
     """
     ni = len(species_list)
     out = {

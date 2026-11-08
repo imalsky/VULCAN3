@@ -101,8 +101,19 @@ def conv_normal(final: JaxIntegState, cfg: Config) -> tuple[jnp.ndarray, jnp.nda
     `termination_reason == 1`: the body sets `geom_ok` / `budget_ok` only on
     a step past the ready gate.
 
-    Returns `(ok, branch)`: a () bool, and a () int32 that is 1 when the
-    tight branch certified, 2 the loose one, 0 when `ok` is False.
+    Parameters
+    ----------
+    final : JaxIntegState
+        One column's carry, e.g. the runner's exit state.
+    cfg : Config
+        The run's config, for the thresholds.
+
+    Returns
+    -------
+    ok : jnp.ndarray []
+        bool, True when the certificate holds.
+    branch : jnp.ndarray []
+        int32: 1 when the tight branch certified, 2 the loose one, 0 when `ok` is False.
     """
     ok = _certified(final, cfg)
     tight, _ = _branches(final.longdy, final.longdydt, _slope_min(final), cfg)
@@ -119,6 +130,20 @@ def certificate_failures(
     budget is read from `budget_drift` (updated every accepted step), and
     geometry, which keeps no residual, is named (value nan) only when every
     other term passes.
+
+    Parameters
+    ----------
+    final : JaxIntegState
+        One column's exit carry, concrete.
+    cfg : Config
+        The run's config, for the thresholds.
+    atom_order : sequence of str [n_atoms]
+        Element names in `final.budget_drift` order, for the budget term's label.
+
+    Returns
+    -------
+    list of tuple of (str, float, float)
+        `(term, value, threshold)` per failed term.
     """
     slope_min = _slope_min(final)
     tight, loose = _branches(final.longdy, final.longdydt, slope_min, cfg)

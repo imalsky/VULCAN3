@@ -67,7 +67,18 @@ def _emit_rate_term(net: Network, slot_i: int, max_terms: int, PAD: int) -> str:
 
 
 def emit_chem_rhs_source(net: Network) -> str:
-    """Generate Python source defining `chem_rhs_per_layer_codegen` + `chem_rhs_codegen`."""
+    """Generate Python source defining `chem_rhs_per_layer_codegen` + `chem_rhs_codegen`.
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+
+    Returns
+    -------
+    str
+        The module source.
+    """
     ni, nr = net.ni, net.nr
     PAD = ni
     max_terms = net.reactant_idx.shape[1]
@@ -135,6 +146,16 @@ def network_signature(net: Network) -> bytes:
 
     The network path is not hashed, so a byte-identical copy elsewhere gives
     the same signature; any reordered or edited reaction changes it.
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+
+    Returns
+    -------
+    bytes
+        The 32-byte digest.
     """
     h = hashlib.sha256()
     for arr in (
@@ -155,6 +176,16 @@ def chem_rhs_cache_key(net: Network) -> str:
     """SHA-256 of the network signature and the generator, truncated to 16 hex chars.
 
     The emitter's own source is hashed so a codegen fix re-keys the process-local callable.
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+
+    Returns
+    -------
+    str
+        16 hex characters.
     """
     h = hashlib.sha256(network_signature(net))
     for fn in (emit_chem_rhs_source, _emit_rate_term):
@@ -172,11 +203,22 @@ _BUILD_CACHE: dict[str, Callable] = {}
 def build_chem_rhs(net: Network) -> Callable:
     """Build (or load from cache) the SymPy-faithful chem_rhs for `net`.
 
-    Returns a `jax.jit`'d callable with signature
-    `(y[nz, ni], M[nz], k[nr+1, nz]) -> dydt[nz, ni]`. The XLA-compiled
+    The XLA-compiled
     artifact is reused across processes via JAX's persistent disk cache
     (configured in `cli.py`). To compare with VULCAN-master's `chem_funs.py`
-    reaction lambdas, print `emit_chem_rhs_source(net)`.
+    reaction lambdas, print `emit_chem_rhs_source(net)`. With `VULCAN3_CHEM_RHS=grouped` this is
+    `build_chem_rhs_grouped(net)`.
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+
+    Returns
+    -------
+    callable
+        `jax.jit`'d `(y[nz, ni], M[nz], k[nr + 1, nz]) -> dydt[nz, ni]`: number densities and the total density in
+        cm^-3, the rate table, and the chemical tendency in cm^-3 s^-1.
     """
     if CHEM_RHS_IMPL == "grouped":
         return build_chem_rhs_grouped(net)
@@ -240,6 +282,20 @@ def grouped_rhs_tables(net: Network) -> tuple[list, list, np.ndarray]:
     padded left-to-right sum equals the codegen's `+1.0*v_a -1.0*v_b ...`
     bit for bit. Each bucket is `(idx, sign)` of shape (n_species, width);
     `place[s]` is species s's row in the concatenated bucket output.
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+
+    Returns
+    -------
+    rate_groups : list of tuple
+        `(sig, kf, ff, kr, rr)` per rate bucket.
+    buckets : list of tuple
+        `(idx, sign)` per species bucket.
+    place : np.ndarray [ni]
+        int32 row of each species in the concatenated bucket output.
     """
     ni, nr = int(net.ni), int(net.nr)
     PAD = ni
@@ -301,12 +357,27 @@ def grouped_rhs_tables(net: Network) -> tuple[list, list, np.ndarray]:
 def chem_rhs_grouped_column(y: jnp.ndarray, M: jnp.ndarray, k: jnp.ndarray, tables: tuple) -> jnp.ndarray:
     """Return the codegen RHS for one column, layer axis trailing.
 
-    `(y[nz, ni], M[nz], k[nr+1, nz]) -> dydt[nz, ni]`, bit-identical to `chem_rhs_per_layer_codegen` vmapped over
-    layers.
+    Bit-identical to `chem_rhs_per_layer_codegen` vmapped over layers.
 
     Every read is a whole-row gather (`k[rows]`, `y.T[rows]`, `V[rows]`), so
     under the batched runner's lane vmap XLA emits one kernel per signature
     bucket and per species bucket instead of one per reaction.
+
+    Parameters
+    ----------
+    y : jnp.ndarray [nz, ni]
+        Number densities, cm^-3.
+    M : jnp.ndarray [nz]
+        Total number density (third body), cm^-3.
+    k : jnp.ndarray [nr + 1, nz]
+        Rate constants in the units of `rates_jax.build_rate_array`, row 0 unused.
+    tables : tuple
+        `grouped_rhs_tables(net)`.
+
+    Returns
+    -------
+    jnp.ndarray [nz, ni]
+        Chemical tendency, cm^-3 s^-1.
     """
     rate_groups, buckets, place = tables
     nz = y.shape[0]
@@ -340,6 +411,16 @@ def build_chem_rhs_grouped(net: Network) -> Callable:
     """`build_chem_rhs` with `chem_rhs_grouped_column` as the evaluator.
 
     Same signature, same fence, same values bit for bit.
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+
+    Returns
+    -------
+    callable
+        `jax.jit`'d `(y[nz, ni], M[nz], k[nr + 1, nz]) -> dydt[nz, ni]`.
     """
     key = "grouped:" + chem_rhs_cache_key(net)
     cached = _BUILD_CACHE.get(key)

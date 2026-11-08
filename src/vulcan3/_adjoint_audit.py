@@ -237,17 +237,38 @@ def audit_adjoint_scope(  # noqa: C901 (four checks in order)
        loss actually reads (|y* dL/dy| within `_AUDIT_LOSS_FOOTPRINT_FRAC` of
        max) -- a defect there biases the answer directly.
 
-    Parameters mirror `steady_state_reaction_sensitivity` where shared,
-    except `photo_recompute_k`: the callable from `make_photo_recompute_k`
-    on a photo-on column, None on a photo-off one (None with `use_photo` is
-    an error finding). `cfg` defaults to the process default config (pass the run's cfg for
-    `make_config`-driven runs); `final_state` is the converged `JaxIntegState`
-    (sharpens the conden/pin checks, enables the stale-geometry check).
+    Parameters
+    ----------
+    y_star : jnp.ndarray [nz, ni]
+        Converged number densities, cm^-3.
+    k_arr : jnp.ndarray [nr + 1, nz]
+        Converged rate constants in the units of `rates_jax.build_rate_array`, row 0 unused.
+    atm : AtmStatic
+        Atmosphere as fed to the body map, with the converged refresh fields spliced in.
+    net : NetworkArrays
+        Active network.
+    cfg : Config or None, optional
+        The run's config; None takes the process default (pass it for `make_config`-driven runs).
+    final_state : JaxIntegState or None, optional
+        The converged carry: sharpens the conden/pin checks and enables the stale-geometry check.
+    loss_fn : callable or None, optional
+        `loss_fn(y) -> scalar` on the `[nz, ni]` state; enables the loss-footprint check.
+    photo_recompute_k : callable or None, optional
+        The callable from `make_photo_recompute_k` on a photo-on column, None on a photo-off one (None with
+        `use_photo` is an error finding).
+    body_terms : BodyTerms or None, optional
+        Condensation, fix_species and bottom-pin terms of the body map, from `make_body_terms`.
+    body_dt : float, optional
+        Probe step of the body map, s.
+    print_report : bool, optional
+        Log the report at INFO level.
 
-    Returns a dict: `findings` ({code, severity, message} list),
-    `max_rel_defect`, `worst_cells`, `fp_err_global`, `loss_footprint_defect`
-    (None without `loss_fn`), and `ok` (True when no error-severity findings;
-    warnings do not clear it to False).
+    Returns
+    -------
+    dict
+        `findings` ({code, severity, message} list, errors first), `ok` (True when no finding has error severity;
+        warnings do not clear it), `max_rel_defect`, `fp_err_global`, `worst_cells`, `loss_footprint_defect` (None
+        without `loss_fn`), `n_clip_dead_excluded` and `clip_dead_worst_defect`.
     """
     _check_body_dt(body_dt)
     if cfg is None:

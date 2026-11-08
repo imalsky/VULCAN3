@@ -15,6 +15,16 @@ def resolve_data_path(rel_path: str) -> Path:
       2. If it exists relative to the current working directory, return that
          (allows user overrides).
       3. Otherwise resolve against ``PACKAGE_ROOT`` (shipped data).
+
+    Parameters
+    ----------
+    rel_path : str
+        A path, usually relative, as a config gives it.
+
+    Returns
+    -------
+    Path
+        The resolved path; the package-root candidate is returned whether or not it exists.
     """
     p = Path(rel_path)
     if p.is_absolute():

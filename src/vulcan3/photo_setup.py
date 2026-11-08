@@ -518,6 +518,18 @@ def populate_photo(var: types.SimpleNamespace, atm: types.SimpleNamespace) -> Ph
 
     After `read_sflux` populates `var.sflux_din12_indx`, re-attach via
     `static = static.with_din12_indx(int(var.sflux_din12_indx))`.
+
+    Parameters
+    ----------
+    var : types.SimpleNamespace
+        Legacy state container; receives `bins` (nm), `nbin`, `dbin1`, `dbin2` (nm) and the zeroed flux buffers.
+    atm : types.SimpleNamespace
+        Legacy atmosphere container after the T-P setup.
+
+    Returns
+    -------
+    PhotoStaticInputs
+        The dense photochemistry setup, `din12_indx` not yet attached.
     """
     static = _build_photo_static_dense(var, atm)
     var.bins = np.asarray(static.bins, dtype=np.float64)

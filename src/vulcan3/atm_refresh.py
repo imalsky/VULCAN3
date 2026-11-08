@@ -30,6 +30,30 @@ def hydrostatic_step(
     imports `atm_refresh`, not the other way round. `UNDERFLOW_DENOM` binds
     only when `mu*g` underflows to zero (a layer with no gas), so it is a
     no-op on any physical column.
+
+    Parameters
+    ----------
+    T : jnp.ndarray []
+        Layer temperature, K.
+    mu : jnp.ndarray []
+        Mean molar mass, g/mol.
+    g : jnp.ndarray []
+        Gravity, cm/s^2.
+    p_lo : jnp.ndarray []
+        Pressure at the layer's lower interface, dyne/cm^2.
+    p_hi : jnp.ndarray []
+        Pressure at the layer's upper interface, dyne/cm^2.
+    kb : float
+        Boltzmann constant, erg/K.
+    Navo : float
+        Avogadro constant, mol^-1.
+
+    Returns
+    -------
+    Hp : jnp.ndarray []
+        Pressure scale height, cm.
+    dz : jnp.ndarray []
+        Layer thickness, cm.
     """
     denom = jnp.maximum(mu / Navo * g, UNDERFLOW_DENOM)
     Hp = kb * T / denom
@@ -57,11 +81,34 @@ class AtmRefreshStatic(NamedTuple):
 def update_mu_dz_jax(
     ymix: jnp.ndarray, st: AtmRefreshStatic
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Recompute (mu, g, Hp, dz, zco, dzi, Hpi) from the current ymix (nz, ni).
+    """Recompute the hydrostatic geometry from the current composition.
 
-    Shapes: mu (nz,), g (nz,), Hp (nz,), dz (nz,), zco (nz+1,), dzi (nz-1,),
-    Hpi (nz-1,). `Ti` is intentionally not returned: it depends only on the
+    `Ti` is intentionally not returned: it depends only on the
     static `Tco` and is captured once at OuterLoop init.
+
+    Parameters
+    ----------
+    ymix : jnp.ndarray [nz, ni]
+        Mixing ratios.
+    st : AtmRefreshStatic
+        The static column inputs.
+
+    Returns
+    -------
+    mu : jnp.ndarray [nz]
+        Mean molar mass, g/mol.
+    g : jnp.ndarray [nz]
+        Gravity, cm/s^2.
+    Hp : jnp.ndarray [nz]
+        Pressure scale height, cm.
+    dz : jnp.ndarray [nz]
+        Layer thickness, cm.
+    zco : jnp.ndarray [nz + 1]
+        Interface height, cm, `st.zco_pref` at `st.pref_indx`.
+    dzi : jnp.ndarray [nz - 1]
+        Spacing of layer centres across each interior interface, cm.
+    Hpi : jnp.ndarray [nz - 1]
+        Interior-interface scale height, cm.
     """
     Tco = st.Tco
     pico = st.pico
@@ -137,13 +184,39 @@ def recompute_vm_jax(
     kb: float,
     Navo: float,
 ) -> jnp.ndarray:
-    """Recompute the interface molecular-diffusion drift velocity `vm` (nz-1, ni).
+    """Recompute the interface molecular-diffusion drift velocity `vm`.
 
     `vm` depends on composition (through `Hpi`) and on `g`, so it is refreshed
     with the geometry every `update_frq` steps, as `op.update_mu_dz` does
     (vm_branch). The frozen `Dzz`, `ms`, `alpha` and `Tco` come from
     `AtmStatic`; `g`/`Hpi`/`dzi` are the refreshed geometry from the carry.
     Formula as `atm_setup.compute_mol_diff`.
+
+    Parameters
+    ----------
+    g : jnp.ndarray [nz]
+        Gravity, cm/s^2.
+    Hpi : jnp.ndarray [nz - 1]
+        Interior-interface scale height, cm.
+    dzi : jnp.ndarray [nz - 1]
+        Spacing of layer centres across each interior interface, cm.
+    Dzz : jnp.ndarray [nz - 1, ni]
+        Molecular diffusion coefficient at the interior interfaces, cm^2/s.
+    ms : jnp.ndarray [ni]
+        Molar mass per species, g/mol.
+    alpha : jnp.ndarray [ni]
+        Thermal-diffusion factor per species.
+    Tco : jnp.ndarray [nz]
+        Layer temperature, K.
+    kb : float
+        Boltzmann constant, erg/K.
+    Navo : float
+        Avogadro constant, mol^-1.
+
+    Returns
+    -------
+    jnp.ndarray [nz - 1, ni]
+        Drift velocity at the interior interfaces, cm/s.
     """
     Ti = 0.5 * (Tco[:-1] + Tco[1:])  # (nz-1,)
     delta_Ti = Tco[1:] - Tco[:-1]  # (nz-1,)
@@ -165,9 +238,23 @@ def update_phi_esc_jax(
 
     Other species pass through unchanged.
 
-    Inputs: y (nz, ni) number densities, g / Hp (nz,) (only the top layer is
-    used), top_flux_in (ni,). Returns (ni,), the top boundary flux with the
-    escape species overwritten.
+    Parameters
+    ----------
+    y : jnp.ndarray [nz, ni]
+        Number densities, cm^-3.
+    g : jnp.ndarray [nz]
+        Gravity, cm/s^2; only the top layer is read.
+    Hp : jnp.ndarray [nz]
+        Pressure scale height, cm; only the top layer is read.
+    top_flux_in : jnp.ndarray [ni]
+        Top boundary flux, cm^-2 s^-1.
+    st : AtmRefreshStatic
+        The static column inputs: `diff_esc_idx`, `Dzz_top`, `max_flux`.
+
+    Returns
+    -------
+    jnp.ndarray [ni]
+        Top boundary flux, cm^-2 s^-1 (negative escapes), with the escape species overwritten.
     """
     diff_esc_idx = st.diff_esc_idx
     Tco_top = st.Tco[-1]

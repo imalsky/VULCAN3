@@ -127,7 +127,18 @@ def _jac_pow_tables(net: Network) -> tuple:
 
 
 def to_jax(net: Network) -> NetworkArrays:
-    """Pack a Network's relevant arrays into jnp form for the chemistry RHS."""
+    """Pack a Network's relevant arrays into jnp form for the chemistry RHS.
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+
+    Returns
+    -------
+    NetworkArrays
+        Stoichiometry tables and the static Jacobian gather tables.
+    """
     jac_terms, jac_place = _jac_gather_tables(net)
     return NetworkArrays(
         ni=int(net.ni),
@@ -162,7 +173,6 @@ def chem_jac_entries(
 ) -> jnp.ndarray:
     """Return the nonzero entries of the analytical Jacobian for a whole column.
 
-    [n_entries + 1, nz] in `net.jac_place` row order, the last row zero (the structural-zero slot).
     `chem_jac_analytical` gathers them into the dense blocks.
 
     The layer axis trails every intermediate. Under the batched runner's
@@ -174,6 +184,22 @@ def chem_jac_entries(
     GH200). Against that per-layer form on CPU: bitwise equal
     on HD189; on W39b 39 of 1.19M entries one ulp apart, all <= 7e-19 of
     their layer's peak.
+
+    Parameters
+    ----------
+    y : jnp.ndarray [nz, ni]
+        Number densities, cm^-3.
+    M : jnp.ndarray [nz]
+        Total number density (third body), cm^-3.
+    k : jnp.ndarray [nr + 1, nz]
+        Rate constants in the units of `rates_jax.build_rate_array`, row 0 unused.
+    net : NetworkArrays
+        Active network.
+
+    Returns
+    -------
+    jnp.ndarray [n_entries + 1, nz]
+        Jacobian entries, s^-1, in `net.jac_place` row order; the last row is zero (the structural-zero slot).
     """
     nz = y.shape[0]
     yp = jnp.concatenate([y.T, jnp.ones((1, nz), dtype=y.dtype)], axis=0)  # [ni+1, nz]
@@ -231,8 +257,24 @@ def chem_jac_analytical(
 ) -> jnp.ndarray:
     """Stoichiometry-driven chemistry Jacobian for a whole column.
 
-    Returns [nz, ni, ni]: J[z, i, j] = Σ_r sign_i * stoich_i * (∂rate[r, z]/∂y[z, j]), built from the network tables
+    J[z, i, j] = Σ_r sign_i * stoich_i * (∂rate[r, z]/∂y[z, j]), built from the network tables
     without `jacrev`'s ni reverse-mode passes (`chem_jac_entries` placed densely).
+
+    Parameters
+    ----------
+    y : jnp.ndarray [nz, ni]
+        Number densities, cm^-3.
+    M : jnp.ndarray [nz]
+        Total number density (third body), cm^-3.
+    k : jnp.ndarray [nr + 1, nz]
+        Rate constants in the units of `rates_jax.build_rate_array`, row 0 unused.
+    net : NetworkArrays
+        Active network.
+
+    Returns
+    -------
+    jnp.ndarray [nz, ni, ni]
+        Per-layer Jacobian of the chemical tendency, s^-1.
     """
     nz, ni = y.shape[0], net.ni
     dense = chem_jac_entries(y, M, k, net)[net.jac_place]  # [ni*ni, nz]

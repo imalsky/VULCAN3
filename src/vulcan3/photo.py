@@ -59,7 +59,20 @@ class PhotoData(NamedTuple):
 
 
 def photo_data_from_static(static: PhotoStaticInputs, species_list: list[str]) -> PhotoData:
-    """Build the runtime `PhotoData` from a `PhotoStaticInputs`."""
+    """Build the runtime `PhotoData` from a `PhotoStaticInputs`.
+
+    Parameters
+    ----------
+    static : PhotoStaticInputs
+        The dense photochemistry setup.
+    species_list : list of str [ni]
+        Network species, for the absorber and scatterer indices.
+
+    Returns
+    -------
+    PhotoData
+        Absorber and scatterer indices with their cross sections (cm^2); T-dependent absorbers apart.
+    """
     T_cross_sp = set(static.absp_T_sp)
     absp_sp_non_T = [sp for sp in static.absp_sp if sp not in T_cross_sp]
     absp_T_sp_list = list(static.absp_T_sp)
@@ -212,9 +225,41 @@ def compute_flux_jax(
     the up sweep that overwrites it runs second). Callers must thread the
     prior call's dflux_u through `dflux_u_prev`; on the first call, pass zeros.
 
-    Returns (aflux, sflux, dflux_d, dflux_u): aflux (nz, nbin) actinic flux;
-    sflux (nz+1, nbin) direct attenuated stellar flux; dflux_d / dflux_u
-    (nz+1, nbin) downward / upward diffuse flux.
+    Parameters
+    ----------
+    tau : jnp.ndarray [nz + 1, nbin]
+        Optical depth on the interfaces, 0 at the top.
+    sflux_top : jnp.ndarray [nbin]
+        Stellar flux at the top of the atmosphere, erg cm^-2 s^-1 nm^-1.
+    ymix : jnp.ndarray [nz, ni]
+        Mixing ratios, for the single-scattering albedo.
+    photo : PhotoData
+        Cross sections, stacked by absorber and scatterer.
+    bins : jnp.ndarray [nbin]
+        Wavelength bin centres, nm.
+    mu_zenith : float
+        Cosine of the stellar zenith angle.
+    edd : float
+        Eddington coefficient of the diffuse streams.
+    ag0 : float
+        Scattering asymmetry factor.
+    hc : float
+        Planck constant times c, erg nm.
+    dflux_u_prev : jnp.ndarray [nz + 1, nbin]
+        The previous call's `dflux_u`, erg cm^-2 s^-1 nm^-1; zeros on the first call.
+    ag0_is_zero : bool, optional
+        Static: take the isotropic-scattering branch, which ignores `ag0`.
+
+    Returns
+    -------
+    aflux : jnp.ndarray [nz, nbin]
+        Actinic flux at layer centres, photons cm^-2 s^-1 nm^-1.
+    sflux : jnp.ndarray [nz + 1, nbin]
+        Direct attenuated stellar flux, erg cm^-2 s^-1 nm^-1.
+    dflux_d : jnp.ndarray [nz + 1, nbin]
+        Downward diffuse flux, erg cm^-2 s^-1 nm^-1.
+    dflux_u : jnp.ndarray [nz + 1, nbin]
+        Upward diffuse flux, erg cm^-2 s^-1 nm^-1.
     """
     mu_ang = -1.0 * mu_zenith
 
@@ -299,7 +344,23 @@ class PhotoJData(NamedTuple):
 
 
 def photo_J_data_from_static(static: PhotoStaticInputs) -> PhotoJData:
-    """Build the runtime photolysis `PhotoJData` from a `PhotoStaticInputs`."""
+    """Build the runtime photolysis `PhotoJData` from a `PhotoStaticInputs`.
+
+    Parameters
+    ----------
+    static : PhotoStaticInputs
+        The dense photochemistry setup, with `din12_indx` attached.
+
+    Returns
+    -------
+    PhotoJData
+        Photolysis cross sections per branch (cm^2) and the bin grid.
+
+    Raises
+    ------
+    ValueError
+        If `static.din12_indx` is not set.
+    """
     if int(static.din12_indx) < 0:
         raise ValueError(
             "PhotoStaticInputs.din12_indx is -1; call "
@@ -318,7 +379,18 @@ def photo_J_data_from_static(static: PhotoStaticInputs) -> PhotoJData:
 
 
 def photo_ion_data_from_static(static: PhotoStaticInputs) -> PhotoJData:
-    """Build the runtime photoionization `PhotoJData` from a `PhotoStaticInputs`."""
+    """Build the runtime photoionization `PhotoJData` from a `PhotoStaticInputs`.
+
+    Parameters
+    ----------
+    static : PhotoStaticInputs
+        The dense photochemistry setup, with `din12_indx` attached.
+
+    Returns
+    -------
+    PhotoJData
+        Photoionization cross sections per branch (cm^2), with no T-dependent branches.
+    """
     return photo_J_data_from_static(static)._replace(
         cross_J=static.cross_Jion,
         cross_J_T=jnp.zeros((0, 1, int(static.nbin)), dtype=jnp.float64),
@@ -395,7 +467,17 @@ def compute_J_jax_flat(
 def compute_J_jax(aflux: jnp.ndarray, photo_J: PhotoJData) -> dict[tuple[str, int], jnp.ndarray]:
     """Compute J-rates per (species, branch) via wavelength integration.
 
-    Returns a dict keyed by (species, branch) -> jnp.ndarray of shape (nz,).
+    Parameters
+    ----------
+    aflux : jnp.ndarray [nz, nbin]
+        Actinic flux, photons cm^-2 s^-1 nm^-1.
+    photo_J : PhotoJData
+        Cross sections per branch and the bin grid.
+
+    Returns
+    -------
+    dict of (str, int) to jnp.ndarray [nz]
+        J-rate per (species, branch), s^-1.
     """
     J_br, J_br_T = compute_J_jax_flat(
         aflux,
@@ -417,10 +499,25 @@ def pack_branch_to_k_index_map(
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Build static branch -> k_arr row index tables for photo or ion updates.
 
-    Returns (n_br,) int64 reaction indices into k_arr (1..nr) and a (n_br,)
-    bool mask of the branches that write into k_arr. Inactive rows point at
+    Inactive rows point at
     slot 0 (unused, since reactions are 1-indexed) so the scatter shape
     stays static.
+
+    Parameters
+    ----------
+    branch_keys : sequence of (str, int) [n_br]
+        (species, branch) in J-rate order.
+    rate_index : dict of (str, int) to int
+        (species, branch) to its k_arr row.
+    remove_list : sequence of int
+        k_arr rows that stay inactive.
+
+    Returns
+    -------
+    re_idx : jnp.ndarray [n_br]
+        int64 k_arr row per branch (1..nr), 0 when inactive.
+    active : jnp.ndarray [n_br]
+        bool, True for the branches that write into k_arr: those with a row that is not removed.
     """
     remove_set = set(remove_list or [])
     n_br = len(branch_keys)
@@ -449,6 +546,30 @@ def update_k_with_J(
 
     Inactive branches (active mask False) write k_arr[0] back into k_arr[0],
     a self-assignment that keeps the scatter shape static.
+
+    Parameters
+    ----------
+    k_arr : jnp.ndarray [nr + 1, nz]
+        Rate constants in the units of `rates_jax.build_rate_array`, row 0 unused.
+    J_br : jnp.ndarray [n_br, nz]
+        J-rate per non-T branch, s^-1.
+    J_br_T : jnp.ndarray [n_br_T, nz]
+        J-rate per T-dependent branch, s^-1.
+    branch_re_idx : jnp.ndarray [n_br]
+        k_arr row per non-T branch, from `pack_branch_to_k_index_map`.
+    branch_active : jnp.ndarray [n_br]
+        bool, the non-T branches that write.
+    branch_T_re_idx : jnp.ndarray [n_br_T]
+        k_arr row per T-dependent branch.
+    branch_T_active : jnp.ndarray [n_br_T]
+        bool, the T-dependent branches that write.
+    f_diurnal : float
+        Factor every J-rate is scaled by.
+
+    Returns
+    -------
+    jnp.ndarray [nr + 1, nz]
+        `k_arr` with the photolysis rows written, s^-1.
     """
     J_br_scaled = J_br * f_diurnal
     J_br_T_scaled = J_br_T * f_diurnal

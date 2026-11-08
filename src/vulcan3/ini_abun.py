@@ -1,3 +1,4 @@
+# size-limit-ok: numpydoc sections on the public functions; the code is under the limit
 """JAX-native initial-abundance setup.
 
 `compute_initial_abundance` returns a typed `IniAbunOutputs`; `InitialAbun` is the facade that mutates `data_var` and
@@ -195,15 +196,28 @@ def _seed_controls(
 
 @jax.custom_jvp
 def eq_seed(Tco: jnp.ndarray, p_bar: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
-    """Equilibrium mixing ratios `(nz, ni)` at `Tco` (K) and `p_bar` (bar).
+    """Equilibrium mixing ratios of one column.
 
-    `b` is the elemental abundance vector in `seed_elements()` order; only its
-    ratios matter. Species outside the seed (condensates, ions) are exactly
+    Species outside the seed (condensates, ions) are exactly
     zero. A column with an unconverged layer is NaN in every seed species, so
-    no caller can use half a solution.
+    no caller can use half a solution. The tangent is zero: the seed is an initial condition.
 
     The inputs are cast to float64: a float32 caller would otherwise give the
     minimizer a mixed-dtype loop carry.
+
+    Parameters
+    ----------
+    Tco : jnp.ndarray [nz]
+        Layer temperature, K.
+    p_bar : jnp.ndarray [nz]
+        Layer pressure, bar.
+    b : jnp.ndarray [n_elements]
+        Elemental abundances in `seed_elements()` order; only their ratios matter.
+
+    Returns
+    -------
+    jnp.ndarray [nz, ni]
+        Mixing ratios.
     """
     y: jnp.ndarray = _eq_seed_column(Tco, p_bar, b)
     return y
@@ -266,7 +280,23 @@ def _eq_seed_jvp(
 
 
 def read_abundances(path: Path) -> dict[str, float]:
-    """Parse a `SYMBOL log10(n_X/n_H)+12` preset into n_X/n_H, with H == 1."""
+    """Parse a `SYMBOL log10(n_X/n_H)+12` preset into n_X/n_H, with H == 1.
+
+    Parameters
+    ----------
+    path : Path
+        The preset file; ``#`` starts a comment.
+
+    Returns
+    -------
+    dict of str to float
+        Element to its abundance relative to H.
+
+    Raises
+    ------
+    ValueError
+        If the file has no H row.
+    """
     dex: dict[str, float] = {}
     with Path(path).open() as fh:
         for line in fh:
@@ -315,6 +345,21 @@ def ratio_indices(names: Sequence[str]) -> jnp.ndarray:
 
     The array path (`element_vector`) takes these so a batched caller never
     resolves element names inside a traced function.
+
+    Parameters
+    ----------
+    names : sequence of str [n]
+        Element symbols.
+
+    Returns
+    -------
+    jnp.ndarray [n]
+        int32 positions in `seed_elements()`.
+
+    Raises
+    ------
+    KeyError
+        If a name is not an element of the loaded network.
     """
     elements = seed_elements()
     unknown = [sp for sp in names if sp not in elements]
@@ -326,12 +371,24 @@ def ratio_indices(names: Sequence[str]) -> jnp.ndarray:
 
 
 def element_vector(ratios: jnp.ndarray, idx: jnp.ndarray) -> jnp.ndarray:
-    """`b` (E,) with the elements at `idx` replaced by `ratios`. Traceable.
+    """Return the elemental abundance vector with the elements at `idx` replaced by `ratios`. Traceable.
 
     Starts from `_element_vector()`, the host path's own no-override vector,
     so `use_solar` and the `cfg.<X>_H` overrides have the same precedence on
     both paths, and it is bit-identical to `_element_vector({name: value,
     ...})` for the same elements.
+
+    Parameters
+    ----------
+    ratios : jnp.ndarray [n]
+        Abundances relative to H.
+    idx : jnp.ndarray [n]
+        Their positions, from `ratio_indices`.
+
+    Returns
+    -------
+    jnp.ndarray [n_elements]
+        `b` in `seed_elements()` order, relative to H.
     """
     return jnp.asarray(_element_vector()).at[idx].set(jnp.asarray(ratios, dtype=jnp.float64))
 
@@ -410,7 +467,20 @@ def _jax_newton(
 
 
 def compute_atom_ini(y: jnp.ndarray, compo_arr: jnp.ndarray = compo_array) -> jnp.ndarray:
-    """`atom_ini[a] = Σ_i compo[i,a] * Σ_z y[z,i]`. y (nz, ni), compo_arr (ni, n_atoms)."""
+    """`atom_ini[a] = Σ_i compo[i,a] * Σ_z y[z,i]`, the unweighted atom sum over the column.
+
+    Parameters
+    ----------
+    y : jnp.ndarray [nz, ni]
+        Number densities, cm^-3.
+    compo_arr : jnp.ndarray [ni, n_atoms], optional
+        Atom counts per species.
+
+    Returns
+    -------
+    jnp.ndarray [n_atoms]
+        Atom sum per element, in the units of `y`.
+    """
     return jnp.einsum("zi,ia->a", y, compo_arr)
 
 
@@ -422,6 +492,16 @@ def operator_column_weights(dz: jnp.ndarray) -> jnp.ndarray:
     with zero-flux boundaries the discrete transport invariant is
     `Σ_j n_j * w_j` with `w_0 = dzi[0]`, `w_j = 0.5*(dzi[j-1]+dzi[j])`,
     `w_{nz-1} = dzi[-1]` (not `Σ_j n_j * dz_j`). On a uniform grid w == dz.
+
+    Parameters
+    ----------
+    dz : jnp.ndarray [nz]
+        Layer thickness, cm.
+
+    Returns
+    -------
+    jnp.ndarray [nz]
+        Cell weights, cm.
     """
     dz = jnp.asarray(dz, dtype=jnp.float64)
     dzi = 0.5 * (dz[1:] + dz[:-1])
@@ -429,21 +509,53 @@ def operator_column_weights(dz: jnp.ndarray) -> jnp.ndarray:
 
 
 def column_atoms(y: jnp.ndarray, dz: jnp.ndarray, compo_arr: jnp.ndarray = compo_array) -> jnp.ndarray:
-    """Operator-weighted atom column (n_atoms,).
+    """Operator-weighted atom column.
 
     `Σ_z w_z * y[z,i] * compo[i,a]` with `w = operator_column_weights(dz)`:
     the invariant the discrete transport conserves on the grid `dz`.
+
+    Parameters
+    ----------
+    y : jnp.ndarray [nz, ni]
+        Number densities, cm^-3.
+    dz : jnp.ndarray [nz]
+        Layer thickness, cm.
+    compo_arr : jnp.ndarray [ni, n_atoms], optional
+        Atom counts per species.
+
+    Returns
+    -------
+    jnp.ndarray [n_atoms]
+        Atom column per element, cm^-2.
     """
     w = operator_column_weights(dz)
     return jnp.einsum("z,zi,ia->a", w, jnp.asarray(y, dtype=jnp.float64), compo_arr)
 
 
 def eq_column(pco: np.ndarray | jnp.ndarray, Tco: np.ndarray | jnp.ndarray, M: np.ndarray | jnp.ndarray) -> np.ndarray:
-    """Equilibrium column ``(nz, ni)`` in absolute number densities.
+    """Equilibrium column in absolute number densities.
 
-    ``pco`` is in dyne/cm^2, ``Tco`` in K and ``M`` the total gas density.
     Species outside the seed stay zero. Host-side: a batched caller drives
     `eq_seed` under `vmap` with `element_vector` instead.
+
+    Parameters
+    ----------
+    pco : np.ndarray or jnp.ndarray [nz]
+        Layer pressure, dyne/cm^2.
+    Tco : np.ndarray or jnp.ndarray [nz]
+        Layer temperature, K.
+    M : np.ndarray or jnp.ndarray [nz]
+        Total number density, cm^-3.
+
+    Returns
+    -------
+    np.ndarray [nz, ni]
+        Number densities, cm^-3.
+
+    Raises
+    ------
+    RuntimeError
+        If `use_ion` is on, or the seed does not converge in some layer.
     """
     if _CFG.use_ion is True:
         raise RuntimeError(
@@ -649,6 +761,21 @@ def compute_initial_abundance(data_atm: types.SimpleNamespace) -> IniAbunOutputs
     Side effect: when `use_condense=True`, the legacy `data_atm` container
     is mutated (saturation profiles, cold-trap min level). The pytree carries
     the gas-phase composition only.
+
+    Parameters
+    ----------
+    data_atm : types.SimpleNamespace
+        Legacy atmosphere container after the T-P setup (and the saturation profiles, with `use_condense`).
+
+    Returns
+    -------
+    IniAbunOutputs
+        `y` and `y_ini` (cm^-3) and `ymix`, each [nz, ni], and the charged species.
+
+    Raises
+    ------
+    OSError
+        If `ini_mix` is not a mode, or `use_ion` is on and the network has no ions.
     """
     mix = _CFG.ini_mix
     if mix not in _MODE_DISPATCH:

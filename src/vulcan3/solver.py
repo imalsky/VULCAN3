@@ -47,6 +47,20 @@ def factor_block_thomas_diag_offdiag(
     Both Ros2 stages share the factors. The per-layer pivoted LU keeps error
     from compounding across the sweep; an explicit-inverse carry is less
     accurate on real blocks.
+
+    Parameters
+    ----------
+    diag : jnp.ndarray [nz, ni, ni]
+        Diagonal blocks.
+    sup_d : jnp.ndarray [nz - 1, ni]
+        Diagonals of the super-diagonal blocks: row j couples to ``sup_d[j] * x[j + 1]``.
+    sub_d : jnp.ndarray [nz - 1, ni]
+        Diagonals of the sub-diagonal blocks: row j + 1 couples to ``sub_d[j] * x[j]``.
+
+    Returns
+    -------
+    BlockThomasDiagFactors
+        The pivoted LU of each forward-eliminated diagonal block, its row permutation, and the two bands.
     """
     ni = diag.shape[1]
 
@@ -81,7 +95,20 @@ def factor_block_thomas_diag_offdiag(
 
 
 def solve_block_thomas_diag_offdiag(factors: BlockThomasDiagFactors, rhs: jnp.ndarray) -> jnp.ndarray:
-    """Solve a diagonal-offdiag block-tridiagonal system for a new RHS."""
+    """Solve a diagonal-offdiag block-tridiagonal system for a new RHS.
+
+    Parameters
+    ----------
+    factors : BlockThomasDiagFactors
+        From `factor_block_thomas_diag_offdiag`.
+    rhs : jnp.ndarray [nz, ni]
+        Right-hand side.
+
+    Returns
+    -------
+    jnp.ndarray [nz, ni]
+        The solution.
+    """
     rhs0 = rhs[0]
 
     def fwd_rhs_step(

@@ -130,6 +130,27 @@ def make_conden_spec(
     an active-but-unported formula raises. H2O/NH3 relax blocks are
     populated when the species is in `cfg.use_relax` (their kinetics rows
     then get coeff 0.0). Host-side, cheap, no JAX arrays.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run's config: `condense_sp`, `use_relax`, `humidity`, `fix_species`.
+    var : types.SimpleNamespace
+        Legacy state container: `conden_re_list` and `Rf`.
+    atm : types.SimpleNamespace
+        Legacy atmosphere container: `rho_p` (g/cm^3) and `r_p` (cm) per condensate.
+    species_idx : dict of str to int
+        Species name to column index.
+
+    Returns
+    -------
+    CondenSpec
+        The static condensation metadata.
+
+    Raises
+    ------
+    NotImplementedError
+        If an active condensation reaction's gas species has no ported kinetics.
     """
     relax_set = set(cfg.use_relax)
     gas_names: list[str] = []
@@ -199,10 +220,7 @@ def build_conden_profile(
 ) -> CondenProfile:
     """Rebuild every T/structure-dependent condensation array on-graph.
 
-    Parameters: `Tco`/`pco`/`n_0` are (nz,) layer temperature, pressure
-    (dyne/cm^2), and total number density; `Dzz` is the (nz-1, ni)
-    molecular-diffusion coefficient (interface-centered). All may be
-    traced; the function is jit/vmap/jvp-compatible: species identity
+    All array inputs may be traced; the function is jit/vmap/jvp-compatible: species identity
     comes from the static `spec` (Python-level, unrolled at trace time),
     and the only discrete output is the NH3 cold-trap `argmin` index
     (integer-valued, carries no tangent).
@@ -212,6 +230,31 @@ def build_conden_profile(
       Dg      = Dzz[:, sp] with the bottom interface value repeated
       sat_mix = min(1, sat_p(T)/p)     (x humidity for H2O, after the clip)
       NH3 cold trap = argmin(sat_n_NH3 / n_0)
+
+    Parameters
+    ----------
+    spec : CondenSpec
+        The static condensation metadata.
+    Tco : jnp.ndarray [nz]
+        Layer temperature, K.
+    pco : jnp.ndarray [nz]
+        Layer pressure, dyne/cm^2.
+    n_0 : jnp.ndarray [nz]
+        Total number density, cm^-3.
+    Dzz : jnp.ndarray [nz - 1, ni]
+        Molecular diffusion coefficient at the interior interfaces, cm^2/s.
+
+    Returns
+    -------
+    CondenProfile
+        `Dg` (cm^2/s) and saturation densities `sat_n` (cm^-3) per reaction and for the H2O/NH3 relax blocks
+        ([n_conden_re, nz] and [nz]), the NH3 cold-trap index, and the `fix_species` saturation mixing ratios
+        [n_fix, nz].
+
+    Raises
+    ------
+    ValueError
+        If `Dzz` is not [nz - 1, ni].
     """
     # Imported here, not at module top: atm_setup reads default_config() and
     # builds its data tables at module load, so a top-level import would make
@@ -326,6 +369,20 @@ def update_conden_rates(k_arr: jnp.ndarray, y: jnp.ndarray, st: CondenStatic) ->
     """Recompute condensation/evaporation rates and overwrite the conden rows of `k_arr`.
 
     Conden goes to `re`, evap to `re+1`; rows for use_relax species are zeroed.
+
+    Parameters
+    ----------
+    k_arr : jnp.ndarray [nr + 1, nz]
+        Rate constants in the units of `rates_jax.build_rate_array`, row 0 unused.
+    y : jnp.ndarray [nz, ni]
+        Number densities, cm^-3.
+    st : CondenStatic
+        The static condensation inputs.
+
+    Returns
+    -------
+    jnp.ndarray [nr + 1, nz]
+        `k_arr` with the condensation and evaporation rows overwritten, s^-1.
     """
     y_at_sp = y[:, st.conden_sp_idx].T  # (n_conden_re, nz)
     rate = st.Dg_per_re * st.coeff_per_re[:, None] * (y_at_sp - st.sat_n_per_re)
@@ -402,7 +459,26 @@ def _relax(
 def apply_h2o_relax_jax(
     y: jnp.ndarray, ymix: jnp.ndarray, dt: jnp.ndarray, st: CondenStatic
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Implicit-Euler H2O cold-trap relaxation into / out of `H2O_l_s`; no-op when `h2o_active=False`."""
+    """Implicit-Euler H2O cold-trap relaxation into / out of `H2O_l_s`; no-op when `h2o_active=False`.
+
+    Parameters
+    ----------
+    y : jnp.ndarray [nz, ni]
+        Number densities, cm^-3.
+    ymix : jnp.ndarray [nz, ni]
+        Mixing ratios.
+    dt : jnp.ndarray []
+        Time step, s.
+    st : CondenStatic
+        The static condensation inputs.
+
+    Returns
+    -------
+    y : jnp.ndarray [nz, ni]
+        Number densities after relaxation, cm^-3, from the new mixing ratios and the pre-relax gas sum.
+    ymix : jnp.ndarray [nz, ni]
+        Mixing ratios after relaxation.
+    """
     if not st.h2o_active:
         return y, ymix
     return _relax(
@@ -426,7 +502,25 @@ def apply_nh3_relax_jax(
     Differences from H2O: no humidity factor, and condensation is clamped
     to layers at or below `nh3_conden_top = argmin(sat_mix['NH3'])`.
     Clips `ymix[NH3_l_s] >= 0` post-update: the unclamped evap branch
-    can drive it negative for layers above `conden_top`.
+    can drive it negative for layers above `conden_top`. No-op when `nh3_active=False`.
+
+    Parameters
+    ----------
+    y : jnp.ndarray [nz, ni]
+        Number densities, cm^-3.
+    ymix : jnp.ndarray [nz, ni]
+        Mixing ratios.
+    dt : jnp.ndarray []
+        Time step, s.
+    st : CondenStatic
+        The static condensation inputs.
+
+    Returns
+    -------
+    y : jnp.ndarray [nz, ni]
+        Number densities after relaxation, cm^-3, from the new mixing ratios and the pre-relax gas sum.
+    ymix : jnp.ndarray [nz, ni]
+        Mixing ratios after relaxation.
     """
     if not st.nh3_active:
         return y, ymix

@@ -27,8 +27,30 @@ def read_sflux_binned(
 ) -> dict[str, np.ndarray | int | float]:
     """Interpolate the stellar flux onto VULCAN's uniform photo bins grid.
 
-    Returns sflux_top and the dbin1 -> dbin2 transition index. `sflux_raw`
-    may be supplied for tests.
+    The flux is scaled from the stellar surface to the orbit by `(r_star / orbit_radius)^2`; bins outside the file
+    are zero-filled, with a RuntimeWarning.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run's config: `sflux_file`, `r_star`, `orbit_radius`, `dbin1`, `dbin2`, `dbin_12trans`.
+    bins : np.ndarray [nbin]
+        Wavelength bin centres, nm.
+    sflux_raw : np.ndarray or None, optional
+        Structured array with fields `lambda` (nm) and `flux` (erg cm^-2 s^-1 nm^-1 at the stellar surface), in
+        place of reading `cfg.sflux_file`; for tests.
+
+    Returns
+    -------
+    dict
+        `sflux_top` (np.ndarray [nbin], erg cm^-2 s^-1 nm^-1 at the top of the atmosphere) and `sflux_din12_indx`
+        (int, the index of the `dbin_12trans` node in `bins`).
+
+    Raises
+    ------
+    ValueError
+        If the flux columns are malformed, non-finite, negative or not sorted, or `bins` lacks one internal
+        `dbin_12trans` node.
     """
     if sflux_raw is None:
         sflux_raw = np.genfromtxt(

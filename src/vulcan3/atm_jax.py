@@ -69,6 +69,30 @@ def mol_diff(
 
     The body is `atm_setup.mol_diff_jax`, the same one the host setup path
     runs. All three are zero when `use_moldiff` is off.
+
+    Parameters
+    ----------
+    phys : PhysicalInputs
+        Differentiable profiles; `Tco` is read.
+    spec : AtmSpec
+        Static species and transport configuration.
+    n_0 : jnp.ndarray [nz]
+        Total number density, cm^-3.
+    gz : jnp.ndarray [nz]
+        Gravity, cm/s^2.
+    Hp : jnp.ndarray [nz]
+        Pressure scale height, cm.
+    dz : jnp.ndarray [nz]
+        Layer thickness, cm.
+
+    Returns
+    -------
+    Dzz : jnp.ndarray [nz - 1, ni]
+        Molecular diffusion coefficient at the interior interfaces, cm^2/s.
+    Dzz_cen : jnp.ndarray [nz, ni]
+        The same at layer centres, cm^2/s.
+    vm : jnp.ndarray [nz - 1, ni]
+        Interface drift velocity, cm/s.
     """
     nz, ni = spec.nz, spec.ni
     if not spec.use_moldiff:
@@ -102,6 +126,24 @@ def make_physical_inputs(
     Pulls the differentiable profiles into `PhysicalInputs` and the discrete
     configuration into `AtmSpec`. Call after the host setup has populated `atm`
     (Tco, Kzz, ms, alpha, ...).
+
+    Parameters
+    ----------
+    cfg : Config
+        The run's config.
+    var : types.SimpleNamespace
+        Legacy state container; `ymix` is read.
+    atm : types.SimpleNamespace
+        Legacy atmosphere container after setup.
+    species_list : list of str [ni]
+        Network species.
+
+    Returns
+    -------
+    PhysicalInputs
+        The differentiable profiles.
+    AtmSpec
+        The static configuration.
     """
     nz = int(np.asarray(atm.Tco).shape[0])
     ni = len(species_list)

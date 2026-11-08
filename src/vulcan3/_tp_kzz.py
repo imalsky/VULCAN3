@@ -32,10 +32,20 @@ logger = logging.getLogger(__name__)
 
 
 def compute_pico(pco: jnp.ndarray) -> jnp.ndarray:
-    """Pressure grid at cell interfaces from cell centres. Returns shape (nz+1,).
+    """Pressure grid at cell interfaces from cell centres.
 
     Interior interfaces are the geometric mean of adjacent cells; outer
     boundaries are log-extrapolated from the nearest pair.
+
+    Parameters
+    ----------
+    pco : jnp.ndarray [nz]
+        Layer-centre pressure, dyne/cm^2, bottom first.
+
+    Returns
+    -------
+    jnp.ndarray [nz + 1]
+        Interface pressure, dyne/cm^2, bottom first.
     """
     pco = jnp.asarray(pco)
     pco_up1 = jnp.roll(pco, 1)
@@ -55,7 +65,21 @@ def surface_gravity(cfg: Config) -> float:
     """Surface gravity at the reference level (cm/s^2): ``g = G*Mp/Rp**2``.
 
     Single source of gravity (upstream vm_branch); there is no ``gs`` knob.
-    Callers supply ``Mp`` (planet mass, g) and ``Rp`` (planet radius, cm).
+
+    Parameters
+    ----------
+    cfg : Config
+        The run's config: ``Mp`` (planet mass, g) and ``Rp`` (planet radius, cm).
+
+    Returns
+    -------
+    float
+        Surface gravity, cm/s^2.
+
+    Raises
+    ------
+    RuntimeError
+        If ``Mp`` or ``Rp`` is missing or not positive.
     """
     Mp, Rp = cfg.Mp, cfg.Rp
     if Mp is None or Rp is None or float(Mp) <= 0.0 or float(Rp) <= 0.0:
@@ -75,8 +99,27 @@ def high_temp_cut_regrid(
     ``P >= P_min`` is hotter than ``T_max``, the bottom pressure is lowered to
     the first deep level that is cool enough (floored at ``P_min``) and the
     column is re-gridded onto ``nz`` logspaced levels down to ``P_t``.
-    Returns ``None`` when no cut is needed. NumPy port of vm_branch
-    ``build_atm.apply_high_temp_cut``; host-side setup only.
+    NumPy port of vm_branch ``build_atm.apply_high_temp_cut``; host-side setup only.
+
+    Parameters
+    ----------
+    pco : np.ndarray or jnp.ndarray [nz]
+        Layer-centre pressure, dyne/cm^2, bottom first.
+    Tco : np.ndarray or jnp.ndarray [nz]
+        Layer temperature, K.
+    T_max : float
+        Highest temperature allowed in the deep column, K.
+    P_min : float
+        Shallowest pressure the cut may move the bottom to, dyne/cm^2.
+    P_t : float
+        Top pressure, dyne/cm^2.
+    nz : int
+        Number of levels of the new grid.
+
+    Returns
+    -------
+    np.ndarray [nz] or None
+        The new layer-centre pressures, dyne/cm^2, bottom first; None when no cut is needed.
     """
     pco = np.asarray(pco, dtype=np.float64)
     Tco = np.asarray(Tco, dtype=np.float64)
@@ -95,8 +138,22 @@ def analytical_TP_H14(
 ) -> jnp.ndarray:
     """Heng et al. 2014 analytical T(P) profile.
 
-    `params` is the 6-tuple `(T_int, T_irr, ka_0, ka_s, beta_s, beta_l)`.
-    Vectorised over `pco`.
+    Parameters
+    ----------
+    pco : jnp.ndarray [nz]
+        Pressure, dyne/cm^2.
+    params : tuple of float
+        `(T_int, T_irr, ka_0, ka_s, beta_s, beta_l)`: internal and irradiation temperatures (K), the thermal and
+        shortwave opacities (cm^2/g) and the two collimation factors.
+    gs : float
+        Surface gravity, cm/s^2.
+    Pb : float
+        Bottom pressure, dyne/cm^2.
+
+    Returns
+    -------
+    jnp.ndarray [nz]
+        Temperature, K.
     """
     T_int, T_irr, ka_0, ka_s, beta_s, beta_l = params
     pco = jnp.asarray(pco)
@@ -139,6 +196,31 @@ def kzz_profile_jax(
     parameters and the grid (the ``file`` profile has no closed form and lives
     in :func:`load_TPK`). Each branch reads only its own parameter; a missing
     required knob must fail loud at the call site, not be defaulted here.
+
+    Parameters
+    ----------
+    kzz_prof : str
+        ``const``, ``JM16`` or ``Pfunc``.
+    pico_int : np.ndarray or jnp.ndarray [nz - 1]
+        Interior interface pressure ``pico[1:-1]``, dyne/cm^2.
+    K_deep : float or jnp.ndarray, optional
+        ``JM16`` floor, cm^2/s.
+    K_max : float or jnp.ndarray, optional
+        ``Pfunc`` floor and scale, cm^2/s.
+    K_p_lev : float or jnp.ndarray, optional
+        ``Pfunc`` reference pressure, bar.
+    const_Kzz : float or jnp.ndarray, optional
+        ``const`` value, cm^2/s.
+
+    Returns
+    -------
+    jnp.ndarray [nz - 1]
+        Kzz at the interior interfaces, cm^2/s.
+
+    Raises
+    ------
+    OSError
+        If `kzz_prof` is not one of the three.
     """
     # jnp.asarray (not float()) keeps the parameters tracer-safe for AD;
     # bit-identical for the production Python-float call path.
@@ -226,6 +308,26 @@ def load_TPK(cfg: Config, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, np.
 
     `pco` and `pico` are inputs because the `table` mode
     overwrites `pco` from a saved file.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run's config: ``atm_type``, ``Kzz_prof``, ``vz_prof`` and their knobs.
+    pco : np.ndarray [nz]
+        Layer-centre pressure, dyne/cm^2, bottom first.
+    pico : np.ndarray [nz + 1]
+        Interface pressure, dyne/cm^2.
+
+    Returns
+    -------
+    dict of str to np.ndarray
+        ``Tco`` [nz] (K), ``Kzz`` [nz - 1] (cm^2/s, zero when ``use_Kzz`` is off), ``vz`` [nz - 1] (cm/s, zero when
+        ``use_vz`` is off), ``M`` and ``n_0`` [nz] (cm^-3), and ``pco`` [nz] (dyne/cm^2) in ``table`` mode only.
+
+    Raises
+    ------
+    OSError
+        If a mode is unknown, a ``file`` profile lacks its column, or a ``table`` file has the wrong layer count.
     """
     nz = int(pco.shape[0])
     atm_type = cfg.atm_type

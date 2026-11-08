@@ -40,6 +40,23 @@ def sat_p_jax(sp: str, T: jnp.ndarray) -> jnp.ndarray:
     non-smooth points are the phase-boundary jumps (ice/liquid for H2O, the
     413 K break for S2/S8, the 187.6 K break for H2S). Fits and coefficients
     from build_atm.py:804-857.
+
+    Parameters
+    ----------
+    sp : str
+        The condensable species, one of `_SUPPORTED_CONDENSABLES`.
+    T : jnp.ndarray [...]
+        Temperature, K.
+
+    Returns
+    -------
+    jnp.ndarray [...]
+        Saturation vapour pressure, dyne/cm^2, the shape of `T`.
+
+    Raises
+    ------
+    OSError
+        If `sp` has no saturation fit.
     """
     T = jnp.asarray(T, dtype=jnp.float64)
     if sp == "H2O":
@@ -85,7 +102,20 @@ def sat_p_jax(sp: str, T: jnp.ndarray) -> jnp.ndarray:
 
 
 def compute_sat_p(condense_sp: list[str], Tco: np.ndarray) -> dict[str, np.ndarray]:
-    """Saturation vapour pressure (dyne/cm^2) per condensable species."""
+    """Saturation vapour pressure per condensable species.
+
+    Parameters
+    ----------
+    condense_sp : list of str
+        Condensable species names.
+    Tco : np.ndarray [nz]
+        Layer temperature, K.
+
+    Returns
+    -------
+    dict of str to np.ndarray [nz]
+        Saturation vapour pressure per species, dyne/cm^2.
+    """
     Tco_j = jnp.asarray(Tco, dtype=jnp.float64)
     out: dict[str, np.ndarray] = {}
     for sp in condense_sp:

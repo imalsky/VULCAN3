@@ -94,7 +94,13 @@ def cli_main(argv: list[str] | None = None) -> None:
     reproduced with ``vulcan3 --config <that file>``.
 
     A config selecting a non-default network re-execs once with the matching
-    ``$VULCAN3_*`` variables set (see `_relaunch_for_frozen_knobs`).
+    ``$VULCAN3_*`` variables set (see `_relaunch_for_frozen_knobs`). Ctrl+C
+    drops into a REPL holding the last finished chunk, then exits with status 130.
+
+    Parameters
+    ----------
+    argv : list of str or None, optional
+        Command-line arguments; None reads ``sys.argv``.
     """
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
     # Persistent XLA compile cache: the codegen RHS and the whole-loop while_loop take seconds to compile cold and are

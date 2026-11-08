@@ -70,7 +70,22 @@ def _raw_solve(
 
 
 def factor(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> Factors:
-    """Factor the block-tridiagonal stage matrix on the selected backend."""
+    """Factor the block-tridiagonal stage matrix on the selected backend.
+
+    Parameters
+    ----------
+    diag : jnp.ndarray [nz, ni, ni]
+        Diagonal blocks.
+    sup_d : jnp.ndarray [nz - 1, ni]
+        Diagonals of the super-diagonal blocks: row j couples to ``sup_d[j] * x[j + 1]``.
+    sub_d : jnp.ndarray [nz - 1, ni]
+        Diagonals of the sub-diagonal blocks: row j + 1 couples to ``sub_d[j] * x[j]``.
+
+    Returns
+    -------
+    Factors
+        The primal LU factors (no tangent) and the bands, which carry the tangents.
+    """
     sg = jax.lax.stop_gradient
     lu, perm = _raw_factor(sg(diag), sg(sup_d), sg(sub_d))
     return Factors(lu, perm, diag, sup_d, sub_d)
@@ -79,11 +94,25 @@ def factor(diag: jnp.ndarray, sup_d: jnp.ndarray, sub_d: jnp.ndarray) -> Factors
 def solve(
     factors: Factors, rhs: jnp.ndarray, matvec: Callable[[jnp.ndarray], jnp.ndarray] | None = None
 ) -> jnp.ndarray:
-    """`matvec` is the operator as a function of x.
+    """Solve the factored block-tridiagonal system for `rhs`, as a `lax.custom_linear_solve`.
 
-    The primal never runs it; the AD rules do (the tangent's `dA x`, the transpose's cotangent). The default is the
-    dense bands in `factors`, whose tangent is the whole dense `dA` per direction; `jax_step._ros2_stages` passes a
-    matrix-free one.
+    Under `ffi` there is no transpose rule, so reverse mode is refused.
+
+    Parameters
+    ----------
+    factors : Factors
+        From `factor`.
+    rhs : jnp.ndarray [nz, ni]
+        Right-hand side.
+    matvec : callable or None, optional
+        The operator as a function of x ([nz, ni] -> [nz, ni]). The primal never runs it; the AD rules do (the
+        tangent's `dA x`, the transpose's cotangent). None takes the dense bands in `factors`, whose tangent is the
+        whole dense `dA` per direction; `jax_step._ros2_stages` passes a matrix-free one.
+
+    Returns
+    -------
+    jnp.ndarray [nz, ni]
+        The solution.
     """
     lu, perm, diag, sup_d, sub_d = factors
     sg = jax.lax.stop_gradient
@@ -169,6 +198,18 @@ def build(force: bool = False, cuda: bool = False) -> Path:
     With `cuda=True`, compile the GPU twin with nvcc ($NVCC, arch from `_nvcc_arch`). Returns the library at once if it
     embeds the stamp of the present build, unless `force`: the hash of the sources and, for the GPU twin, after it a
     hash of the arch and `nvcc --version`, so a build for another GPU or toolchain is redone.
+
+    Parameters
+    ----------
+    force : bool, optional
+        Rebuild even when the library is current.
+    cuda : bool, optional
+        Build the CUDA kernel instead of the CPU one.
+
+    Returns
+    -------
+    Path
+        The shared library under ``csrc/``.
     """
     src = _CSRC / ("block_thomas_cuda.cu" if cuda else "block_thomas_cpu.cc")
     lib = _CUDA_LIB if cuda else _LIB

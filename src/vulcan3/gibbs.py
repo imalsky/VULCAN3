@@ -38,12 +38,28 @@ _NASA9_NCOEF = 10
 def load_nasa9(species: tuple[str, ...], thermo_dir: str | Path) -> tuple[np.ndarray, np.ndarray]:
     """Load NASA-9 polynomial coefficients per species.
 
-    Returns (coeffs[ni, 2, 10], present[ni]). Index 0 is low-T (T<1000 K),
-    index 1 is high-T. Species without a NASA-9 file get zeros.
-
     Cached per (species, directory): the rate build and the equilibrium seed
     ask for the same table, and one call reads one file per species. The
     arrays are shared between callers -- read them, never write into them.
+
+    Parameters
+    ----------
+    species : tuple of str [ni]
+        Species names.
+    thermo_dir : str or Path
+        Directory holding ``NASA9/<sp>.txt``, resolved by `resolve_data_path`.
+
+    Returns
+    -------
+    coeffs : np.ndarray [ni, 2, 10]
+        Coefficients; index 0 of axis 1 is low-T (T < 1000 K), index 1 high-T. Zero for a species without a file.
+    present : np.ndarray [ni]
+        bool, True where a file was read.
+
+    Raises
+    ------
+    ValueError
+        If a file has fewer than 20 entries.
     """
     from ._paths import resolve_data_path
 

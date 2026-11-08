@@ -1,3 +1,4 @@
+# size-limit-ok: numpydoc sections on the public functions; the code is under the limit
 """Vmap-compatible JAX Ros2 step.
 
 `jax_ros2_step(y, k_arr, dt, atm, net)` operates on a static atmosphere
@@ -343,7 +344,22 @@ class DiffGrav(NamedTuple):
 
 
 def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
-    """y-independent transport piece of the molecular-diffusion blocks."""
+    """y-independent transport piece of the molecular-diffusion blocks.
+
+    Gravity-mode or upwind-`vm` molecular diffusion, blended by `atm.use_vm_mol`, plus the settling terms when
+    `atm.use_settling` is on.
+
+    Parameters
+    ----------
+    atm : AtmStatic
+        Atmosphere for this step.
+
+    Returns
+    -------
+    DiffGrav
+        Interior block coefficients `A_grav_int`, `B_grav_int`, `C_grav_int` [nz - 2, ni] (s^-1), boundary terms
+        `bdry0_grav`, `bdry_top_grav` [2, ni] (s^-1), and `dz_ave` [nz - 2] (cm).
+    """
     dzi, Hpi, Ti, Tco, g, ms, alpha, Dzz = (
         atm.dzi,
         atm.Hpi,
@@ -721,11 +737,31 @@ def jax_ros2_step(
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """One 2nd-order Rosenbrock step.
 
-    Returns (sol, delta_arr), both (nz, ni). `fix_mask` (nz, ni) optionally
-    pins selected (layer, species) entries by zeroing the corresponding
-    LHS rows off the diagonal (c0 on it) and RHS entries. `matrix_free` picks the stage operator the
-    solve's AD rules use (the primal is the same either way): True for
-    forward mode, False for reverse mode (`_ros2_stages`).
+    Parameters
+    ----------
+    y : jnp.ndarray [nz, ni]
+        Number densities, cm^-3.
+    k_arr : jnp.ndarray [nr + 1, nz]
+        Rate constants in the units of `rates_jax.build_rate_array`, row 0 unused.
+    dt : jnp.ndarray []
+        Time step, s.
+    atm : AtmStatic
+        Atmosphere for this step.
+    net : NetworkArrays
+        Active network.
+    fix_mask : jnp.ndarray [nz, ni] or None, optional
+        bool; pins the True (layer, species) entries by zeroing their LHS rows off the diagonal (c0 on it) and their
+        RHS entries.
+    matrix_free : bool, optional
+        The stage operator the solve's AD rules use (the primal is the same either way): True for forward mode,
+        False for reverse mode (`_ros2_stages`).
+
+    Returns
+    -------
+    sol : jnp.ndarray [nz, ni]
+        Number densities after the step, cm^-3.
+    delta_arr : jnp.ndarray [nz, ni]
+        Absolute error estimate, cm^-3.
     """
     r = _ROS2_GAMMA
     k1, k2, yk2, _ = _ros2_stages(y, k_arr, dt, atm, net, fix_mask, matrix_free)
@@ -737,9 +773,23 @@ def jax_ros2_step(
 def make_atm_static(atm: types.SimpleNamespace, ni: int, nz: int, cfg: Config | None = None) -> AtmStatic:
     """Build an AtmStatic from a legacy AtmData container.
 
-    `cfg` defaults to the process default; OuterLoop passes its own cfg so the
-    transport toggles honor a load_config() cfg (this runs at integration
-    time, after state._cfg_overlay has restored the default).
+    Parameters
+    ----------
+    atm : types.SimpleNamespace
+        Legacy atmosphere container after setup.
+    ni : int
+        Number of species.
+    nz : int
+        Number of layers.
+    cfg : Config or None, optional
+        Transport toggles. None takes the process default; OuterLoop passes its own cfg so the
+        toggles honor a load_config() cfg (this runs at integration
+        time, after state._cfg_overlay has restored the default).
+
+    Returns
+    -------
+    AtmStatic
+        `Dzz`, `vm` and `vs` are zero where their toggles are off.
     """
     if cfg is None:
         cfg = default_config()

@@ -73,6 +73,16 @@ def thermo_dir(network_file: str) -> Path:
     """`thermo/` beside the network file, else the packaged one.
 
     The rate build and the equilibrium seed read one NASA-9 table from one place.
+
+    Parameters
+    ----------
+    network_file : str
+        The network file, resolved by `resolve_data_path`.
+
+    Returns
+    -------
+    Path
+        The directory holding ``NASA9/``.
     """
     beside = resolve_data_path(network_file).parent
     if (beside / "NASA9").exists():
@@ -118,7 +128,7 @@ def compute_forward_k(
     n_inf: jnp.ndarray | None = None,
     E_inf: jnp.ndarray | None = None,
 ) -> jnp.ndarray:
-    """Vectorized forward rates. T, M are (nz,) arrays -> (nr+1, nz).
+    """Vectorized forward rates.
 
     Reverse slots (even indices) are zero here and filled by
     :func:`fill_reverse_k`; photo / ion / conden slots are
@@ -128,6 +138,38 @@ def compute_forward_k(
     static values; pass any as a (nr+1,) JAX array to differentiate the rates
     w.r.t. rate-coefficient uncertainty (`jvp`/`grad`). The one hardcoded Troe
     row (OH+CH3) is not overridable (its constants stay fixed).
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+    T : jnp.ndarray [nz]
+        Temperature, K.
+    M : jnp.ndarray [nz]
+        Total number density, cm^-3, for the falloff rows.
+    a : jnp.ndarray [nr + 1] or None, optional
+        Low-pressure prefactor of `k = a T^n exp(-E/T)`; None, here and below, takes the network's.
+    n : jnp.ndarray [nr + 1] or None, optional
+        Low-pressure temperature exponent.
+    E : jnp.ndarray [nr + 1] or None, optional
+        Low-pressure activation temperature, K.
+    a_inf : jnp.ndarray [nr + 1] or None, optional
+        High-pressure prefactor.
+    n_inf : jnp.ndarray [nr + 1] or None, optional
+        High-pressure temperature exponent.
+    E_inf : jnp.ndarray [nr + 1] or None, optional
+        High-pressure activation temperature, K.
+
+    Returns
+    -------
+    jnp.ndarray [nr + 1, nz]
+        Forward rate constants, cm^(3(m-1)) s^-1 for a row of m density factors (M included, which the RHS applies);
+        zero in reverse, photo, ion and conden slots and row 0.
+
+    Raises
+    ------
+    ValueError
+        If `T` and `M` differ in shape.
     """
     if jnp.shape(M) != jnp.shape(T):
         raise ValueError(
@@ -184,7 +226,23 @@ def apply_lowT_caps(net: Network, k_fwd: jnp.ndarray, T: jnp.ndarray, M: jnp.nda
     threshold via `jnp.where`. The cap branch is a T-independent constant for
     C2H4/C2H5 (so dk/dT = 0 below threshold) and a Lindemann form for CH3; the
     tangent is non-smooth only exactly at the threshold (a measure-zero kink),
-    smooth on either side. `k_fwd` (nr+1, nz); `T`, `M` (nz,).
+    smooth on either side.
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+    k_fwd : jnp.ndarray [nr + 1, nz]
+        Forward rate constants, units as `build_rate_array`.
+    T : jnp.ndarray [nz]
+        Temperature, K.
+    M : jnp.ndarray [nz]
+        Total number density, cm^-3.
+
+    Returns
+    -------
+    jnp.ndarray [nr + 1, nz]
+        `k_fwd` with the capped rows replaced below their thresholds.
     """
     Tz = jnp.asarray(T)
     Mz = jnp.asarray(M)
@@ -209,11 +267,23 @@ def apply_lowT_caps(net: Network, k_fwd: jnp.ndarray, T: jnp.ndarray, M: jnp.nda
 
 
 def gibbs_sp_vector(coeffs: np.ndarray | jnp.ndarray, T: jnp.ndarray) -> jnp.ndarray:
-    """g_sp/(RT) per species per layer. coeffs (ni,2,10), T (nz,) -> (ni,nz).
+    """g_sp/(RT) per species per layer.
 
     `coeffs` may be a NumPy array (the static thermo) or a JAX array/tracer:
     `jnp.asarray` (not `np.asarray`) keeps it on the graph so reverse rates are
     differentiable w.r.t. the NASA-9 coefficients.
+
+    Parameters
+    ----------
+    coeffs : np.ndarray or jnp.ndarray [ni, 2, 10]
+        NASA-9 coefficients, low-T (T < 1000 K) then high-T set.
+    T : jnp.ndarray [nz]
+        Temperature, K.
+
+    Returns
+    -------
+    jnp.ndarray [ni, nz]
+        Dimensionless Gibbs energy g/(RT).
     """
     c = jnp.asarray(coeffs, dtype=jnp.float64)
     a_low, a_high = c[:, 0, :], c[:, 1, :]
@@ -245,10 +315,24 @@ def gibbs_sp_vector(coeffs: np.ndarray | jnp.ndarray, T: jnp.ndarray) -> jnp.nda
 
 
 def K_eq_array(net: Network, gibbs_sp: jnp.ndarray, T: jnp.ndarray) -> jnp.ndarray:
-    """Equilibrium constants per forward reaction (nr+1, nz). Vectorized.
+    """Equilibrium constants per forward reaction. Vectorized.
 
     Slots without a thermal reverse (photo/ion/conden/radiative, beyond
     `stop_rev_indx`) are 1 -- a sentinel so the reverse-fill divide is safe.
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+    gibbs_sp : jnp.ndarray [ni, nz]
+        g/(RT) per species, from `gibbs_sp_vector`.
+    T : jnp.ndarray [nz]
+        Temperature, K.
+
+    Returns
+    -------
+    jnp.ndarray [nr + 1, nz]
+        K_eq in (cm^3)^dn, dn the reactant count minus the product count, in the forward slots that have a reverse.
     """
     nz = gibbs_sp.shape[1]
     g_pad = jnp.concatenate([gibbs_sp, jnp.zeros((1, nz))], axis=0)  # (ni+1, nz)
@@ -273,11 +357,25 @@ def K_eq_array(net: Network, gibbs_sp: jnp.ndarray, T: jnp.ndarray) -> jnp.ndarr
 
 
 def fill_reverse_k(net: Network, k_fwd: jnp.ndarray, K_eq: jnp.ndarray) -> jnp.ndarray:
-    """Fill even (reverse) slots from forward rates / K_eq. (nr+1, nz).
+    """Fill even (reverse) slots from forward rates / K_eq.
 
     Reverse slots beyond `stop_rev_indx` stay as they come in (zero out of
     :func:`compute_forward_k`): photo/conden/ion/radiative have no thermal
     reverse. Their forward slots are left untouched.
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+    k_fwd : jnp.ndarray [nr + 1, nz]
+        Forward rate constants, units as `build_rate_array`.
+    K_eq : jnp.ndarray [nr + 1, nz]
+        Equilibrium constants, from `K_eq_array`.
+
+    Returns
+    -------
+    jnp.ndarray [nr + 1, nz]
+        `k_fwd` with the reverse slots below `stop_rev_indx` filled.
     """
     nr = net.nr
     idx = np.arange(nr + 1)
@@ -324,6 +422,20 @@ def apply_remove_list(net: Network, k: _ArrayT, remove_list: Iterable[int] | Non
 
     Accepts a NumPy or a JAX `k` and returns the same kind, so the on-graph
     build and the host post-photolysis pass share one implementation.
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+    k : np.ndarray or jnp.ndarray [nr + 1, nz]
+        Rate constants, units as `build_rate_array`.
+    remove_list : iterable of int or None
+        Rows to zero; indices outside 0..nr are skipped.
+
+    Returns
+    -------
+    np.ndarray or jnp.ndarray [nr + 1, nz]
+        `k` with those rows zero, the same kind as `k`.
     """
     if not remove_list:
         return k
@@ -348,16 +460,30 @@ def build_rate_array(
 ) -> jnp.ndarray:
     """End-to-end: forward(T) -> (lowT caps) -> reverse via Gibbs(T) -> collision limit -> remove.
 
-    `T`, `M` are (nz,) arrays; `nasa9_coeffs` is the (ni,2,10) thermo table
-    (differentiable -- it flows through the Gibbs reverse path); `remove_list`
-    zeros those rows. Pass `use_lowT_caps=True` to match
-    `cfg.use_lowT_limit_rates` on cool networks (off by default -- the hot
-    benchmarks never trigger the caps). Pass `rate_coeffs` (a dict of any of
-    `a/n/E/a_inf/n_inf/E_inf` as (nr+1,) JAX arrays) to differentiate w.r.t.
-    Arrhenius rate-coefficient uncertainty; defaults to the network's values.
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+    T : jnp.ndarray [nz]
+        Temperature, K.
+    M : jnp.ndarray [nz]
+        Total number density, cm^-3.
+    nasa9_coeffs : np.ndarray [ni, 2, 10]
+        NASA-9 thermo table; differentiable, it flows through the Gibbs reverse path.
+    remove_list : iterable of int or None, optional
+        Rows to zero, after the reverse fill (no forward/reverse pairing).
+    use_lowT_caps : bool, optional
+        Apply the low-T caps, to match `cfg.use_lowT_limit_rates` on cool networks (off by default -- the hot
+        benchmarks never trigger the caps).
+    rate_coeffs : dict or None, optional
+        Any of `a/n/E/a_inf/n_inf/E_inf` as [nr + 1] JAX arrays, to differentiate w.r.t. Arrhenius
+        rate-coefficient uncertainty; None takes the network's values.
 
-    Index 0 is unused (1-based reactions); reverse slots beyond
-    `net.stop_rev_indx` are zero.
+    Returns
+    -------
+    jnp.ndarray [nr + 1, nz]
+        Rate constants, cm^(3(m-1)) s^-1 for a row of m density factors (M included). Row 0 is unused (1-based
+        reactions); reverse slots beyond `net.stop_rev_indx` and photo, ion and conden slots are zero.
     """
     k_fwd = compute_forward_k(net, T, M, **(rate_coeffs or {}))
     if use_lowT_caps:
@@ -406,13 +532,27 @@ def _assert_reversible_thermo_present(net: Network, present: np.ndarray) -> None
 
 
 def setup_var_k(cfg: Config, var: types.SimpleNamespace, atm: types.SimpleNamespace) -> Network:
-    """Load NASA-9 coeffs for the import-locked network, freeze `var.k_arr`. Returns the Network.
+    """Load NASA-9 coeffs for the import-locked network and freeze `var.k_arr`.
 
     The host half of the setup contract: it resolves the files and pins the
     result to NumPy for the runner. The physics is :func:`build_rate_array`,
     the same call a temperature gradient makes. `np.array` (not `asarray`):
     `op_jax.compute_J` writes the photolysis rows into `var.k_arr` in place,
     and a view of a JAX buffer is read-only.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run's config: `network`, `remove_list`, `use_lowT_limit_rates`.
+    var : types.SimpleNamespace
+        Legacy state container; receives `k_arr` ([nr + 1, nz] np.ndarray).
+    atm : types.SimpleNamespace
+        Legacy atmosphere container: `Tco` (K) and `M` (cm^-3).
+
+    Returns
+    -------
+    Network
+        The import-locked network.
     """
     from . import chem_funs
     from .state import _assert_frozen_knobs_match_import
@@ -440,5 +580,14 @@ def apply_photo_remove(cfg: Config, var: types.SimpleNamespace, network: Network
     """Re-apply `cfg.remove_list` after the photolysis rows of `var.k_arr` were overwritten.
 
     `compute_J` and `compute_Jion` write those rows.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run's config: `remove_list`.
+    var : types.SimpleNamespace
+        Legacy state container; `k_arr` is replaced.
+    network : Network
+        The import-locked network.
     """
     var.k_arr = np.array(apply_remove_list(network, var.k_arr, cfg.remove_list), dtype=np.float64)
