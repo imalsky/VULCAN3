@@ -59,16 +59,22 @@ class DiffusionCoeffs:
 def build_diffusion_coeffs(y: np.ndarray, atm, cfg, mode: str = "auto") -> DiffusionCoeffs:  # noqa: C901 (one branch per scheme)
     """Build A, B, C coefficients for the current state and atmosphere.
 
-    Args:
-        y: number densities, shape (nz, ni); used to compute `ysum` per layer.
-        atm: VULCAN-style AtmData (needs .vm / .vs for non-default modes).
-        cfg: config namespace with the diffusion/BC flags.
-        mode: 'auto' | 'gravity' | 'vm' | 'settling' | 'settling_vm';
-              'auto' picks from cfg.use_vm_mol / cfg.use_settling.
+    Parameters
+    ----------
+    y : np.ndarray [nz, ni]
+        Number densities, cm^-3; their layer sums give `ysum`.
+    atm : AtmData
+        VULCAN-style atmosphere (needs .vm / .vs for non-default modes).
+    cfg : Config
+        Config namespace with the diffusion and boundary flags.
+    mode : str
+        'auto', 'gravity', 'vm', 'settling' or 'settling_vm'; 'auto' picks
+        from cfg.use_vm_mol / cfg.use_settling.
 
     Returns
     -------
-        DiffusionCoeffs for `apply_diffusion` and `diffusion_block_diags`.
+    DiffusionCoeffs
+        Coefficients for `apply_diffusion` and `diffusion_block_diags`.
     """
     # Resolve mode from cfg if 'auto'
     if mode == "auto":

@@ -286,15 +286,19 @@ def _resolve_derived(d: dict[str, Any]) -> None:
 def load_config(name_or_path: str | os.PathLike = "default", /, **overrides: Any) -> Config:
     """Load a YAML config, apply env + caller overrides, resolve derived values.
 
-    Args:
-        name_or_path: a bare name (``"default"``, ``"W39b"``; resolved CWD-first
-            then packaged) or an explicit path to a ``.yaml`` file.
-        **overrides: attribute overrides applied after the YAML (and after the
-            frozen-env fold), before derived resolution.
+    Parameters
+    ----------
+    name_or_path : str or os.PathLike
+        A bare name (``"default"``, ``"W39b"``; resolved CWD-first then
+        packaged) or an explicit path to a ``.yaml`` file.
+    **overrides : Any
+        Attribute overrides applied after the YAML (and after the frozen-env
+        fold), before derived resolution.
 
     Returns
     -------
-        A ``Config`` namespace with the full runtime attribute surface.
+    Config
+        The full runtime attribute surface.
     """
     raw = yaml.load(_read_text(name_or_path), Loader=_StrictLoader)
     if not isinstance(raw, dict):

@@ -112,17 +112,22 @@ def photo_data_from_static(static: PhotoStaticInputs, species_list: list[str]) -
 
 @jax.jit
 def compute_tau_jax(y: jnp.ndarray, dz: jnp.ndarray, photo: PhotoData) -> jnp.ndarray:
-    """Compute optical depth tau[nz+1, nbin] (top-down cumulative).
+    """Compute the optical depth, accumulated from the top down.
 
-    Args:
-        y:       (nz, ni)    number densities
-        dz:      (nz,)       layer thicknesses
-        photo:   PhotoData   pre-stacked cross-section arrays
+    Parameters
+    ----------
+    y : jnp.ndarray [nz, ni]
+        Number densities, cm^-3.
+    dz : jnp.ndarray [nz]
+        Layer thicknesses, cm.
+    photo : PhotoData
+        Cross sections, cm^2, stacked by absorber and scatterer.
 
     Returns
     -------
-        tau:     (nz+1, nbin) staggered. tau[nz] = 0 (top boundary), tau[0]
-                              is the total column.
+    jnp.ndarray [nz + 1, nbin]
+        Optical depth on layer edges: 0 at the top edge (index nz), the whole
+        column at the bottom edge (index 0).
     """
     nz = y.shape[0]
     nbin = photo.absp_cross.shape[1]
@@ -331,19 +336,31 @@ def compute_J_jax_flat(
     dbin1: float,
     dbin2: float,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Per-branch J-rates by wavelength integration (trapezoid on each bin grid).
+    """Integrate each photolysis branch's rate over wavelength.
 
-    Args:
-        aflux:         (nz, nbin)         actinic flux
-        cross_J:       (n_br, nbin)       static photolysis cross sections
-        cross_J_T:     (n_br_T, nz, nbin) T-dependent ones
-        din12_indx:    static int          wavelength index where dbin transitions
-        dbin1, dbin2:  scalars            bin spacings
+    The trapezoid rule runs on each of the two bin grids separately.
+
+    Parameters
+    ----------
+    aflux : jnp.ndarray [nz, nbin]
+        Actinic flux, photons cm^-2 s^-1 nm^-1.
+    cross_J : jnp.ndarray [n_br, nbin]
+        Photolysis cross sections of the temperature-independent branches, cm^2.
+    cross_J_T : jnp.ndarray [n_br_T, nz, nbin]
+        Photolysis cross sections of the temperature-dependent branches, cm^2.
+    din12_indx : int
+        First bin index of the second grid. Static under jit.
+    dbin1 : float
+        Bin width of the first grid, nm.
+    dbin2 : float
+        Bin width of the second grid, nm.
 
     Returns
     -------
-        J_br:   (n_br,   nz)   per-branch J-rate (non-T)
-        J_br_T: (n_br_T, nz)   per-branch J-rate (T-dependent)
+    J_br : jnp.ndarray [n_br, nz]
+        Photolysis rates of the temperature-independent branches, s^-1.
+    J_br_T : jnp.ndarray [n_br_T, nz]
+        Photolysis rates of the temperature-dependent branches, s^-1.
     """
     nz = aflux.shape[0]
     flux1 = aflux[:, :din12_indx]
