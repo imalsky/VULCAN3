@@ -14,11 +14,11 @@ Layout, Figures, Branches, Behind main and Tests are in the project-root `CLAUDE
 ## Docs
 
 Four root docs: `README.md` (the maintainer's; never edit it unasked), `notes.md` (the results and reasons behind the
-rules below, by topic section, never a dated history; it is near 1000 lines, so pay for each new line by trimming a
-duplicate or stale one), `todo.md` (open work: read it first; open or close items in the same pass) and this file
-(directions only). Any other hand-written `.md` file goes in `docs/`. Name a notes section by its heading. Record a
-rejected approach in notes "Do not retry" in the same pass, and end a behavior change with a pass over notes.md. Format:
-the `doc-upkeep` skill; policy: the project-root `CLAUDE.md`.
+rules below, by topic section, never a dated history; pay for each new line by trimming a duplicate or stale one),
+`todo.md` (open work: read it first; open or close items in the same pass) and this file (directions only). Any other
+hand-written `.md` file goes in `docs/`. Name a notes section by its heading. Record a rejected approach in notes "Do
+not retry" in the same pass, and end a behavior change with a pass over notes.md. Format: the `doc-upkeep` skill;
+policy: the project-root `CLAUDE.md`.
 
 ## Setup and commands
 
@@ -66,12 +66,12 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
 - A physics-neutral change must keep the step-count gates (`tests/test_step_count_gates.py`) on both `fast` and
   `reference`; HD189_vulcan3's count is not a gate (it moves with any bit-level change). A transport-kernel refactor
   also owes vulcan-forward's full-tier `test_queue_is_differentiable`. Both are full-tier runs: name them as owed.
-- Keep the parity items of notes "Parity ledger": step acceptance uses the import-bound `rtol` (C16); bottom pins apply
-  before delta and clip (C17); the photo-frequency switch waits for `trun_min` / `count_min` (C18); the escape Jacobian
-  term exists only under `use_vm_mol` (C15); `batch_max_retries` is refused unless 110, and a reject chain must reach `dt_min` first (C11).
+- Keep the parity items of notes "Parity ledger": step acceptance uses the import-bound `rtol`; bottom pins apply
+  before delta and clip; the photo-frequency switch waits for `trun_min` / `count_min`; the escape Jacobian term exists
+  only under `use_vm_mol`; `batch_max_retries` is refused unless 110, and a reject chain must reach `dt_min` first.
 - `conver_ignore`: parity configs ship `[]`, the V3 preset `['HC3N']`; never pick a list because it reproduces a step
   count.
-- Network id columns are output: index photolysis by parser position (C14). `cfg.remove_list` is positional in both
+- Network id columns are output: index photolysis by parser position. `cfg.remove_list` is positional in both
   codes.
 - Every config declares `fastchem_solar_abundance_file`; match it before quoting a cross-code number. The Lodders 2009
   preset is not an agreement case with upstream's seed.
@@ -94,7 +94,7 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
   reverse mode through `ffi` is refused (its solve has no transpose). Forward mode uses the matrix-free stage operator
   (`jax_ros2_step(matrix_free=True)`); a reverse-mode caller passes `matrix_free=False`, as `steady_state_grad` does.
   `VULCAN3_CHEM_RHS=grouped` stays opt-in until it is bitwise in full CPU runs too (notes "Efficiency program").
-- The atom-conservation projection and the Ros2 stage repair (`jax_step._repair_stage`, C19) are default-on, not in
+- The atom-conservation projection and the Ros2 stage repair (`jax_step._repair_stage`) are default-on, not in
   VULCAN 2.0, and change the solution. `config.REPAIR_ABS_FLOOR`, `jax_step._DEFECT_FLOOR` and
   `jax_step._REPAIR_MAX_CELL_FRAC` are re-baseline knobs, not tuning ones; a relative floor or a dt gate is the wrong
   tool. `dt_max` is capped at `config.DT_MAX_S`; a larger value raises (notes "Stage repair and element budget").
@@ -107,15 +107,15 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
 ### Certificates and differentiation
 
 - A run ends only on the certificate or a cap (`use_conv_stall` is refused), or raises `DtMinFrozenError` when a trial
-  keeps failing at `dt_min` (under an outer jit the caller calls `raise_if_frozen`). The certificate adds two terms to VULCAN
-  2.0's, both inert below `count_min` (notes "Certificates"): geometry (C21: refreshed on a certificate candidate
-  whatever `update_frq` says, judged by `geom_conv_tol`) and the element budget (C23: each element's operator-weighted
-  column relative to H, accumulated per step on that step's grid; never the absolute column, and `loss_eps` is no
-  substitute). An open column (boundary fluxes, bottom or fix_species pins) sets `element_budget_tol: .inf`.
+  keeps failing at `dt_min` (under an outer jit the caller calls `raise_if_frozen`). The certificate adds a geometry
+  term and an element-budget term to VULCAN 2.0's, both inert below `count_min` (notes "Certificates", "Stage repair and
+  element budget"). Geometry is refreshed on every certificate candidate whatever `update_frq` says and judged by
+  `geom_conv_tol`; the budget is relative to H, never the absolute column, and `loss_eps` is no substitute. An
+  open column (boundary fluxes, bottom or fix_species pins) sets `element_budget_tol: .inf`.
   `outer_loop.certificate_failures` is empty exactly when `conv_normal` holds.
 - `vulcan3.conv_normal(final, cfg)` exports the whole certificate; a consumer calls it, never a copy. Every shipped run
   converges on the loose branch: quote the realised `longdy` next to any "converged" claim.
-- A forward-mode tangent is certified by `OuterLoop.run_jvp` (C22), not by `jax.jvp(runner)`; pass the direction in
+- A forward-mode tangent is certified by `OuterLoop.run_jvp`, not by `jax.jvp(runner)`; pass the direction in
   finite-difference-step units. Never a step floor on a differentiated map.
 - Differentiate the inner `integ.runner`, never `OuterLoop.__call__`. Reverse mode at the converged state is
   `steady_state_reaction_sensitivity` (the renormalised map `steady_state_grad.SOLVER_MAP`, default `BODY_MAP_DT`); on
@@ -180,16 +180,5 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
 
 ## Where things live
 
-```
-outer_loop.OuterLoop                       one JIT'd lax.while_loop
-  └── jax_step.jax_ros2_step
-        ├── chem_funs codegen RHS (master-faithful term order)
-        ├── chem.chem_jac_analytical
-        └── solver_fast.factor / solve (default), or the reference pair
-            solver.factor_block_thomas_diag_offdiag / solve_block_thomas_diag_offdiag
-  photo.py kernels fire via lax.cond; setup = state.RunState.with_pre_loop_setup(cfg);
-  .vul writer = legacy_io.Output.save_out(runstate, dname), RunState only.
-```
-
-Config keys and refusals: `configs/default.yaml`, `config.py`, `runtime_validation.py`. Known defects in every repo:
-notes "Known bugs, all repos".
+Module map: `docs/architecture.md`. Config keys and refusals: `configs/default.yaml`, `config.py`,
+`runtime_validation.py`. Known defects in every repo: notes "Known bugs, all repos".

@@ -21,8 +21,7 @@ notes (the NAS `analysis/` tree no longer exists).
 - The arm64 full tier fails one W39b case (todo). `oracle.yml` is `workflow_dispatch` only; last green dispatch at
   `b372e65`. On daw (x86-64, CPU) the full tier with the pinned clone gives 441 passed, 38 skipped [M]; every
   skip is a GPU or arm64 case. The two oracle tests of todo 6 pass only through the delta.
-- Oracle clones: revisions in `tests/science_sources.yaml`. On daw they are clean with `core.fileMode false`, so
-  `VULCAN_MASTER_DIR=~/VULCAN_Project/.oracles/vulcan2_ncho` works.
+- Oracle clones (revisions in `tests/science_sources.yaml`, path in the header above) are clean on daw with `core.fileMode false`.
 - Fixtures: the tracked `FIXTURES.json` is the arm64 manifest of a laptop rebuild at `709407d` plus the speed pass,
   made before C25-C29 and now stale (todo). daw's `tests/data` is an x86-64 rebuild; `--all` and `--verify` use the
   gitignored `FIXTURES.x86_64.json` there. A manifest record names the run that made that file, so `--all` over
@@ -206,7 +205,8 @@ steps (master stops at 1e4-2e4 and saves the unconverged state), dt_max 1e11
 5e-9..50 bar).
 
 Referee verdicts. An outside review (at `93896f6`) and a second referee checked the
-departures above; their numbers are their own [M]. Their measurements are optional.
+departures above; their numbers are their own [M]. Their measurements are optional. A
+review pass made without notes.md and todo.md found 5 of 9 findings settled or wrong [M].
 - Atom-conservation projection: keep. On x86 the worst normalised defect went 8.7e-14 ->
   4.4e-16, but 126 of 360 individual residuals got worse.
 - Ros2 stage repair: keep. A 50%-of-carrier correction is inside the designed cap
