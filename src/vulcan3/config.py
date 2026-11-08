@@ -309,6 +309,11 @@ def load_config(name_or_path: str | os.PathLike = "default", /, **overrides: Any
     -------
     Config
         The full runtime attribute surface.
+
+    Raises
+    ------
+    ValueError
+        If the file does not parse to a mapping.
     """
     raw = yaml.load(_read_text(name_or_path), Loader=_StrictLoader)
     if not isinstance(raw, dict):

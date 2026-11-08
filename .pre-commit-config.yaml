@@ -42,6 +42,20 @@ repos:
           - jax==0.6.2
           - types-PyYAML
 
+  - repo: https://github.com/jsh9/pydoclint
+    rev: "0.12.0"
+    hooks:
+      # The flake8 form runs only these DOC checks, and it alone can ignore a code. Docstrings hold shapes, such as
+      # `y : jnp.ndarray [nz, ni]`, which DOC105 and the return-type check would reject as a mismatch with the hint.
+      - id: pydoclint-flake8
+        args:
+          - --select=DOC
+          - --extend-ignore=DOC105
+          - --style=numpy
+          - --check-return-types=False
+          - --skip-checking-private-functions=True
+        files: ^src/
+
   - repo: https://github.com/codespell-project/codespell
     rev: "v2.4.3"
     hooks:

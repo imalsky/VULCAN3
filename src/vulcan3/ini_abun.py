@@ -799,10 +799,12 @@ def compute_initial_abundance(data_atm: types.SimpleNamespace) -> IniAbunOutputs
 
 
 class InitialAbun:
-    """Legacy-mutation facade matching `atm_setup.Atm`'s pattern."""
+    """Legacy-mutation facade matching `atm_setup.Atm`'s pattern.
+
+    It captures `cfg.atom_list` (cfg's possibly reordered or subset atom set) for `ele_sum`.
+    """
 
     def __init__(self) -> None:
-        """Capture `cfg.atom_list` (cfg's possibly reordered/subset atom set) for use in `ele_sum`."""
         self.atom_list = _CFG.atom_list
 
     def ini_y(self, data_var: types.SimpleNamespace, data_atm: types.SimpleNamespace) -> types.SimpleNamespace:

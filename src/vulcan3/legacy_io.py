@@ -221,13 +221,17 @@ def _synthesize_save_dicts(runstate: RunState, cfg: Config) -> tuple[dict, dict,
 
 
 class Output:
-    """Per-run output: cfg copy, .vul writer, progress report."""
+    """Per-run output: cfg copy, .vul writer, progress report.
+
+    Construction warns if the target file already exists. save_cfg and save_out create their own directories.
+
+    Parameters
+    ----------
+    cfg : Config or None
+        The run's config; None takes the process default.
+    """
 
     def __init__(self, cfg: Config | None = None) -> None:
-        """Set up the `.vul` writer for one run.
-
-        Warn if the target file already exists. save_cfg and save_out create their own directories.
-        """
         # cfg defaults to the process default; load_config() users pass their
         # namespace so output honors the same cfg as setup and the runner.
         # Pair with OuterLoop(cfg=cfg).

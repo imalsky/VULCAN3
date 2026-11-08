@@ -109,10 +109,10 @@ def steady_state_reaction_sensitivity(
 
     Parameters
     ----------
-    loss_fn
+    loss_fn : Callable[[jnp.ndarray], jnp.ndarray]
         `loss_fn(y) -> scalar` on the full `(nz, ni)` number-density state,
         e.g. `lambda y: jnp.log10(y[L, so2] / y[L].sum())`.
-    y_star : (nz, ni)
+    y_star : jnp.ndarray [nz, ni]
         Converged state (number density, cm^-3) -- a tight fixed point of the
         body map (`info["fp_err"]`; ~1e-9). Do not iterate the map to tighten
         `fp_err`: it trades the deflation basis for the fixed point and
@@ -121,42 +121,42 @@ def steady_state_reaction_sensitivity(
         fix-species and bottom pins enter it only through `body_terms`: run
         `audit_adjoint_scope(...)` first (its per-cell defect
         scan also catches what the global max-norm `fp_err` masks).
-    k_arr : (nr+1, nz)
+    k_arr : jnp.ndarray [nr + 1, nz]
         Converged rate-constant table.
     atm : AtmStatic
         Atmosphere with the converged refresh fields (g, dzi, Hpi, ...), as
         fed to the runner's body map.
     net : NetworkArrays
         Active network.
-    compo_array : (ni, n_atoms)
+    compo_array : jnp.ndarray [ni, n_atoms]
         Per-species atom counts; pass `composition.compo_array[:ni]`.
-    dz : (nz,)
+    dz : jnp.ndarray [nz]
         Layer thickness (cm). Required: `AtmStatic` carries only the interface
         average `dzi`, which is not invertible to `dz`. Use `AtmInputs.dz`.
-    body_dt
+    body_dt : float
         Adjoint-only probe step in s (see `BODY_MAP_DT`); scan on a new column.
-    photo_recompute_k
+    photo_recompute_k : Callable or None
         On photo-on columns pass `make_photo_recompute_k(integ.photo_static,
         final_state)`, a `k(y) -> k_arr` recompute so the state operator
         carries `dJ/dy` (WASP-39b OH+H2 11% -> 0.2%); it costs an RT solve per
         Krylov matvec. `None` (default) means no photolysis
         feedback and raise on a column with active photolysis rows (no
         frozen-photolysis adjoint).
-    body_terms
+    body_terms : BodyTerms or None
         Optional `BodyTerms` (condensation composite, fix_species pins,
         layer-0 boundary pins). Required when the state converged with
         condensation active; build with `make_body_terms(integ,
         converged_state, atm_static)`, which also returns the spliced `atm`.
-    n_solves
+    n_solves : int
         Twin-ensemble size (`_TWIN_PERTURB`, seeded); `n_solves=1` is one
         solve with no spread estimate. Each extra solve costs one LGMRES
         budget; the operator compile is shared.
-    return_info
+    return_info : bool
         If True, also return a diagnostics dict.
 
     Returns
     -------
-    dL_dlnk : (nr+1,)
+    dL_dlnk : jnp.ndarray [nr + 1]
         Ensemble-mean `dL/d(ln k_r)` per directional rate-table row (index 0
         is the unused 1-based pad). For a physical detailed-balance
         perturbation of a reversible reaction use the pair sum
@@ -167,6 +167,11 @@ def steady_state_reaction_sensitivity(
         `ensemble_spread` (top-10 (max-min)/|mean|; 0.0 when n_solves=1),
         `pair_antisym` (diagnostic only; see the module docstring),
         `n_matvec`, `n_null`, `n_solves`, `body_dt`, and the mode flags.
+
+    Raises
+    ------
+    ValueError
+        On a `body_dt` outside (0, `_BODY_MAP_DT_MAX`], or a non-finite result.
     """
     _check_body_dt(body_dt)
 
@@ -472,18 +477,18 @@ def make_photo_recompute_k(
 
     Parameters
     ----------
-    runner_photo_static
+    runner_photo_static : _PhotoStatic
         The runner's internal `_PhotoStatic` (`OuterLoop.photo_static` after
         `ensure_runner`), not the public `PhotoStaticInputs` pytree.
-    converged_state
+    converged_state : JaxIntegState
         A converged `JaxIntegState`; supplies the frozen geometry (`dz`, `pv`
         T-cross sections, prior `dflux_u` -- its second-order self-recursion
         is not differentiated) read alongside the perturbed `y`.
 
     Returns
     -------
-    recompute_k : Callable[[y], k_arr]
-        `y (nz, ni) -> k_arr (nr+1, nz)` with photolysis rows = J(y).
+    Callable[[jnp.ndarray], jnp.ndarray]
+        `y [nz, ni] -> k_arr [nr + 1, nz]` with photolysis rows = J(y).
     """
     from ._loop_branches import _make_photo_branch  # lazy: keep the module acyclic
 
@@ -518,17 +523,30 @@ def make_body_terms(
     * layer-0 pins: `use_fix_sp_bot` and the hycean H2/He pin once tripped.
     * gas-only / partial hydrostatic balance (condensate-aware form).
 
-    Raises NotImplementedError for `use_ion`; warns when `diff_esc` is active
-    (d(phi_esc)/dy stays frozen, leading-order only).
+    Warns when `diff_esc` is active (d(phi_esc)/dy stays frozen, leading-order only).
 
     Parameters
     ----------
-    integ
+    integ : OuterLoop
         The `OuterLoop` whose runner produced `converged_state`.
-    converged_state
+    converged_state : JaxIntegState
         The converged `JaxIntegState` (the `_runner` output).
-    atm_static
+    atm_static : AtmStatic
         The `AtmStatic` fed to the runner; returned re-spliced.
+
+    Returns
+    -------
+    atm_step : AtmStatic
+        `atm_static` with the converged geometry spliced in.
+    body_terms : BodyTerms
+        The per-step processes for the adjoint body map.
+
+    Raises
+    ------
+    ValueError
+        If the runner has not run.
+    NotImplementedError
+        For an ion column (`use_ion`).
     """
     st = integ._statics
     if st is None:
