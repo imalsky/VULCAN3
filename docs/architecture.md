@@ -3,8 +3,10 @@
 ## Layout
 
 `OuterLoop` (one JIT-compiled `lax.while_loop`) drives `jax_step.jax_ros2_step`, which calls the generated chemistry RHS, the
-analytical Jacobian and the block solve. `state.RunState.with_pre_loop_setup(cfg)` runs setup, and `legacy_io.Output.save_out`
-writes a `.vul` pickle.
+analytical Jacobian (`chem.chem_jac_analytical`) and the block solve: `solver_fast.factor` / `solve` by default, or the
+reference pair `solver.factor_block_thomas_diag_offdiag` / `solve_block_thomas_diag_offdiag`. The `photo.py` kernels fire
+through `lax.cond`. `state.RunState.with_pre_loop_setup(cfg)` runs setup, and `legacy_io.Output.save_out(runstate, dname)`
+writes a `.vul` pickle from a `RunState` only.
 
 | Module | Holds |
 |---|---|
