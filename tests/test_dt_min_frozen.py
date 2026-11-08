@@ -362,8 +362,6 @@ repo = Path(sys.argv[1])
 sys.path.insert(0, str(repo / "src"))
 os.chdir(repo / "src" / "vulcan3")
 
-import numpy as np
-
 from vulcan3.config import default_config
 
 cfg = default_config()
@@ -383,7 +381,7 @@ cfg.rtol = 0.05; cfg.atol = 1e4; cfg.count_min = 6; cfg.count_max = 6
 from vulcan3 import RunState, legacy_io, op_jax
 from vulcan3.chem_funs import spec_list
 from vulcan3.outer_loop import OuterLoop
-from vulcan3.state import TERM_DT_MIN_FROZEN, TERM_STEP_COUNT
+from vulcan3.state import TERM_STEP_COUNT
 
 i_s4 = spec_list.index("S4")
 
@@ -400,17 +398,17 @@ assert float(final.delta) <= cfg.rtol
 assert float(final.y[0, i_s4]) > 10.0 * float(state.y[0, i_s4])
 
 cfg.dt_min = 1e-14
-integ, _, atm_static, final = solve()
-assert int(final.termination_reason) == TERM_DT_MIN_FROZEN, int(final.termination_reason)
-ratio = np.asarray(integ._failed_trial(final, atm_static)[0])
-assert np.unravel_index(np.argmax(ratio), ratio.shape) == (0, i_s4), np.argmax(ratio)
+_, state, _, final = solve()
+assert int(final.termination_reason) == TERM_STEP_COUNT, (int(final.termination_reason), float(final.delta), cfg.dt_min)
+assert float(final.y[0, i_s4]) > 10.0 * float(state.y[0, i_s4])
 """
 
 
 def test_a_short_sulfur_lifetime_can_step_at_the_default_floor():
-    """S4 + M -> S2 + S2 + M at 2900 K and 7.6 bar: 4e-14 s. S4 starts 50 times below its balance with S2.
+    """S4 + M -> S2 + S2 + M at 2900 K and 7.6 bar. S4 starts 50 times below its balance with S2.
 
-    S4 passes rtol 0.05 at the default floor and steps; the same column at 1e-14 s freezes on S4 (notes
+    From K_eq alone the S4 lifetime is 4e-14 s, and the column froze on S4 at master's floor 1e-14 s. The collision
+    limit holds it to 1/(K_COLL M), 5e-11 s, so the column steps at the default floor and at 1e-14 s (notes
     "Differences from VULCAN master").
     """
     run_child(_FAST_SULFUR_CHILD, network="thermo/SNCHO_photo_network_2025.txt", label="fast sulfur lifetime")

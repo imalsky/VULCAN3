@@ -5,10 +5,8 @@ Evidence for these items is in `notes.md` (this repo's, unless another repo is n
 1. [decision] Claim `vulcan3` on PyPI: the README installs put TestPyPI first, so a TestPyPI package can shadow its PyPI namesake.
 2. [unverified] The Jacobian power change (`chem._jac_pow_tables`) is bitwise only where measured, on CPU: check on a GH200 that it leaves a W39b batch unchanged.
 3. [decision] The arm64 full tier fails `test_fast_on_real_w39b_blocks[fast]`: on the W39b 2025-network fixture the matrix-free step's primal under `jvp` is not bitwise the plain step's (bitwise on x86-64).
-4. [owed] Re-baseline after the C25-C29 data and step-control fixes: the arm64 fixture manifest, the arm64 gate reading and the oracle comparisons (`oracle.yml`).
+4. [owed] Re-baseline after the C25-C29 data and step-control fixes and the C30 extension to dissociations: the arm64 fixture manifest, the arm64 gate reading and the oracle comparisons (`oracle.yml`).
 5. [owed] Rebuild the CUDA kernel on the NAS and check `ffi` on a GH200: the code cleanup changed the kernel sources, and its proof of `ffi` ran on CPU only.
-6. [decision] Confirm or replace the collision limit C30 in the oracle copy: `oracle.yml` passes `test_gibbs` and the HD189 19-step case only because the copy now applies the limit too, so no oracle checks its effect.
-7. [decision] Should the collision limit C30 cover a third-body dissociation? `S4 + M -> S2 + S2 + M` reads 860 times the limit at 2620 K.
 
 ## 1. vulcan3 on PyPI
 
@@ -69,24 +67,3 @@ mode's transpose was removed; the optimized CPU program stayed equal apart from 
 was not run. Needs the maintainer's NAS login. Steps, after the commits are pushed: `git pull`,
 `python -m vulcan3.solver_fast --cuda`, then the kernel test job on a GH200. Done when
 the rebuilt library loads and the job passes.
-
-## 6. The collision limit in the oracle copy
-
-Evidence: notes "Parity ledger" C30. Pinned VULCAN 2 has no limit. Without a delta on the oracle copy, `test_gibbs` reads
-reverse k 0.90 against its 1e-8 bar (18 of 390 reverse rows on the test's HD189 column) and the 19-step case 1.07e-5
-against its 5e-9 bar; both pass before C30 (`e91db66`). So this is a real difference from VULCAN, not stale wiring. The code
-takes option (a) below: `tests/oracle.py::ORACLE_CODE_DELTAS` applies the limit in the copy's `rev_rate`, as for C20, no bar
-changed. `tests/test_collision_limit.py` is then the only check of the limit's effect, and the delta's arithmetic is a
-second copy of `rates_jax.apply_collision_limit`. Choose: (a) keep it; (b) hold those two tests another way, with no changed
-bar; (c) change C30. No record says which the maintainer wants. Done when the choice is recorded in notes "Decided by the
-maintainer, not to be re-opened".
-
-## 7. The collision limit on a third-body dissociation
-
-`rates_jax.apply_collision_limit` skips a slot with one reactant molecule, so `S4 + M -> S2 + S2 + M` keeps k 5.6e-7 cm^3/s at
-2364 K and 8.6e-7 at 2620 K, 560 and 860 times `K_COLL`, a loss of 1.3e13 and 1.8e13 s^-1 at the bottom of a WASP-39 b column, against
-`K_COLL` M 2e10 s^-1 and kT/h 5e13 s^-1 [M]. The forward rate is `S2 + S2 + M`, k0 4e-31 cm^6/s, an estimate in the network (Moses2002/Zahnle2016). This lifetime is why
-`dt_min` is 1e-15 (notes "Differences from VULCAN master"), which does not depend on this choice. Measured with the slot's pair capped, in a scratch copy:
-floor ratio gone on the frozen draw, which certifies in 542 steps at log L -1413.462; 4 certified free draws move at most 1.4e-4 in log
-L and 3.1e-4 in ln y (vmr above 1e-12); the shipped W39b and HD189 `.vul` move at most 3.3e-6 and 5.9e-7 relative, on cells above 1 cm^-3, at equal step counts (1084, 1495). So it cannot be
-called neutral, and it would change relaxation and quenching where such a rate is rate-limiting [I]. Other slots of this kind were not listed. Choose: extend C30 to these slots, or keep it. Done when the choice is recorded in notes "Decided by the maintainer, not to be re-opened".

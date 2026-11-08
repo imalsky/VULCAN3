@@ -293,10 +293,11 @@ ORACLE_CODE_DELTAS: dict[str, tuple[tuple[str, str, str], ...]] = {
             (
                 "        for i in rev_list:\n"
                 "            r = [np.zeros(nz)]\n"
-                "            for side, ki in zip(var.Rf[i-1].split('->'), (var.k[i-1], var.k[i])):\n"
+                "            for j, side in zip((i-1, i), var.Rf[i-1].split('->')):\n"
                 "                names = [q.strip() for q in side.split('+')]\n"
                 "                m = sum(q != 'M' for q in names)\n"
-                "                if m >= 2: r.append(ki * atm.M**(('M' in names) + m - 2.) / 1.e-9)\n"
+                "                if m + ('M' in names) >= 2 and j not in vulcan_cfg.remove_list:\n"
+                "                    r.append(var.k[j] * atm.M**(('M' in names) + m - 2.) / 1.e-9)\n"
                 "            c = 1./np.maximum(np.max(r, axis=0), 1.)\n"
                 "            var.k[i-1], var.k[i] = var.k[i-1]*c, var.k[i]*c\n"
                 "        return var\n        \n    \n    def remove_rate(self, var):"

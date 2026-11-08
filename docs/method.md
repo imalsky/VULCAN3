@@ -27,6 +27,18 @@ Forward reactions sit at odd parser indices with a reverse slot at `i+1`. Revers
 Thermal reverse rates fill only slots below `stop_rev_indx` and skip condensation, photo and ion rows: photo and ion reverse
 slots stay zero, and a condensation reverse slot holds the evaporation rate set at run time.
 
+No rate may exceed collision rates, a limit VULCAN 2 does not have (`rates_jax.apply_collision_limit`). A rate fit
+extrapolated far from its range, or a reverse computed from one, can exceed them. For a direction with `m` reactant
+molecules, three-body flag `b` and `m + b >= 2` collision partners (M counts as one), the bimolecular-equivalent rate is
+
+$$q = k\, M^{\,b + m - 2},$$
+
+so for a dissociation `A + M` it is `k` itself: in the low-pressure limit at most every collision with the bath gas
+activates. A thermal pair is scaled by $c = \min(1, K_\mathrm{coll} / \max(q_f, q_r))$ with
+$K_\mathrm{coll} = 10^{-9}$ cm^3 s^-1, a ceiling rather than a computed collision rate. Both directions take the same `c`,
+so `K_eq` and the equilibrium are kept. A first-order direction (one molecule, no M) does not count; a slot in
+`remove_list` is zeroed first and does not scale its partner.
+
 Species order is first appearance in the file. A species that appears only in the config (an inert `const_mix` gas like
 Ar) is not appended; `runtime_validation` refuses such a config.
 

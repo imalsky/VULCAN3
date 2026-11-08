@@ -397,15 +397,31 @@ def apply_collision_limit(net: Network, k: jnp.ndarray, M: jnp.ndarray) -> jnp.n
     """Scale each thermal forward / reverse pair by c = min(1, K_COLL / q) (notes "Parity ledger"; not in master).
 
     q is the larger of the two directions' bimolecular-equivalent rates, k M^(three-body) M^(m - 2) with m the slot's
-    reactant molecules (stoichiometry, M excluded); a direction with m < 2 does not count. Both directions take the same
-    c, so their ratio (K_eq) and the equilibrium are unchanged. It only acts where a rate extrapolated from its fitted
-    range exceeds collision rates (the reverse of CH + M -> C + H + M and C2H + M -> C2 + H + M at low T).
+    reactant molecules (stoichiometry, M excluded). M counts as a collision partner, so a direction counts when
+    m + three-body >= 2: for a dissociation A + M, q is k itself, and a low-pressure dissociation rate constant cannot
+    exceed the collision rate constant. A first-order slot (one molecule, no M) does not count. Both directions take
+    the same c, so their ratio (K_eq) and the equilibrium are unchanged. Method: docs/method.md "Network files".
+
+    Parameters
+    ----------
+    net : Network
+        The parsed network.
+    k : jnp.ndarray [nr + 1, nz]
+        Rate constants with the reverse slots filled, cm^(3(m-1)) s^-1 for a row of m density factors (M included).
+    M : jnp.ndarray [nz]
+        Total number density, cm^-3.
+
+    Returns
+    -------
+    jnp.ndarray [nr + 1, nz]
+        `k` with each super-collisional thermal pair scaled down.
     """
     m = np.asarray(net.reactant_stoich).sum(axis=1)
-    expo = np.asarray(net.is_three_body, float) + m - 2.0  # power of M in q
+    three_body = np.asarray(net.is_three_body, float)
+    expo = three_body + m - 2.0  # power of M in q
     idx = np.arange(net.nr + 1)
     fwd = (idx % 2 == 1) & (idx + 1 < net.stop_rev_indx)  # forward slots with a thermal reverse
-    elig = jnp.asarray(m >= 2)[:, None]
+    elig = jnp.asarray(m + three_body >= 2)[:, None]
     q = k * M[None, :] ** jnp.asarray(expo)[:, None]
     r = jnp.where(elig, q / K_COLL, 0.0)
     fi = np.flatnonzero(fwd)
@@ -458,7 +474,7 @@ def build_rate_array(
     use_lowT_caps: bool = False,
     rate_coeffs: dict | None = None,
 ) -> jnp.ndarray:
-    """End-to-end: forward(T) -> (lowT caps) -> reverse via Gibbs(T) -> collision limit -> remove.
+    """End-to-end: forward(T) -> (lowT caps) -> reverse via Gibbs(T) -> remove -> collision limit.
 
     Parameters
     ----------
@@ -471,7 +487,7 @@ def build_rate_array(
     nasa9_coeffs : np.ndarray [ni, 2, 10]
         NASA-9 thermo table; differentiable, it flows through the Gibbs reverse path.
     remove_list : iterable of int or None, optional
-        Rows to zero, after the reverse fill (no forward/reverse pairing).
+        Rows to zero, after the reverse fill and before the collision limit (no forward/reverse pairing).
     use_lowT_caps : bool, optional
         Apply the low-T caps, to match `cfg.use_lowT_limit_rates` on cool networks (off by default -- the hot
         benchmarks never trigger the caps).
@@ -491,10 +507,11 @@ def build_rate_array(
     g_sp = gibbs_sp_vector(nasa9_coeffs, T)
     K_eq = K_eq_array(net, g_sp, T)
     # `remove_list` is applied in its own pass, after the reverse fill, to
-    # match master (no auto fwd/rev pairing).
+    # match master (no auto fwd/rev pairing), and before the collision limit,
+    # so a removed slot does not scale its partner.
     k = fill_reverse_k(net, k_fwd, K_eq)
-    k = apply_collision_limit(net, k, M)
-    return apply_remove_list(net, k, remove_list)
+    k = apply_remove_list(net, k, remove_list)
+    return apply_collision_limit(net, k, M)
 
 
 def _assert_reversible_thermo_present(net: Network, present: np.ndarray) -> None:
