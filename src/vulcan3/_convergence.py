@@ -300,8 +300,8 @@ def real_terminate(
         # (central difference) and extends the budget instead (vm_branch
         # stop()). A run stopping through this predicate is in phase 1 --
         # a central-difference fixed point only if phase 1 converged
-        # (reason 1). The non-finite exit
-        # below is a bypass and can still return in phase 0.
+        # (reason 1). The non-finite exit below is a bypass and can still
+        # return in phase 0.
         real_term = real_term & (s.hybrid_use_vm < jnp.float64(0.5))
     # A non-finite state can never recover, so stop at once with the
     # batched path's reason 5 (`body_fn_batch`) instead of burning the

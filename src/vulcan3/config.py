@@ -47,10 +47,9 @@ class _StrictLoader(yaml.SafeLoader):
     silently doing the wrong thing:
 
     1. Scientific notation with no dot or no exponent sign (``1e22``,
-       ``5.0e21``, ``1e-14``)
-       parses as a float. Stock PyYAML (YAML 1.1 core schema) treats these as
-       *strings*, which would silently poison numeric knobs a user hand-authors
-       in a ``./configs`` override.
+       ``5.0e21``, ``1e-14``) parses as a float. Stock PyYAML (YAML 1.1 core
+       schema) treats these as *strings*, which would silently poison numeric
+       knobs a user hand-authors in a ``./configs`` override.
     2. Duplicate keys raise instead of last-wins.
     """
 
@@ -352,8 +351,8 @@ def default_config() -> Config:
     """Return the process-wide default Config (loaded once from ``configs/default.yaml``).
 
     Resolves the import-frozen knobs, folding any ``$VULCAN3_*`` overrides,
-    at the first ``import vulcan3``. Cached: the
-    same object is returned every call, so ``state._cfg_overlay`` can identity-
-    compare against it for its no-op fast path.
+    at the first ``import vulcan3``. Cached: the same object is returned every
+    call, so ``state._cfg_overlay`` can identity-compare against it for its
+    no-op fast path.
     """
     return load_config("default")

@@ -34,18 +34,18 @@ class ProfileVars(NamedTuple):
     """
 
     # from _Statics
-    n_0: jnp.ndarray  # (nz,)              total number density
-    Kzz: jnp.ndarray  # (nz-1,)            eddy diffusion (cond_fn slope_min)
-    atom_ini: jnp.ndarray  # (n_atoms,)    initial atom abundances (atom_loss)
-    y_ini: jnp.ndarray  # (nz, ni)         initial column (element-budget term)
+    n_0: jnp.ndarray  # (nz,) total number density
+    Kzz: jnp.ndarray  # (nz-1,) eddy diffusion (cond_fn slope_min)
+    atom_ini: jnp.ndarray  # (n_atoms,) initial atom abundances (atom_loss)
+    y_ini: jnp.ndarray  # (nz, ni) initial column (element-budget term)
     fix_species_sat_mix: jnp.ndarray  # (n_fix_species, nz)
     # from AtmRefreshStatic
-    r_Tco: jnp.ndarray  # (nz,)            atm-refresh temperature
-    r_pico: jnp.ndarray  # (nz+1,)         atm-refresh interface pressure
-    r_Dzz_top: jnp.ndarray  # (ni,)        top-interface molecular diffusion
-    r_gs: jnp.ndarray  # ()               surface gravity
-    r_zco_pref: jnp.ndarray  # ()          reference-layer height
-    r_Rp: jnp.ndarray  # ()               planet radius
+    r_Tco: jnp.ndarray  # (nz,) atm-refresh temperature
+    r_pico: jnp.ndarray  # (nz+1,) atm-refresh interface pressure
+    r_Dzz_top: jnp.ndarray  # (ni,) top-interface molecular diffusion
+    r_gs: jnp.ndarray  # () surface gravity
+    r_zco_pref: jnp.ndarray  # () reference-layer height
+    r_Rp: jnp.ndarray  # () planet radius
     # from CondenStatic
     c_Dg_per_re: jnp.ndarray  # (n_conden_re, nz)
     c_sat_n_per_re: jnp.ndarray  # (n_conden_re, nz)
@@ -69,44 +69,44 @@ class JaxIntegState(NamedTuple):
     int32. When use_photo=False, tau/aflux/sflux/dflux_u use placeholder shape (1, 1).
     """
 
-    y: jnp.ndarray  # (nz, ni), cm^-3 current proposed state
-    y_prev: jnp.ndarray  # (nz, ni)        last accepted state (revert target on reject)
-    ymix: jnp.ndarray  # (nz, ni)        mixing ratios
-    dt: jnp.ndarray  # (), s           step size to use for the next attempt
-    t: jnp.ndarray  # (), s           elapsed integration time
-    delta: jnp.ndarray  # ()              truncation-error proxy of last attempt
-    accept_count: jnp.ndarray  # ()  int32       accepted steps
-    retry_count: jnp.ndarray  # ()  int32       retries on the in-flight step
-    keep_prev_run: jnp.ndarray  # ()  int32     force-accepts at dt_min that kept the state, since the last real accept
+    y: jnp.ndarray  # (nz, ni) cm^-3, current proposed state
+    y_prev: jnp.ndarray  # (nz, ni) last accepted state (revert target on reject)
+    ymix: jnp.ndarray  # (nz, ni) mixing ratios
+    dt: jnp.ndarray  # () s, step size to use for the next attempt
+    t: jnp.ndarray  # () s, elapsed integration time
+    delta: jnp.ndarray  # () truncation-error proxy of last attempt
+    accept_count: jnp.ndarray  # () int32, accepted steps
+    retry_count: jnp.ndarray  # () int32, retries on the in-flight step
+    keep_prev_run: jnp.ndarray  # () int32, force-accepts at dt_min that kept the state, since the last real accept
     atom_loss: jnp.ndarray  # (n_atoms,)
     atom_loss_prev: jnp.ndarray  # (n_atoms,)
-    nega_count: jnp.ndarray  # ()  int32       cumulative over the run
-    loss_count: jnp.ndarray  # ()  int32
-    delta_count: jnp.ndarray  # ()  int32
-    small_y: jnp.ndarray  # ()              cumulative |y| of clipped-small cells
-    nega_y: jnp.ndarray  # ()              cumulative |y| of clipped-negative cells
+    nega_count: jnp.ndarray  # () int32, cumulative over the run
+    loss_count: jnp.ndarray  # () int32
+    delta_count: jnp.ndarray  # () int32
+    small_y: jnp.ndarray  # () cumulative |y| of clipped-small cells
+    nega_y: jnp.ndarray  # () cumulative |y| of clipped-negative cells
 
     # Photo state. All zeros / unused when use_photo=False, except `k_arr`
     # (the full rate table, read every step).
-    k_arr: jnp.ndarray  # (nr+1, nz)     reaction-rate table
-    tau: jnp.ndarray  # (nz+1, nbin)   optical depth
-    aflux: jnp.ndarray  # (nz, nbin)     actinic flux
-    sflux: jnp.ndarray  # (nz+1, nbin)   direct beam
-    dflux_u: jnp.ndarray  # (nz+1, nbin)   diffuse upward (carries between calls)
-    aflux_change: jnp.ndarray  # ()             max relative aflux change
+    k_arr: jnp.ndarray  # (nr+1, nz) reaction-rate table
+    tau: jnp.ndarray  # (nz+1, nbin) optical depth
+    aflux: jnp.ndarray  # (nz, nbin) actinic flux
+    sflux: jnp.ndarray  # (nz+1, nbin) direct beam
+    dflux_u: jnp.ndarray  # (nz+1, nbin) diffuse upward (carries between calls)
+    aflux_change: jnp.ndarray  # () max relative aflux change
 
     # Atmosphere geometry, refreshed at the end of an accepted iteration every
     # `update_frq` steps (op.py:905-907); the next body_fn splices g/dzi/Hpi/
     # top_flux/vs into AtmStatic so jax_ros2_step sees refreshed diffusion.
-    g: jnp.ndarray  # (nz,)          gravity
-    mu: jnp.ndarray  # (nz,)          mean molar mass (g/mol)
-    Hp: jnp.ndarray  # (nz,)          pressure scale height
-    dz: jnp.ndarray  # (nz,)          layer thickness
-    zco: jnp.ndarray  # (nz+1,)        interface heights
-    dzi: jnp.ndarray  # (nz-1,)        interface dz
-    Hpi: jnp.ndarray  # (nz-1,)        interface scale height
-    top_flux: jnp.ndarray  # (ni,)          diffusion-limited escape flux at TOA
-    vs: jnp.ndarray  # (nz-1, ni)     settling velocity (zeroed post-condense fix)
+    g: jnp.ndarray  # (nz,) gravity
+    mu: jnp.ndarray  # (nz,) mean molar mass (g/mol)
+    Hp: jnp.ndarray  # (nz,) pressure scale height
+    dz: jnp.ndarray  # (nz,) layer thickness
+    zco: jnp.ndarray  # (nz+1,) interface heights
+    dzi: jnp.ndarray  # (nz-1,) interface dz
+    Hpi: jnp.ndarray  # (nz-1,) interface scale height
+    top_flux: jnp.ndarray  # (ni,) diffusion-limited escape flux at TOA
+    vs: jnp.ndarray  # (nz-1, ni) settling velocity (zeroed post-condense fix)
 
     # Convergence + step-history. The body writes (y, t) to the ring at
     # index `accept_count % conv_step` and cond_fn reads longdy/longdydt
@@ -114,60 +114,58 @@ class JaxIntegState(NamedTuple):
     # adaptive-rtol updates fire inside the body without retracing.
     # `update_photo_frq`/`is_final_photo_frq` drive the ini->final switch.
     y_time_ring: jnp.ndarray  # (conv_step, nz, ni) float64
-    t_time_ring: jnp.ndarray  # (conv_step,)        float64
-    longdy: jnp.ndarray  # ()                  float64
-    longdydt: jnp.ndarray  # ()                  float64
-    where_varies_most: jnp.ndarray  # (nz, ni)            float64
-    rtol: jnp.ndarray  # ()                  float64
-    loss_criteria: jnp.ndarray  # ()                  float64
-    update_photo_frq: jnp.ndarray  # ()                  int32
-    is_final_photo_frq: jnp.ndarray  # ()                  bool
-    geom_ok: jnp.ndarray  # ()  bool, True only on a certificate-candidate step whose refreshed geometry agreed
-    budget_ok: jnp.ndarray  # () bool  True only on a candidate step whose column element budget held
-    budget_ref: (
-        jnp.ndarray
-    )  # (n_atoms,) the t=0 operator-weighted atom column on the t=0 grid (fixed; the budget denominator)
+    t_time_ring: jnp.ndarray  # (conv_step,) float64
+    longdy: jnp.ndarray  # () float64
+    longdydt: jnp.ndarray  # () float64
+    where_varies_most: jnp.ndarray  # (nz, ni) float64
+    rtol: jnp.ndarray  # () float64
+    loss_criteria: jnp.ndarray  # () float64
+    update_photo_frq: jnp.ndarray  # () int32
+    is_final_photo_frq: jnp.ndarray  # () bool
+    geom_ok: jnp.ndarray  # () bool, True only on a certificate-candidate step whose refreshed geometry agreed
+    budget_ok: jnp.ndarray  # () bool, True only on a candidate step whose column element budget held
+    budget_ref: jnp.ndarray  # (n_atoms,) t=0 operator-weighted atom column on the t=0 grid: the budget denominator
     budget_err: jnp.ndarray  # (n_atoms,) accumulated per-step column change / budget_ref, each step on its own grid
     budget_drift: jnp.ndarray  # (n_atoms,) budget_err relative to H: the certificate's budget operand
 
     # Post-condensation fixed-species state.
-    fix_species_started: jnp.ndarray  # ()                  bool
-    fix_y: jnp.ndarray  # (nz, ni)           stored fixed values
-    fix_mask: jnp.ndarray  # (nz, ni)           bool mask of fixed cells
-    fix_pfix_idx: jnp.ndarray  # (n_fix_sp,)        int32 cold-trap indices
+    fix_species_started: jnp.ndarray  # () bool
+    fix_y: jnp.ndarray  # (nz, ni) stored fixed values
+    fix_mask: jnp.ndarray  # (nz, ni) bool, mask of fixed cells
+    fix_pfix_idx: jnp.ndarray  # (n_fix_sp,) int32, cold-trap indices
 
-    # Hycean H2/He pin: one-shot snapshot at t>1e6 stored in h2he_mix
-    # and applied to the bottom layer thereafter. When use_fix_H2He=False
+    # Hycean H2/He pin: one-shot snapshot once t > hycean_pin_time, stored in
+    # h2he_mix and applied to the bottom layer thereafter. When use_fix_H2He=False
     # the body branch is a static no-op.
-    h2he_pinned: jnp.ndarray  # ()  bool
-    h2he_mix: jnp.ndarray  # (2,) float64  [H2_mix, He_mix]
+    h2he_pinned: jnp.ndarray  # () bool
+    h2he_mix: jnp.ndarray  # (2,) [H2_mix, He_mix]
 
     # save_evolution capture buffer. When save_evolution=False the buffers
     # are length-1 placeholders that the body never writes.
     y_evo: jnp.ndarray  # (save_evo_n_max, nz, ni) float64
-    t_evo: jnp.ndarray  # (save_evo_n_max,)        float64
-    evo_idx: jnp.ndarray  # ()  int32  next slot to fill
+    t_evo: jnp.ndarray  # (save_evo_n_max,) float64
+    evo_idx: jnp.ndarray  # () int32, next slot to fill
 
     # Termination state. `is_done` is batched-runner only; every runner sets
     # `termination_reason` on its exit state.
     # `is_done` freezes a finished lane while stragglers finish.
     # `termination_reason`: one of the TERM_* codes.
-    is_done: jnp.ndarray  # ()  bool
-    termination_reason: jnp.ndarray  # ()  int32
+    is_done: jnp.ndarray  # () bool
+    termination_reason: jnp.ndarray  # () int32
 
     # Hybrid vm_mol phase blend for jax_ros2_step: 1.0 = upwind (phase 0),
     # 0.0 = central difference (phase 1). Hybrid runs flip 1.0 -> 0.0 the
     # first time phase 0 ends (convergence, runtime, OR step-count), so a run
     # stopping on convergence or a cap is in phase 1 -- a fixed point only if
     # phase 1 also converged. Non-hybrid runs never flip (bit-identical trace).
-    hybrid_use_vm: jnp.ndarray  # ()  float64
+    hybrid_use_vm: jnp.ndarray  # () float64
 
     # Live termination budget, seeded from the static caps; the termination
     # test reads these, not the closure constants. Only the hybrid phase flip
     # extends them (see _HYBRID_FLIP_*); non-hybrid runs never touch them.
-    count_min_dyn: jnp.ndarray  # ()  int32
-    count_max_dyn: jnp.ndarray  # ()  int32
-    runtime_dyn: jnp.ndarray  # ()  float64
+    count_min_dyn: jnp.ndarray  # () int32
+    count_max_dyn: jnp.ndarray  # () int32
+    runtime_dyn: jnp.ndarray  # () float64
 
     # Per-profile constants (see ProfileVars).
     pv: ProfileVars
@@ -178,15 +176,15 @@ class _PhotoStatic(NamedTuple):
 
     photo_data: _photo_mod.PhotoData  # absp / scat cross sections
     cross_J: jnp.ndarray  # (n_br, nbin)
-    branch_re_idx: jnp.ndarray  # (n_br,)   int64, k_arr row to write
-    branch_active: jnp.ndarray  # (n_br,)   bool
+    branch_re_idx: jnp.ndarray  # (n_br,) int64, k_arr row to write
+    branch_active: jnp.ndarray  # (n_br,) bool
     branch_T_re_idx: jnp.ndarray  # (n_br_T,) int64
     branch_T_active: jnp.ndarray  # (n_br_T,) bool
     cross_Jion: jnp.ndarray  # (n_ion_br, nbin)
     ion_branch_re_idx: jnp.ndarray  # (n_ion_br,) int64, k_arr row to write
     ion_branch_active: jnp.ndarray  # (n_ion_br,) bool
-    bins: jnp.ndarray  # (nbin,)   wavelength grid (nm)
-    sflux_top: jnp.ndarray  # (nbin,)   TOA stellar flux
+    bins: jnp.ndarray  # (nbin,) wavelength grid (nm)
+    sflux_top: jnp.ndarray  # (nbin,) TOA stellar flux
     din12_indx: int  # static: wavelength split index for J integration
     dbin1: float
     dbin2: float
@@ -321,14 +319,11 @@ _CONV_RING_FIELDS = ("y_time_ring", "t_time_ring")
 
 _EVO_RING_FIELDS = ("y_evo", "t_evo")
 
-# Certificate-only lane fields: the convergence ring, its two statistics and
-# the cell it points at. They steer predicates, never the arithmetic, so their
-# tangents are dead. The lockstep batch drops
-# them on its own; the queue's refill `cond` rewrites lane state and keeps them
-# (D tangent copies of the conv_step-slot ring per lane), so `runner_queue`
-# zeroes them at its lane step. Every primal and every live tangent stays
-# bitwise. `_make_jvp_step` (run_jvp) is untouched: its certificate reads
-# the ring tangent.
+# Certificate-only lane fields: the convergence ring, its two statistics and the cell it points at. They steer
+# predicates, never the arithmetic, so their tangents are dead. The lockstep batch drops them on its own; the queue's
+# refill `cond` rewrites lane state and keeps them (D tangent copies of the conv_step-slot ring per lane), so
+# `runner_queue` zeroes them at its lane step. Every primal and every live tangent stays bitwise. `_make_jvp_step`
+# (run_jvp) is untouched: its certificate reads the ring tangent.
 _QUEUE_STOP_FIELDS = (*_CONV_RING_FIELDS, "longdy", "longdydt", "where_varies_most")
 
 # vmap axis name of the batched runner. `body_fn_batch` / `body_fn` psum over

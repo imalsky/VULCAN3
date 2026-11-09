@@ -77,11 +77,8 @@ logger = logging.getLogger(__name__)
 _CFG = default_config()
 
 
-# Load TPK (T, Kzz, vz from cfg / file) -- host-side I/O
-
-
 class Atm:
-    """Thin mutable facade over the pure functions above.
+    """Thin mutable facade over the setup functions imported above.
 
     Routes `make_atm.X(data_atm)` calls into them and writes results back to the legacy `data_atm` / `data_var`
     containers.

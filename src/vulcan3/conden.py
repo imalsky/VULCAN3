@@ -335,11 +335,11 @@ class CondenStatic(NamedTuple):
     via `cfg.use_relax` get coeff=0 so the kernel writes zeros.
     """
 
-    conden_re_idx: jnp.ndarray  # (n_conden_re,)        int32
-    conden_sp_idx: jnp.ndarray  # (n_conden_re,)        int32
-    Dg_per_re: jnp.ndarray  # (n_conden_re, nz)     float64
-    sat_n_per_re: jnp.ndarray  # (n_conden_re, nz)     float64
-    coeff_per_re: jnp.ndarray  # (n_conden_re,)        float64
+    conden_re_idx: jnp.ndarray  # (n_conden_re,) int32
+    conden_sp_idx: jnp.ndarray  # (n_conden_re,) int32
+    Dg_per_re: jnp.ndarray  # (n_conden_re, nz) float64
+    sat_n_per_re: jnp.ndarray  # (n_conden_re, nz) float64
+    coeff_per_re: jnp.ndarray  # (n_conden_re,) float64
 
     # `h2o_active` / `nh3_active` are Python bools selected statically from
     # cfg.use_relax; when False, the *_relax_jax helpers no-op.
@@ -347,7 +347,7 @@ class CondenStatic(NamedTuple):
     h2o_idx: int  # species index of 'H2O'
     h2o_l_s_idx: int  # species index of 'H2O_l_s'
     h2o_Dg: jnp.ndarray  # (nz,)
-    h2o_sat: jnp.ndarray  # (nz,)  sat_p['H2O']/kb/Tco * humidity
+    h2o_sat: jnp.ndarray  # (nz,) sat_p['H2O']/kb/Tco * humidity
     h2o_m_over_rho_r2: float  # 18/Navo / (rho_p * r_p**2)
 
     nh3_active: bool
@@ -361,8 +361,8 @@ class CondenStatic(NamedTuple):
     # runner; the kernel only compares it against jnp.arange, so both work.
     nh3_conden_top: int | jnp.ndarray
 
-    n_0: jnp.ndarray  # (nz,)  total number density
-    gas_indx_mask: jnp.ndarray  # (ni,)  bool, gas-only species mask
+    n_0: jnp.ndarray  # (nz,) total number density
+    gas_indx_mask: jnp.ndarray  # (ni,) bool, gas-only species mask
 
 
 def update_conden_rates(k_arr: jnp.ndarray, y: jnp.ndarray, st: CondenStatic) -> jnp.ndarray:

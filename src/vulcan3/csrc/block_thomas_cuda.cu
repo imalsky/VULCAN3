@@ -1,9 +1,10 @@
 // size-limit-ok: the host handlers and the kernels share one translation unit; a split is a build change for the GPU
-// host. CUDA twin of block_thomas_cpu.cc (VULCAN3_SOLVER=ffi on a GPU): the same block-Thomas factor and solve on [...,
-// nz, ni, ni] blocks, with the same perm convention (perm[i] = source row of permuted row i). One thread block per
-// batch element, the whole nz sweep inside the kernel. A zero pivot gives
-// inf/nan like lax.linalg.lu, not an error. Build: python -m vulcan3.solver_fast --cuda.
-// It takes sm_80+ and ni <= 96; solver_fast refuses a wider network before any
+// host.
+//
+// CUDA twin of block_thomas_cpu.cc (VULCAN3_SOLVER=ffi on a GPU): the same block-Thomas factor and solve on [..., nz,
+// ni, ni] blocks, with the same perm convention (perm[i] = source row of permuted row i). One thread block per batch
+// element, the whole nz sweep inside the kernel. A zero pivot gives inf/nan like lax.linalg.lu, not an error. Build:
+// python -m vulcan3.solver_fast --cuda. It takes sm_80+ and ni <= 96; solver_fast refuses a wider network before any
 // launch (VULCAN3_SOLVER=fast takes any ni), and both handlers refuse it too.
 //
 // The factor, bt_gj_factor_kernel, holds each block in registers (ni <=
@@ -253,9 +254,8 @@ __device__ __forceinline__ double bt_div_by_rcp(double a, double b, double y, bo
 // bt_div_by_rcp's corrected products with the IEEE 1 / piv, bitwise v / piv;
 // when any lane's operands leave its range (|piv| beyond about 2^+-1000, a
 // zero, infinite or NaN pivot, |v| or |v / piv| beyond about 2^+-960) the warp
-// divides instead. The L entries of
-// column kk and the U diagonal go to S in original-row order, the position
-// swap to sperm and spos.
+// divides instead. The L entries of column kk and the U diagonal go to S in
+// original-row order, the position swap to sperm and spos.
 __device__ __forceinline__ void bt_gj_pivot(const double (&v)[kGjRowSlots], int kk, int nb, int ni, int lane,
                                             const BtGjSmem& m) {
   int pos[kGjRowSlots];

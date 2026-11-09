@@ -63,12 +63,12 @@ def hydrostatic_step(
 class AtmRefreshStatic(NamedTuple):
     """Closed-over static inputs to the atm-refresh kernels."""
 
-    Tco: jnp.ndarray  # (nz,)        layer-center temperature (K)
-    pico: jnp.ndarray  # (nz+1,)      interface pressure (dyne/cm^2)
-    ms: jnp.ndarray  # (ni,)        molar mass per species (g/mol; /Navo in formulas)
-    Dzz_top: jnp.ndarray  # (ni,)        molecular diffusion at the top interface
-    diff_esc_idx: jnp.ndarray  # (n_esc,) int32  species indices for diffusion-limited escape
-    pref_indx: int  # static       reference layer index (zco==zco_pref here)
+    Tco: jnp.ndarray  # (nz,) layer-center temperature (K)
+    pico: jnp.ndarray  # (nz+1,) interface pressure (dyne/cm^2)
+    ms: jnp.ndarray  # (ni,) molar mass per species (g/mol; /Navo in formulas)
+    Dzz_top: jnp.ndarray  # (ni,) molecular diffusion at the top interface
+    diff_esc_idx: jnp.ndarray  # (n_esc,) int32, species indices for diffusion-limited escape
+    pref_indx: int  # static, reference layer index (zco==zco_pref here)
     zco_pref: float | jnp.ndarray  # z at the reference layer (0.0 for gas giants)
     gs: float | jnp.ndarray  # surface gravity at zco_pref (cm/s^2)
     Rp: float | jnp.ndarray  # planetary radius (cm)

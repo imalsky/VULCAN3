@@ -1,12 +1,10 @@
 """Codegen for SymPy-faithful `chem_rhs`.
 
-Emits per-network Python source mirroring VULCAN-master's `chemdf` body
-(paired `v_i = forward - reverse`, stoich-replicated multiply chains so
-XLA cannot rewrite `H*H` as `exp(2*log(H))`, terminal `*M` when three-
-body, asymmetric M handled per slot via `is_three_body[i]` independently
-of `is_three_body[i+1]`). The source is compiled in memory, with one callable per process; XLA's compiled-program
-cache is separate. `build_chem_rhs` returns a JIT'd `vmap`'d `Callable` with signature
-`(y[nz, ni], M[nz], k[nr+1, nz]) -> dydt[nz, ni]`.
+Emits per-network Python source mirroring VULCAN-master's `chemdf` body (paired `v_i = forward - reverse`,
+stoich-replicated multiply chains so XLA cannot rewrite `H*H` as `exp(2*log(H))`, terminal `*M` when three-body,
+asymmetric M handled per slot via `is_three_body[i]` independently of `is_three_body[i+1]`). The source is compiled in
+memory, with one callable per process; XLA's compiled-program cache is separate. `build_chem_rhs` returns a JIT'd
+`vmap`'d `Callable` with signature `(y[nz, ni], M[nz], k[nr+1, nz]) -> dydt[nz, ni]`.
 
 `$VULCAN3_CHEM_RHS=grouped` (import-frozen; default `codegen`) selects
 `build_chem_rhs_grouped`: the same per-element operation trees, evaluated
@@ -203,11 +201,9 @@ _BUILD_CACHE: dict[str, Callable] = {}
 def build_chem_rhs(net: Network) -> Callable:
     """Build (or load from cache) the SymPy-faithful chem_rhs for `net`.
 
-    The XLA-compiled
-    artifact is reused across processes via JAX's persistent disk cache
-    (configured in `cli.py`). To compare with VULCAN-master's `chem_funs.py`
-    reaction lambdas, print `emit_chem_rhs_source(net)`. With `VULCAN3_CHEM_RHS=grouped` this is
-    `build_chem_rhs_grouped(net)`.
+    The XLA-compiled artifact is reused across processes via JAX's persistent disk cache (configured in `cli.py`). To
+    compare with VULCAN-master's `chem_funs.py` reaction lambdas, print `emit_chem_rhs_source(net)`. With
+    `VULCAN3_CHEM_RHS=grouped` this is `build_chem_rhs_grouped(net)`.
 
     Parameters
     ----------
@@ -226,7 +222,7 @@ def build_chem_rhs(net: Network) -> Callable:
     cached = _BUILD_CACHE.get(key)
     if cached is not None:
         return cached
-    # Emitted in every process: 2.7 to 3.6 ms on 86 to 93 species [M].
+    # Emitted in every process, not cached on disk: a few ms per network.
     src = emit_chem_rhs_source(net)
     ns: dict = {}
     exec(compile(src, "<chem_rhs_codegen>", "exec"), ns)

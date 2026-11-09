@@ -499,9 +499,7 @@ def pack_branch_to_k_index_map(
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Build static branch -> k_arr row index tables for photo or ion updates.
 
-    Inactive rows point at
-    slot 0 (unused, since reactions are 1-indexed) so the scatter shape
-    stays static.
+    Inactive rows point at slot 0 (unused, since reactions are 1-indexed) so the scatter shape stays static.
 
     Parameters
     ----------

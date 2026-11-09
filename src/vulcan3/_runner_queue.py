@@ -269,8 +269,7 @@ def runner_queue(  # noqa: C901 (one loop program)
         # refill cond is never taken, but it is what lets the lane
         # step's carry alias the loop's: a body that hands the lane
         # step's photolysis-cond outputs straight back to the carry makes
-        # XLA copy every lane leaf each tick (20% of a 264-lane
-        # tick).
+        # XLA copy every lane leaf each tick (20% of a 264-lane tick).
         c = jax.lax.while_loop(until(nxt_rung), body, c)
     it, lanes, _atm_l, lane_job, _nxt, out = c
     # Flush the lanes still holding a job when the last loop ended.

@@ -342,8 +342,7 @@ class OuterLoop:
         """End-of-run report (op.py:1069-1085 and op.stop).
 
         print_prog, then print_end_msg (end_case 1) or print_unconverged_msg, which states the reason (2 / 3 / 5),
-        followed
-        by the certificate terms the exit carry `final` fails.
+        followed by the certificate terms the exit carry `final` fails.
         """
         var, _, para = _state_mod.legacy_view(rs)
         end_case = para.end_case
@@ -487,12 +486,10 @@ class OuterLoop:
 
         Builds the runner closure on the first call (later calls reuse it; nz is not checked).
 
-        The batched GPU driver calls this per profile, then stacks the
-        results along a leading axis into one batch for `run_batch`. All profiles in a single `run_batch` call must
-        share
-        the same nz / toggle-combo / `pref_indx` so the closure and array
-        shapes match; bucket profiles accordingly. `__call__` runs the
-        same setup, then the runner.
+        The batched GPU driver calls this per profile, then stacks the results along a leading axis into one batch for
+        `run_batch`. All profiles in a single `run_batch` call must share the same nz / toggle-combo / `pref_indx` so
+        the closure and array shapes match; bucket profiles accordingly. `__call__` runs the same setup, then the
+        runner.
         """
         validate_runtime_config(self._cfg)
         var, atm, _ = _state_mod.legacy_view(rs)
@@ -539,20 +536,17 @@ class OuterLoop:
     def run_batch(self, states_batched: JaxIntegState, atm_static_batched: AtmStatic) -> JaxIntegState:
         """Integrate a whole batch of profiles in one vmapped device call.
 
-        `states_batched` / `atm_static_batched` are the stacked outputs of
-        `prepare_runstate` (leading batch axis on every array leaf; the four
-        AtmStatic toggle flags broadcast). Returns the batched final `JaxIntegState`; read per-lane
-        `termination_reason` / `ymix` by indexing the lane axis. Requires `ensure_runner` to have run (via
+        `states_batched` / `atm_static_batched` are the stacked outputs of `prepare_runstate` (leading batch axis on
+        every array leaf; the four AtmStatic toggle flags broadcast). Returns the batched final `JaxIntegState`; read
+        per-lane `termination_reason` / `ymix` by indexing the lane axis. Requires `ensure_runner` to have run (via
         `prepare_runstate`) for this batch's (nz, toggle-combo).
 
-        Lanes run with freeze-on-done: each profile's converged result
-        matches running it alone at the convergence scale (the photo /
-        geometry cadences follow the loop's iteration tick here, not the
-        lane's accept count), and the call returns once the slowest
-        lane finishes. Lanes are never compacted or refilled here; feed a
-        queue of profiles through `run_queue` for that. A lane frozen at `dt_min`
-        stops with `termination_reason` 4, and `DtMinFrozenError` follows the loop. Under an outer jit the caller
-        checks the returned carry (`raise_if_frozen`).
+        Lanes run with freeze-on-done: each profile's converged result matches running it alone at the convergence scale
+        (the photo / geometry cadences follow the loop's iteration tick here, not the lane's accept count), and the call
+        returns once the slowest lane finishes. Lanes are never compacted or refilled here; feed a queue of profiles
+        through `run_queue` for that. A lane frozen at `dt_min` stops with `termination_reason` 4, and
+        `DtMinFrozenError` follows the loop. Under an outer jit the caller checks the returned carry
+        (`raise_if_frozen`).
         """
         if self._runner_batch is None:
             raise RuntimeError(
@@ -577,37 +571,28 @@ class OuterLoop:
     ) -> tuple[PyTree, jnp.ndarray]:
         """Integrate `n_jobs` independent profiles on `n_lanes` lanes with refill.
 
-        `init_fn(job) -> (JaxIntegState, AtmStatic)` builds one job's initial
-        state (traceable); `jobs` is a pytree with a leading job axis on every
-        array leaf; `out_fn(final_lane_state) -> pytree` is what is kept per
-        job. Returns `(out, n_iter)`: `out_fn`'s pytree stacked in job order
-        and the loop's iteration count. A job whose lane went non-finite comes
-        back with `termination_reason` 5. A job frozen at `dt_min` gives up its lane
-        like a finished one, and `DtMinFrozenError` follows the loop, naming its index. Under an outer jit,
-        `out_fn` keeps `termination_reason` and the caller checks it (`raise_if_frozen`).
+        `init_fn(job) -> (JaxIntegState, AtmStatic)` builds one job's initial state (traceable); `jobs` is a pytree with
+        a leading job axis on every array leaf; `out_fn(final_lane_state) -> pytree` is what is kept per job. Returns
+        `(out, n_iter)`: `out_fn`'s pytree stacked in job order and the loop's iteration count. A job whose lane went
+        non-finite comes back with `termination_reason` 5. A job frozen at `dt_min` gives up its lane like a finished
+        one, and `DtMinFrozenError` follows the loop, naming its index. Under an outer jit, `out_fn` keeps
+        `termination_reason` and the caller checks it (`raise_if_frozen`).
 
-        A finished lane is written out and refilled with the next pending job
-        once `chunk` lanes are free, when every lane still holding a job is
-        free, or every `_QUEUE_REFILL_EVERY` iterations; with `n_lanes >= n_jobs`
-        nothing is refilled and the result is bitwise `run_batch`'s. A fresh
-        lane starts as a plain-batch lane does at tick 0 (its own photolysis
-        fields), so a refilled job matches the plain batch at the convergence
-        scale, not bitwise: it enters the loop at a tick that moves the photo
-        and geometry cadences. A job stopped by `count_max` is `is_done` like
-        a converged one and is refilled. Requires `prepare_runstate` to have built the runner for this nz /
+        A finished lane is written out and refilled with the next pending job once `chunk` lanes are free, when every
+        lane still holding a job is free, or every `_QUEUE_REFILL_EVERY` iterations; with `n_lanes >= n_jobs` nothing is
+        refilled and the result is bitwise `run_batch`'s. A fresh lane starts as a plain-batch lane does at tick 0 (its
+        own photolysis fields), so a refilled job matches the plain batch at the convergence scale, not bitwise: it
+        enters the loop at a tick that moves the photo and geometry cadences. A job stopped by `count_max` is `is_done`
+        like a converged one and is refilled. Requires `prepare_runstate` to have built the runner for this nz /
         toggle-combo, like `run_batch`.
 
-        Tail compaction: `compact` (default: the config's `queue_compact`, off
-        when empty) is a ladder of narrower lane counts, e.g. `(264, 132)` on
-        792 lanes. Once no job is pending and the live lanes fit a rung, they
-        continue in a program of that width from the same tick (no refill), so
-        the tail of a few slow jobs stops paying for the full width. Freeze-on-
-        done keeps a done lane out of every lane-uniform photolysis / refresh
-        predicate, so dropping it changes no live lane's step: each job's
-        result is the uncompacted one, bitwise wherever the compiled step's
-        per-lane arithmetic does not depend on the width (the GPU validation
-        checks it). Rungs at or above `n_lanes` are dropped; each rung used
-        adds one compiled loop to the program.
+        Tail compaction: `compact` (default: the config's `queue_compact`, off when empty) is a ladder of narrower lane
+        counts, e.g. `(264, 132)` on 792 lanes. Once no job is pending and the live lanes fit a rung, they continue in a
+        program of that width from the same tick (no refill), so the tail of a few slow jobs stops paying for the full
+        width. Freeze-on-done keeps a done lane out of every lane-uniform photolysis / refresh predicate, so dropping
+        it changes no live lane's step: each job's result is the uncompacted one, bitwise wherever the compiled step's
+        per-lane arithmetic does not depend on the width (the GPU validation checks it). Rungs at or above `n_lanes` are
+        dropped; each rung used adds one compiled loop to the program.
         """
         if self._runner_queue is None:
             raise RuntimeError(

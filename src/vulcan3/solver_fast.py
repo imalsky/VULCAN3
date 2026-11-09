@@ -220,8 +220,8 @@ def build(force: bool = False, cuda: bool = False) -> Path:
         stamp += "_" + hashlib.sha256(f"{arch}\n{version}".encode()).hexdigest()
     if not force and _is_current(lib, stamp):
         return lib
-    # -isystem: the XLA headers' own warnings are not reported. No -Werror: the
-    # CPU build runs on the first `ffi` call, where a newer compiler's warning must not fail.
+    # -isystem: the XLA headers' own warnings are not reported. No -Werror: the CPU build runs on the first `ffi` call,
+    # where a newer compiler's warning must not fail.
     flags = ["-O2", "-std=c++17", "-shared", f"-DVULCAN_BT_SOURCE_HASH={stamp}", "-isystem", jax.ffi.include_dir()]
     if cuda:
         cmd = [nvcc, *flags, f"-arch={arch}", "-lineinfo", "-Xcompiler", "-fPIC,-Wall,-Wextra"]

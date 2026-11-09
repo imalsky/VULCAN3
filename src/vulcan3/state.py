@@ -61,25 +61,25 @@ __all__ = [
 class AtmInputs(NamedTuple):
     """Atmosphere structure. nz layers, ni species; (nz-1) arrays are interface-staggered."""
 
-    pco: jnp.ndarray  # (nz,)    pressure on cells (dyne/cm^2)
-    pico: jnp.ndarray  # (nz+1,)  pressure on interfaces
-    Tco: jnp.ndarray  # (nz,)    temperature (K)
-    Kzz: jnp.ndarray  # (nz-1,)  eddy diffusion (cm^2/s)
-    vz: jnp.ndarray  # (nz-1,)  vertical advection (cm/s)
-    M: jnp.ndarray  # (nz,)    third-body number density
-    n_0: jnp.ndarray  # (nz,)    total number density
-    mu: jnp.ndarray  # (nz,)    mean molecular weight
-    g: jnp.ndarray  # (nz,)    local gravity
-    Hp: jnp.ndarray  # (nz,)    pressure scale height
-    Hpi: jnp.ndarray  # (nz-1,)  interface scale height
-    dz: jnp.ndarray  # (nz,)    layer thickness
-    dzi: jnp.ndarray  # (nz-1,)  interface thickness
-    zco: jnp.ndarray  # (nz+1,)  height at interfaces
-    zmco: jnp.ndarray  # (nz,)    height at cell centers
-    ms: jnp.ndarray  # (ni,)    molecular weight per species
-    alpha: jnp.ndarray  # (ni,)    thermal diffusion factor
+    pco: jnp.ndarray  # (nz,) pressure on cells (dyne/cm^2)
+    pico: jnp.ndarray  # (nz+1,) pressure on interfaces
+    Tco: jnp.ndarray  # (nz,) temperature (K)
+    Kzz: jnp.ndarray  # (nz-1,) eddy diffusion (cm^2/s)
+    vz: jnp.ndarray  # (nz-1,) vertical advection (cm/s)
+    M: jnp.ndarray  # (nz,) third-body number density
+    n_0: jnp.ndarray  # (nz,) total number density
+    mu: jnp.ndarray  # (nz,) mean molecular weight
+    g: jnp.ndarray  # (nz,) local gravity
+    Hp: jnp.ndarray  # (nz,) pressure scale height
+    Hpi: jnp.ndarray  # (nz-1,) interface scale height
+    dz: jnp.ndarray  # (nz,) layer thickness
+    dzi: jnp.ndarray  # (nz-1,) interface thickness
+    zco: jnp.ndarray  # (nz+1,) height at interfaces
+    zmco: jnp.ndarray  # (nz,) height at cell centers
+    ms: jnp.ndarray  # (ni,) molecular weight per species
+    alpha: jnp.ndarray  # (ni,) thermal diffusion factor
     Dzz: jnp.ndarray  # (nz-1, ni) molecular diffusion (interface)
-    Dzz_cen: jnp.ndarray  # (nz, ni)   molecular diffusion (cell)
+    Dzz_cen: jnp.ndarray  # (nz, ni) molecular diffusion (cell)
     vm: jnp.ndarray  # (nz-1, ni) molecular-diffusion drift velocity (interface)
     vs: jnp.ndarray  # (nz-1, ni) settling velocity
     top_flux: jnp.ndarray  # (ni,) top BC flux (#/cm^2/s)
@@ -97,9 +97,9 @@ class RateInputs(NamedTuple):
 class IniAbunOutputs(NamedTuple):
     """Initial-abundance solver output. nz layers, ni species."""
 
-    y: jnp.ndarray  # (nz, ni)    number density
-    ymix: jnp.ndarray  # (nz, ni)    mixing ratio
-    y_ini: jnp.ndarray  # (nz, ni)    initial-state snapshot
+    y: jnp.ndarray  # (nz, ni) number density
+    ymix: jnp.ndarray  # (nz, ni) mixing ratio
+    y_ini: jnp.ndarray  # (nz, ni) initial-state snapshot
     charge_list: tuple[str, ...]  # charged species (empty when use_ion=False)
 
 
@@ -120,25 +120,25 @@ class PhotoStaticInputs(NamedTuple):
     `with_din12_indx(idx)` to attach it.
     """
 
-    bins: jnp.ndarray  # (nbin,)  float64 wavelength grid (nm)
+    bins: jnp.ndarray  # (nbin,) float64 wavelength grid (nm)
     nbin: int
     dbin1: float
     dbin2: float
     din12_indx: int  # -1 sentinel pre-read_sflux
 
-    absp_sp: tuple  # (str, ...)  ordered absorbers (photo + ion)
-    absp_T_sp: tuple  # (str, ...)  T-dep subset of absp_sp
-    scat_sp: tuple  # (str, ...)  Rayleigh scatterers
+    absp_sp: tuple  # (str, ...) ordered absorbers (photo + ion)
+    absp_T_sp: tuple  # (str, ...) T-dep subset of absp_sp
+    scat_sp: tuple  # (str, ...) Rayleigh scatterers
     branch_keys: tuple  # ((sp, branch_idx), ...) non-T dissociation
     branch_T_keys: tuple  # ((sp, branch_idx), ...) T-dep counterparts
     ion_branch_keys: tuple  # ((sp, branch_idx), ...) ion branches
 
-    absp_cross: jnp.ndarray  # (n_absp, nbin)        room-T cross per absorber
-    absp_T_cross: jnp.ndarray  # (n_absp_T, nz, nbin)  T-dep total cross
+    absp_cross: jnp.ndarray  # (n_absp, nbin) room-T cross per absorber
+    absp_T_cross: jnp.ndarray  # (n_absp_T, nz, nbin) T-dep total cross
     scat_cross: jnp.ndarray  # (n_scat, nbin)
     cross_J: jnp.ndarray  # (n_br, nbin)
     cross_J_T: jnp.ndarray  # (n_br_T, nz, nbin)
-    cross_Jion: jnp.ndarray  # (n_ion_br, nbin)  -- (0, nbin) when use_ion=False
+    cross_Jion: jnp.ndarray  # (n_ion_br, nbin) -- (0, nbin) when use_ion=False
 
     def with_din12_indx(self, idx: int) -> PhotoStaticInputs:
         """Return a new pytree with `din12_indx` set; rejects negative values."""
@@ -150,9 +150,9 @@ class PhotoStaticInputs(NamedTuple):
 class StepInputs(NamedTuple):
     """Time-stepping state. `y_evo`/`t_evo` are zero-length when save_evolution=False."""
 
-    y: jnp.ndarray  # (nz, ni)  current number density
-    y_prev: jnp.ndarray  # (nz, ni)  last accepted state
-    ymix: jnp.ndarray  # (nz, ni)  mixing ratios
+    y: jnp.ndarray  # (nz, ni) current number density
+    y_prev: jnp.ndarray  # (nz, ni) last accepted state
+    ymix: jnp.ndarray  # (nz, ni) mixing ratios
     t: float  # integration time
     dt: float  # current step size
     longdy: float  # long-window dy (Tsai+17 eq 10)

@@ -99,13 +99,11 @@ def steady_state_reaction_sensitivity(
     right-hand sides; `info["ensemble_spread"]` (twin disagreement) is the
     magnitude error bar.
 
-    Accuracy is limited by the linear solve and by the finite-tolerance
-    mismatch between the exact fixed point and the state the forward run
-    stopped at. The usable `body_dt` window is column-dependent: for
-    publication-grade magnitudes loop over `BODY_MAP_DT_CANDIDATES` and
-    inspect `info["resid_median"]` / `info["ensemble_spread"]` per candidate. For `dL/dT`, `dL/dKzz`, ... use
-    `steady_state_input_sensitivity`; forward-mode `jvp` is exact for a
-    handful of directions.
+    Accuracy is limited by the linear solve and by the finite-tolerance mismatch between the exact fixed point and the
+    state the forward run stopped at. The usable `body_dt` window is column-dependent: for publication-grade magnitudes
+    loop over `BODY_MAP_DT_CANDIDATES` and inspect `info["resid_median"]` / `info["ensemble_spread"]` per candidate. For
+    `dL/dT`, `dL/dKzz`, ... use `steady_state_input_sensitivity`; forward-mode `jvp` is exact for a handful of
+    directions.
 
     Parameters
     ----------
@@ -119,8 +117,8 @@ def steady_state_reaction_sensitivity(
         degrades `info["null_quality"]`.
         Clip and charge balance are outside the body map; condensation,
         fix-species and bottom pins enter it only through `body_terms`: run
-        `audit_adjoint_scope(...)` first (its per-cell defect
-        scan also catches what the global max-norm `fp_err` masks).
+        `audit_adjoint_scope(...)` first (its per-cell defect scan also
+        catches what the global max-norm `fp_err` masks).
     k_arr : jnp.ndarray [nr + 1, nz]
         Converged rate-constant table.
     atm : AtmStatic
@@ -139,9 +137,8 @@ def steady_state_reaction_sensitivity(
         On photo-on columns pass `make_photo_recompute_k(integ.photo_static,
         final_state)`, a `k(y) -> k_arr` recompute so the state operator
         carries `dJ/dy` (WASP-39b OH+H2 11% -> 0.2%); it costs an RT solve per
-        Krylov matvec. `None` (default) means no photolysis
-        feedback and raise on a column with active photolysis rows (no
-        frozen-photolysis adjoint).
+        Krylov matvec. `None` (default) means no photolysis feedback and raise
+        on a column with active photolysis rows (no frozen-photolysis adjoint).
     body_terms : BodyTerms or None
         Optional `BodyTerms` (condensation composite, fix_species pins,
         layer-0 boundary pins). Required when the state converged with
@@ -165,7 +162,7 @@ def steady_state_reaction_sensitivity(
         `fp_err`, `null_quality` (O(1) = a deflated direction is not null and
         the deflation is suspect), `resid`/`resid_median`/`resids`,
         `ensemble_spread` (top-10 (max-min)/|mean|; 0.0 when n_solves=1),
-        `pair_antisym` (diagnostic only; see the module docstring),
+        `pair_antisym` (diagnostic only; docs/method.md),
         `n_matvec`, `n_null`, `n_solves`, `body_dt`, and the mode flags.
 
     Raises
@@ -217,7 +214,7 @@ def steady_state_reaction_sensitivity(
 
     # Forward/reverse pair antisymmetry over the top `_TOP_K`: near partial
     # equilibrium dL/dln k_f ~ -dL/dln k_r, so |g_f+g_r|/max(|g_f|,|g_r|)
-    # should be small. Diagnostic only (see module docstring); photolysis /
+    # should be small. Diagnostic only (docs/method.md); photolysis /
     # irreversible rows (all-zero reverse k) are skipped.
     g_mean_full = np.asarray(dL_dlnk)
     k_np = np.asarray(k_arr)
@@ -292,10 +289,9 @@ def steady_state_input_sensitivity(
 
         dL/dp = lambda^T dG/dp ,   G(p) = post(ros2_step(y*, k(p), dt, atm(p)))
 
-    so all components of `p` cost one solve plus one VJP. The renormalization
-    uses `atm(p).M`, so an input that moves the total density (temperature:
-    M = pco/(kb T)) is differentiated through the rebalance too. The arguments shared with
-    `steady_state_reaction_sensitivity` are documented in full there.
+    so all components of `p` cost one solve plus one VJP. The renormalization uses `atm(p).M`, so an input that moves
+    the total density (temperature: M = pco/(kb T)) is differentiated through the rebalance too. The arguments shared
+    with `steady_state_reaction_sensitivity` are documented in full there.
 
     Parameters
     ----------
@@ -469,11 +465,10 @@ def make_photo_recompute_k(
 ) -> Callable[[jnp.ndarray], jnp.ndarray]:
     """Build a differentiable `k(y)` that rebuilds the photolysis rows from y.
 
-    Reuses the runner's own in-loop photo branch so the recompute is
-    bit-identical to the forward model's photolysis (optical depth ->
-    two-stream RT -> J-rates -> photolysis rows of `k_arr`). The RT sweeps
-    are `lax.associative_scan`s, hence reverse-mode differentiable, so passing the result
-    as `photo_recompute_k` makes the state operator carry `dJ/dy`.
+    Reuses the runner's own in-loop photo branch so the recompute is bit-identical to the forward model's photolysis
+    (optical depth -> two-stream RT -> J-rates -> photolysis rows of `k_arr`). The RT sweeps are
+    `lax.associative_scan`s, hence reverse-mode differentiable, so passing the result as `photo_recompute_k` makes the
+    state operator carry `dJ/dy`.
 
     Parameters
     ----------

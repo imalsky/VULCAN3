@@ -68,9 +68,10 @@ def _jac_gather_tables(net: Network) -> tuple[tuple, jnp.ndarray]:
     products, of `signed stoich_i * drate_dy[r, s]`. The pairs are listed
     per entry in (r, s) order and bucketed by power-of-two padded length, so
     the assembly is a gather, one fixed-order sum per entry
-    (`_left_to_right_sum_axis1`) and a final gather into the dense block: no scatter-add, hence one summation
-    order on every backend and in every program (a GPU scatter-add is atomic
-    and reorders run to run) and no chunked transient.
+    (`_left_to_right_sum_axis1`) and a final gather into the dense block: no
+    scatter-add, hence one summation order on every backend and in every
+    program (a GPU scatter-add is atomic and reorders run to run) and no
+    chunked transient.
     Returns `(terms, place)`: `terms` is a tuple of `(r, s, coef)` int32 /
     int32 / float64 tables of shape (entries, width) with zero-coefficient
     pads, and `place[i * ni + j]` indexes the concatenated per-entry sums,

@@ -60,8 +60,8 @@ _CFG = default_config()
 
 # --- the equilibrium seed ---------------------------------------------------
 # Network-frozen inputs (species, elements, NASA-9 coefficients) are resolved
-# once, on first use (`_seed`); everything the config owns is read at call time, because
-# `state._cfg_overlay` rewrites `_CFG` per run.
+# once, on first use (`_seed`); everything the config owns is read at call
+# time, because `state._cfg_overlay` rewrites `_CFG` per run.
 
 
 def _abundance_path() -> Path:
@@ -253,9 +253,8 @@ def _eq_seed_lanes(axis_size: int, in_batched: list[bool], Tco: jnp.ndarray, p_b
     """Batched seed: the unbatched program once per lane, in a `lax.map`.
 
     A vmapped minimizer computes a lane in another order than the solo one,
-    so a lane's seed
-    would depend on how many lanes are seeded with it, and the solver
-    amplifies that to the convergence scale. The map calls the wrapped
+    so a lane's seed would depend on how many lanes are seeded with it, and
+    the solver amplifies that to the convergence scale. The map calls the wrapped
     function, so a nested `vmap` also runs lane by lane.
     """
     args = tuple(

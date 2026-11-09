@@ -262,8 +262,8 @@ def _repair_stage(
     One scalar tridiagonal solve `(c0 - T_rho) c = g` per reservoir. `n_tot` is the (nz, 1) layer density;
     the reservoir cells of `y` (the step's start state) bound the correction.
 
-    At small c0 = 1/(gamma dt) the pivoted LU leaks elements.
-    A defect is corrected only above both `_DEFECT_FLOOR` of its terms and
+    At small c0 = 1/(gamma dt) the pivoted LU leaks elements. A defect is
+    corrected only above both `_DEFECT_FLOOR` of its terms and
     `REPAIR_ABS_FLOOR` of the layer density. Pinned layers are skipped. A
     correction over `_REPAIR_MAX_CELL_FRAC` of its carrier is dropped. Not in
     VULCAN 2.0 (op.py:2914, :2929).
@@ -606,7 +606,7 @@ def _apply_diffusion_jax(
     )
 
 
-# gamma = 1 + 1/sqrt(2) (Verwer et al. 1997; op.py). The transport Jacobian
+# gamma = 1 + 1/sqrt(2) (Verwer et al. 1999; op.py). The transport Jacobian
 # omits the ysum coupling, so this is a second-order W-method, as in both
 # upstreams.
 _ROS2_GAMMA = 1.0 + 2.0**-0.5
@@ -782,9 +782,8 @@ def make_atm_static(atm: types.SimpleNamespace, ni: int, nz: int, cfg: Config | 
     nz : int
         Number of layers.
     cfg : Config or None, optional
-        Transport toggles. None takes the process default; OuterLoop passes its own cfg so the
-        toggles honor a load_config() cfg (this runs at integration
-        time, after state._cfg_overlay has restored the default).
+        Transport toggles. None takes the process default; OuterLoop passes its own cfg so the toggles honor a
+        load_config() cfg (this runs at integration time, after state._cfg_overlay has restored the default).
 
     Returns
     -------
@@ -799,9 +798,8 @@ def make_atm_static(atm: types.SimpleNamespace, ni: int, nz: int, cfg: Config | 
     use_botflux = bool(cfg.use_botflux)
     gas_mask = jnp.zeros((ni,), dtype=jnp.bool_)
     gas_mask = gas_mask.at[jnp.asarray(atm.gas_indx, dtype=jnp.int32)].set(True)
-    # Independent of the toggles above (see the diff_esc note at the Jacobian
-    # assembly). Nothing checks these names against the network
-    # first, so a species not in the network raises ValueError here.
+    # Independent of the toggles above (see the diff_esc note at the Jacobian assembly). Nothing checks these names
+    # against the network first, so a species not in the network raises ValueError here.
     diff_esc_np = np.zeros((ni,), dtype=bool)
     for _sp in cfg.diff_esc:
         diff_esc_np[_spec_list.index(_sp)] = True

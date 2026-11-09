@@ -252,7 +252,7 @@ def _interp_descending_or_ascending(
 ) -> np.ndarray:
     """`scipy.interp1d(bounds_error=False, fill_value=(left, right))` via `jnp.interp`.
 
-    Sorts `xp` ascending on the host so `jnp.interp` is happy.
+    `jnp.interp` needs ascending `xp`, so it is sorted on the host.
     """
     xp_raw = np.asarray(xp_raw, dtype=np.float64)
     fp_raw = np.asarray(fp_raw, dtype=np.float64)

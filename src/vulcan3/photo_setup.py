@@ -91,11 +91,9 @@ def _make_bins(
 ) -> np.ndarray:
     """Two-resolution wavelength bin grid (nm).
 
-    The transition must lie strictly inside the modeled interval. Upstream
-    (op.py:583-585) accepts the endpoints and falls back to a single dbin1-spaced grid outside
-    them, with
-    `sflux_din12_indx = -1`, which its compute_J then slices as `bins[:-1]`;
-    refused here instead.
+    The transition must lie strictly inside the modeled interval. Upstream (op.py:583-585) accepts the endpoints and
+    falls back to a single dbin1-spaced grid outside them, with `sflux_din12_indx = -1`, which its compute_J then slices
+    as `bins[:-1]`; refused here instead.
     """
     values = (bin_min, bin_max, dbin1, dbin2, dbin_12trans)
     if not all(np.isfinite(values)) or dbin1 <= 0.0 or dbin2 <= 0.0:
@@ -120,8 +118,7 @@ def _sort_pairs(xp: np.ndarray, fp: np.ndarray) -> tuple[np.ndarray, np.ndarray]
     """Sort `(xp, fp)` by `xp`.
 
     scipy.interpolate.interp1d sorts internally; np.interp does not. So non-monotonic data files (e.g. CH3SH_branch.csv
-    has a typo `354.0` between `253.5` and `309.5`) need an
-    explicit sort.
+    has a typo `354.0` between `253.5` and `309.5`) need an explicit sort.
     """
     order = np.argsort(xp, kind="stable")
     return xp[order], fp[order]

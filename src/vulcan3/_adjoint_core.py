@@ -254,10 +254,9 @@ def _make_body_map(
     def step_fn(y: jnp.ndarray, k_use: jnp.ndarray, atm_use: AtmStatic) -> jnp.ndarray:
         # Reverse mode through the step: the dense stage operator
         # (`matrix_free=False`, jax_step._ros2_stages).
-        # fix_species regime: pin inside the step (pinned rows zeroed off the diagonal, RHS zeroed)
-        # then
-        # overwrite with the pinned values, so pinned rows are constants of
-        # the map (identity rows of I - dG/dy), not singular pass-throughs.
+        # fix_species regime: pin inside the step (pinned rows zeroed off the diagonal, RHS zeroed), then overwrite
+        # with the pinned values, so pinned rows are constants of the map (identity rows of I - dG/dy), not singular
+        # pass-throughs.
         sol: jnp.ndarray
         if t is not None and t.fix_mask is not None:
             sol, _ = jax_ros2_step(y, k_use, dt64, atm_use, net, fix_mask=t.fix_mask, matrix_free=False)

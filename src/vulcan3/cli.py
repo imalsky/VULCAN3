@@ -122,7 +122,6 @@ def cli_main(argv: list[str] | None = None) -> None:
     # Before any validation: a config naming a non-default network can only be
     # honored by a process that imported vulcan3 with it already selected.
     _relaunch_for_frozen_knobs(cfg, args.config)
-    # Validates cfg before any setup work.
     runstate = RunState.with_pre_loop_setup(cfg)
 
     dname = str(Path.cwd())

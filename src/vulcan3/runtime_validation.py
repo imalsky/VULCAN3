@@ -127,7 +127,6 @@ def _validate_network_assets(cfg: Config) -> list[str]:
     if not com_path.exists():
         return errors  # file-existence error already captured by caller
 
-    # Read species column from composition table.
     with Path(com_path).open() as f:
         header = f.readline().split()
         rows = {r[0]: r[1:] for r in (line.split() for line in f) if r}
@@ -223,7 +222,7 @@ def _validate_numerical_bounds(cfg: Config) -> list[str]:
     dt_min, dt_max = float(cfg.dt_min), float(cfg.dt_max)
     if not dt_min < dt_max:
         errors.append(f"dt_min={dt_min:g} must be < dt_max={dt_max:g}.")
-    # The retry budget is inert (notes "Parity ledger" C11): master's only give-up is dt_min. Another value, or a chain
+    # The retry budget is inert (notes "Parity ledger"): master's only give-up is dt_min. Another value, or a chain
     # that outlasts the budget, would force-accept a failed step above the floor.
     if float(cfg.batch_max_retries) != _RETRY_BUDGET:
         errors.append(f"batch_max_retries={cfg.batch_max_retries} must be {_RETRY_BUDGET}: remove the key.")
@@ -263,10 +262,9 @@ def _validate_condensation(cfg: Config) -> list[str]:
 
     Forward-run validation only, applied to every consumer identically.
 
-    NOTE: the completed *pinned* condensation state is not
-    differentiable-through (transient snapshot, discrete phase switches); that
-    contract is enforced at the autodiff entry points in
-    `steady_state_grad.py`, not here (see README.md, Limits).
+    The completed *pinned* condensation state is not differentiable-through
+    (transient snapshot, discrete phase switches); the autodiff entry points in
+    `steady_state_grad.py` enforce that, not this check (README.md, Limits).
     """
     if not bool(cfg.use_condense):
         return []
