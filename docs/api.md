@@ -50,6 +50,8 @@ These are the objects' own attributes and modules, not aliases, and may change. 
 | `Ros2JAX._photo_static` | `Ros2JAX.photo_static` |
 | `vulcan3._paths.resolve_data_path` | `vulcan3.paths.resolve_data_path` |
 
+## Removed names
+
 `steady_state_grad.LGMRES_*` are removed: rebinding them never reached the solve, whose settings live in `_adjoint_core`.
 `steady_state_grad.PHOTO_RECOMPUTE_AUTO` and the `photo_recompute_k="auto"` spelling are removed: they meant the same as
-`None`, now the default.
+`None`, the default.
