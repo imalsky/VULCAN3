@@ -5,8 +5,8 @@
       "bytes": 1635884,
       "generator": "tests/_gen_photo_baseline.py",
       "note": "HD189 photo cross-section setup (default and T-dependent)",
-      "generated_utc": "2026-10-31T12:43:42Z",
-      "vulcan3_commit": "709407d24590cddcc0aeb5e5f9278f878ce9f15b-dirty",
+      "generated_utc": "2026-11-09T23:40:12Z",
+      "vulcan3_commit": "38a0f6de1ca8f9803fc5b2eae9e4131d7de23114",
       "platform_machine": "arm64",
       "versions": {
         "python": "3.12.14",
@@ -17,7 +17,7 @@
         "vulcan3": "0.18.0"
       },
       "config_sha256_16": {
-        "default.yaml": "45a04b0a32fc2b68",
+        "default.yaml": "fe046c6a0dbf9e8f",
         "W39b.yaml": "9c6140722e5ab77c",
         "HD189.yaml": "356b489e4445a0d0",
         "HD209.yaml": "22aaa4aeb946cc13"
@@ -28,8 +28,8 @@
       "bytes": 32547752,
       "generator": "tests/_gen_photo_baseline.py",
       "note": "HD189 photo cross-section setup (default and T-dependent)",
-      "generated_utc": "2026-10-31T12:43:42Z",
-      "vulcan3_commit": "709407d24590cddcc0aeb5e5f9278f878ce9f15b-dirty",
+      "generated_utc": "2026-11-09T23:40:12Z",
+      "vulcan3_commit": "38a0f6de1ca8f9803fc5b2eae9e4131d7de23114",
       "platform_machine": "arm64",
       "versions": {
         "python": "3.12.14",
@@ -40,19 +40,19 @@
         "vulcan3": "0.18.0"
       },
       "config_sha256_16": {
-        "default.yaml": "45a04b0a32fc2b68",
+        "default.yaml": "fe046c6a0dbf9e8f",
         "W39b.yaml": "9c6140722e5ab77c",
         "HD189.yaml": "356b489e4445a0d0",
         "HD209.yaml": "22aaa4aeb946cc13"
       }
     },
     "adj_state_hd189.npz": {
-      "sha256": "729039fd85dcc88a279dab06969d2161e95fd0872604a1213893d0c32ac7e07d",
-      "bytes": 1414716,
+      "sha256": "f8b638990cc4f04b13badad85c748485e50791fa7a4a672fa7a4590bcc8f6945",
+      "bytes": 1412316,
       "generator": "tests/_gen_adj_state.py hd189",
       "note": "HD189 converged state, photo OFF, C-H-N-O network",
-      "generated_utc": "2026-10-31T12:43:42Z",
-      "vulcan3_commit": "709407d24590cddcc0aeb5e5f9278f878ce9f15b-dirty",
+      "generated_utc": "2026-11-09T23:40:12Z",
+      "vulcan3_commit": "38a0f6de1ca8f9803fc5b2eae9e4131d7de23114",
       "platform_machine": "arm64",
       "versions": {
         "python": "3.12.14",
@@ -63,19 +63,19 @@
         "vulcan3": "0.18.0"
       },
       "config_sha256_16": {
-        "default.yaml": "45a04b0a32fc2b68",
+        "default.yaml": "fe046c6a0dbf9e8f",
         "W39b.yaml": "9c6140722e5ab77c",
         "HD189.yaml": "356b489e4445a0d0",
         "HD209.yaml": "22aaa4aeb946cc13"
       }
     },
     "adj_state_w39b.npz": {
-      "sha256": "8d01df55f0d8526899a0b2c948de874f8b066d8e44f9ea8b48e9682110b5f4af",
+      "sha256": "535f4bbe83a17d1a7c82ab829cf7123ef737ef398939e401b5581d17426825a1",
       "bytes": 1908258,
       "generator": "tests/_gen_adj_state.py w39b",
       "note": "WASP-39 b converged state, photo ON (frozen), SNCHO network",
-      "generated_utc": "2026-10-31T12:43:42Z",
-      "vulcan3_commit": "709407d24590cddcc0aeb5e5f9278f878ce9f15b-dirty",
+      "generated_utc": "2026-11-09T23:40:12Z",
+      "vulcan3_commit": "38a0f6de1ca8f9803fc5b2eae9e4131d7de23114",
       "platform_machine": "arm64",
       "versions": {
         "python": "3.12.14",
@@ -86,19 +86,19 @@
         "vulcan3": "0.18.0"
       },
       "config_sha256_16": {
-        "default.yaml": "45a04b0a32fc2b68",
+        "default.yaml": "fe046c6a0dbf9e8f",
         "W39b.yaml": "9c6140722e5ab77c",
         "HD189.yaml": "356b489e4445a0d0",
         "HD209.yaml": "22aaa4aeb946cc13"
       }
     },
     "state_hd209.npz": {
-      "sha256": "c4588ec2339b4c33e5d41d7ff519b9ca1f3eb57f8fa9e878718a2b677f6fe6d6",
-      "bytes": 1141684,
+      "sha256": "fc6984750c2367affde2d955c35ecd5e4ce597a6977858ee0e2382658a6b7bf7",
+      "bytes": 1139284,
       "generator": "tests/_gen_adj_state.py hd209",
       "note": "HD209 converged state (shipped config, photo ON), C-H-N-O network",
-      "generated_utc": "2026-10-31T12:43:42Z",
-      "vulcan3_commit": "709407d24590cddcc0aeb5e5f9278f878ce9f15b-dirty",
+      "generated_utc": "2026-11-09T23:40:12Z",
+      "vulcan3_commit": "38a0f6de1ca8f9803fc5b2eae9e4131d7de23114",
       "platform_machine": "arm64",
       "versions": {
         "python": "3.12.14",
@@ -109,7 +109,7 @@
         "vulcan3": "0.18.0"
       },
       "config_sha256_16": {
-        "default.yaml": "45a04b0a32fc2b68",
+        "default.yaml": "fe046c6a0dbf9e8f",
         "W39b.yaml": "9c6140722e5ab77c",
         "HD189.yaml": "356b489e4445a0d0",
         "HD209.yaml": "22aaa4aeb946cc13"
