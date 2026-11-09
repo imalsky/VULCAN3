@@ -830,6 +830,7 @@ else:
 @pytest.mark.skipif(shutil.which("c++") is None, reason="the ffi CPU kernel needs a C++ compiler")
 def test_ffi_refuses_reverse_mode():
     env = dict(os.environ, VULCAN3_SOLVER="ffi", JAX_PLATFORMS="cpu")
+    env.pop("JAX_PLATFORM_NAME", None)  # a GPU job exports "gpu", which jax refuses once the platforms are CPU only
     res = subprocess.run(
         [sys.executable, "-c", _FFI_REVERSE_CHILD], capture_output=True, text=True, env=env, timeout=600, check=False
     )
