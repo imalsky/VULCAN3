@@ -2,64 +2,36 @@
 
 Evidence for these items is in `notes.md` (this repo's, unless another repo is named).
 
-1. [decision] Claim `vulcan3` on PyPI: the README installs put TestPyPI first, so a TestPyPI package can shadow its PyPI namesake.
-2. [unverified] The Jacobian power change (`chem._jac_pow_tables`) is bitwise only where measured, on CPU: check on a GH200 that it leaves a W39b batch unchanged.
-3. [decision] The arm64 full tier fails `test_fast_on_real_w39b_blocks[fast]`: on the W39b 2025-network fixture the matrix-free step's primal under `jvp` is not bitwise the plain step's (bitwise on x86-64).
-4. [owed] Re-baseline after the C25-C29 data and step-control fixes and the C30 extension to dissociations: the arm64 fixture manifest, the arm64 gate reading and the oracle comparisons (`oracle.yml`).
-5. [owed] Rebuild the CUDA kernel on the NAS and check `ffi` on a GH200: the code cleanup changed the kernel sources, and its proof of `ffi` ran on CPU only.
+1. [stale] The paper's GPU throughput figure and text come from VULCAN-JAX 0.6.0: rerun the GH200 batch sweep on the current release.
+2. [owed] Re-baseline after the C25-C29 data and step-control fixes and the C30 extension to dissociations: the arm64 full tier and the oracle comparisons (`oracle.yml`).
+3. [owed] Rebuild the CUDA kernel on the NAS and check `ffi` on a GH200: the code cleanup changed the kernel sources, and its proof of `ffi` ran on CPU only.
 
-## 1. vulcan3 on PyPI
+## 1. GH200 throughput rerun for the paper
 
-The name was unclaimed on pypi.org on 2026-10-16 (404), as `vulcan-jax` was.
-Every README installs with `-i https://test.pypi.org/simple/ --extra-index-url
-https://pypi.org/simple/`, and the 2026-10-16 install tests took `psutil 8.0.0`,
-`python-dateutil 3.9.0` and `radis 0.16.4` from TestPyPI. Claiming the name needs
-the maintainer's pypi.org account. Commands: `uv build --out-dir <dir> .` in this
-repo, then `uv run --with twine twine upload <dir>/*`. Publishing all four packages
-on PyPI would let the READMEs drop the TestPyPI index. The 0.18.0 TestPyPI release
-and its tag have no record on daw; vulcan-retrieval's todo lists confirming them. Done when the name is claimed (and, if decided, the
-packages are published).
+Evidence: jax_paper/notes.md "Current state" (owed list). The paper's GPU
+throughput figure and its Parallelism-section text (0.010 -> 0.76 profiles/s,
+~75x, batch 256, "tens of GB") are hard-coded in
+`jax_paper/scripts/fig_gpu_throughput.py` and `jax_paper/data/gpu_throughput.json`
+from NAS job 61453 on 0.6.0. That job's log is not on disk; the json gives 76.3x,
+and no peak memory or per-lane convergence is recorded. Needs the maintainer's NAS
+login. Run the same sweep on the current release on one GH200: HD 189733 b-like,
+nz 150, `ini_mix` EQ, `use_photo` False, `count_max` 2500, batch sizes 1, 2, 4, ...,
+256, each batch converged in vmap'd compiled calls; record the total wall per batch
+(compile included), each lane's end state and the peak device memory. The 0.6.0 wall
+times sum to about 30 min of GPU time. Done when the figure, the json and the paper
+text carry the new run's numbers and jax_paper/notes.md names the run.
 
-## 2. GH200 bitwise check of the Jacobian power change
+## 2. Re-baseline after C25-C29
 
-Evidence: notes "Efficiency program" (the stoich >= 2 power row). The change drops
-`pow(y, 1)` for `y` on every stoichiometry-1 slot; XLA:CPU returns `y` from
-`pow(y, 1)`, so CPU runs are bitwise, but no GPU guarantee is documented (libdevice
-pow, subnormals kept on GPU). Needs the maintainer's NAS login. Steps on a GH200:
-(1) under `jax.jit`, compare the uint64 bits of `jnp.power(x, e)` with a runtime
-exponent `e = 1.0` against `x` over signed binades, boundary mantissas, subnormals,
-zeros, inf and NaN; (2) run one W39b production batch (vulcan-retrieval's v5 shape,
-`VULCAN3_SOLVER=ffi`, grouped RHS) at the commit before the change and at the change,
-and compare per-draw step counts and converged `y` bit for bit. Done when both match
-(record it in the notes row), or the size of any mismatch is recorded for the
-maintainer.
-
-## 3. arm64: matrix-free primal under jvp
-
-Evidence: notes "Efficiency program" (matrix-free row). `check_matrix_free`
-(`tests/test_solver_fast.py`) asserts on CPU that the step's primal under `jax.jvp`
-is the same with the matrix-free and the dense stage operator. On the laptop
-(arm64) the W39b 2025-network fixture gives 1.1e-11 to 2.6e-9 over the six cases
-(dense vs plain step: 0), identically before the speed changes; on daw (x86-64) all
-six are 0, and HD189 is 0 on both machines. Choose: an arm64 bar (as
-for the grouped RHS), an arm64 xfail, or keeping the operator's primal RHS from
-fusing with the step's. Command: `VULCAN3_RUN_SLOW=1 python -m pytest
-"tests/test_solver_fast.py::test_fast_on_real_w39b_blocks" -q`. Done when the arm64
-full tier passes and the notes row states the CPU scope.
-
-## 4. Re-baseline after C25-C29
-
-Evidence: notes "Parity ledger" C25-C32. The step-count gates are re-pinned to x86-64's
-counts. Left: the tracked `tests/data/FIXTURES.json` is the arm64 laptop manifest from before
-these fixes. Steps: on the laptop `python tests/gen_fixtures.py --all --force` and commit the
-manifest; run `VULCAN3_RUN_SLOW=1 python -m pytest tests -n 12 -q` and check that the gates
-read HD189 1495, HD209 1206, W39b 1084 there (a different count means the record of
-machine-independent gates fails: record it, do not re-pin); dispatch `oracle.yml`
+Evidence: notes "Parity ledger" C25-C32 and "Current state". The step-count gates read the
+x86-64 counts on arm64 too, and the tracked arm64 manifest is rebuilt. Left: on the laptop
+`VULCAN3_RUN_SLOW=1 python -m pytest tests -n 12 -q` (the whole full tier; only the gates and
+`test_solver_fast.py` were run), and a green `oracle.yml` dispatch at this code
 (`VULCAN_MASTER_DIR` at 80f75b9: the oracle copy gets the corrected files through
-`tests/oracle.py::ORACLE_DATA_DELTAS`). Done when the manifest is committed and the arm64 full
-tier and the oracle workflow pass.
+`tests/oracle.py::ORACLE_DATA_DELTAS`). Done when both pass and "Current state" names the
+dispatch.
 
-## 5. NAS rebuild and `ffi` check after the cleanup
+## 3. NAS rebuild and `ffi` check after the cleanup
 
 Evidence: notes "Cleanup proofs". The kernel sources were reformatted, so a library built
 before the cleanup is refused until it is rebuilt. Lowered `ffi` programs moved when reverse

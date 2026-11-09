@@ -15,15 +15,15 @@ notes (the NAS `analysis/` tree no longer exists).
   Releases before 0.18.0 were `vulcan-jax`. 0.18.0 is on TestPyPI, not on PyPI [I].
 - Consumers floor `vulcan3>=0.18.0`. Production: vulcan-retrieval's WASP-39b on NAS GH200s (2025 SNCHO file, ni 93; v5
   ran the 2021 file, ni 89; `ffi`, grouped RHS).
-- Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209 1206, W39b 1084 on x86-64 [M]
-  ("Parity ledger", below table A); arm64 not read at this code (todo). HD189_vulcan3 is not in that test: 2603 on
+- Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209 1206, W39b 1084 on x86-64 and
+  on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test: 2603 on
   arm64 before C25; on x86-64 it certifies at 7801 steps on one CPU, 7802 on three, with the nega_cut of -1e4 [M].
-- The arm64 full tier fails one W39b case (todo). `oracle.yml` is `workflow_dispatch` only; last green dispatch at
-  `b372e65`. On daw (x86-64, CPU) the full tier with the pinned clone gives 441 passed, 38 skipped [M]; every
+- `oracle.yml` is `workflow_dispatch` only; last green dispatch at
+  `e91db66`. On daw (x86-64, CPU) the full tier with the pinned clone gives 441 passed, 38 skipped [M]; every
   skip is a GPU or arm64 case. The two oracle tests of todo 6 pass only through the delta.
 - Oracle clones (revisions in `tests/science_sources.yaml`, path in the header above) are clean on daw with `core.fileMode false`.
-- Fixtures: the tracked `FIXTURES.json` is the arm64 manifest of a laptop rebuild at `709407d` plus the speed pass,
-  made before C25-C29 and now stale (todo). daw's `tests/data` is an x86-64 rebuild; `--all` and `--verify` use the
+- Fixtures: the tracked `FIXTURES.json` is the arm64 manifest of a laptop rebuild at the C30 code (each record
+  names its commit). daw's `tests/data` is an x86-64 rebuild; `--all` and `--verify` use the
   gitignored `FIXTURES.x86_64.json` there. A manifest record names the run that made that file, so `--all` over
   present files changes no record and checks each.
 
@@ -63,13 +63,13 @@ parity gates are solo runs and every change kept them.
 | Solo body reads the written y ring for the convergence lookback (`body_fn` without `defer_ring`): a read of the pre-write ring after the in-place write made XLA:CPU copy the (500, 150, 69) ring twice an iteration (optimized HLO) | solo runners (CLI, `runner`, `run_jvp`) | bitwise (same values); HD189 / HD209 / W39b-paper CLI runs bitwise (daw) | fresh HD189 CLI 74.2 -> 67.2 s, 1.10x (daw, one core, 3-run medians) |
 | Tail compaction (`queue_compact`), `01f1558`, `d7021cb` | off (`queue_compact: []`) | bitwise per job in tests; the retry pass at width 320 is roundoff-level | pass 1 520 -> 344 s |
 | Compacted tail loops run the main body, `eeb4873` | with compaction | bitwise (2376-job batch) | removes a 5.6 GB/tick ring copy at 264 lanes; with vulcan-retrieval's speed2 changes pass 1 344.0 -> 287.3 s |
-| Matrix-free stage operator (`jax_ros2_step(matrix_free=True)`) | forward mode; reverse mode and the never-differentiated CLI chunk runner pass `False` | primal bitwise on x86-64 CPU, on arm64 for HD189 (arm64 W39b 2025 fixture under `jvp`: 1e-11..2.6e-9, todo); tangent within 8.5e-5 of dense; the chunk runner's dense operator is bitwise (the primal never runs it) | CPU gradient step 4.49x -> 1.58x the primal; GH200 1.21-1.27x; the VJP is 1.9-3.2x slower, hence off in reverse; tracing the matrix-free RHS jvp cost each CLI run 5.6 s (11.1 -> 5.5 s, daw) |
+| Matrix-free stage operator (`jax_ros2_step(matrix_free=True)`) | forward mode; reverse mode and the never-differentiated CLI chunk runner pass `False` | primal bitwise on x86-64 CPU, on arm64 for HD189 (arm64 W39b 2025 fixture under `jvp`: 1.1e-11..2.6e-9, the maintainer chose an arm64 bar of 1e-8); tangent within 8.5e-5 of dense; the chunk runner's dense operator is bitwise (the primal never runs it) | CPU gradient step 4.49x -> 1.58x the primal; GH200 1.21-1.27x; the VJP is 1.9-3.2x slower, hence off in reverse; tracing the matrix-free RHS jvp cost each CLI run 5.6 s (11.1 -> 5.5 s, daw) |
 | Batched `while_loop` above `vmap(axis_name="lane")`, conds on a `psum` predicate | `run_batch`, `run_queue` | lanes bitwise independent of width; batch vs solo differs (HD189 1337 vs 1495 steps, composition 5.4e-5) | photolysis no longer runs on every lane each iteration (a vmapped `lax.cond` lowers to `select_n`) |
 | `run_queue` lane refill | API | bitwise `run_batch` if `n_lanes >= n_jobs`; else 5.1e-13 photo off, 7.0e-4 on | see the lane-count row |
 | `_QUEUE_STOP_FIELDS` (stop gradient of certificate-only lane fields) | on | bitwise | XLA:CPU temp 588 -> 330 MiB at 2 lanes |
 | `run_jvp` direction axis | on | D=6 primal bitwise; stacked vs single 1.9e-16 | retrieval cold gradient 2.74x the primal at 132 lanes (op-count floor ~1.5x) |
 | Gather-table analytical Jacobian (`chem._jac_gather_tables`, `_left_to_right_sum_axis1`) | on | bitwise vs the old chunked scatter on every case measured (not a general identity) | assembly 2.3-2.5x, primal step 1.3x (CPU); GH200 primal 1.13x, gradient 1.03x; temp buffers halved |
-| Jacobian powers only on the stoich >= 2 slots, a stoich-1 factor is y (`chem._jac_pow_tables`) | always | CPU bitwise: HD189 / HD209 / W39b-paper CLI runs (daw), the HD189 photo-off and W39b converged fixtures byte-identical (arm64), J with its jvp and vjp at 2%-zeroed cells, a 4-lane vmap and the step's jvp (daw); the J vjp's k-cotangent was 1 ulp off in <= 7 of 131850 entries at perturbed states; GPU unmeasured (todo) | Jacobian 4.4x (daw, HD189 converged, 7.54 -> 1.71 ms); with the chunk-runner change, fresh HD189 CLI 93.6 -> 74.2 s, 1.26x (daw, one core, 3-run medians) |
+| Jacobian powers only on the stoich >= 2 slots, a stoich-1 factor is y (`chem._jac_pow_tables`) | always | CPU bitwise: HD189 / HD209 / W39b-paper CLI runs (daw), the HD189 photo-off and W39b converged fixtures byte-identical (arm64), J with its jvp and vjp at 2%-zeroed cells, a 4-lane vmap and the step's jvp (daw); the J vjp's k-cotangent was 1 ulp off in <= 7 of 131850 entries at perturbed states; GPU unmeasured (not tracked, the maintainer decided) | Jacobian 4.4x (daw, HD189 converged, 7.54 -> 1.71 ms); with the chunk-runner change, fresh HD189 CLI 93.6 -> 74.2 s, 1.26x (daw, one core, 3-run medians) |
 | Repair tridiagonal as rolled pivoted scans (`jax_step._tridiagonal_solve`, unroll 8) | on | LAPACK dgtsv to roundoff; bitwise on the gates | GH200 `ffi` gradient 343.0 -> 151.8 ms/step at 132 lanes |
 | Two-stream sweeps as `lax.associative_scan` | on | 1.9e-16 vs the sequential sweep | not recorded |
 | ExoGibbs EQ seed per lane (`custom_vmap` + `lax.map`) | on | lane bitwise independent of batch width | CPU batched seeding 1.0-1.5x slower (accepted) |
@@ -856,6 +856,8 @@ copy keeps the limit through `ORACLE_CODE_DELTAS`: it is the declared-defect mec
 
 ## Known and deliberately untracked
 
+- `vulcan3` is unclaimed on PyPI while the README installs put TestPyPI first, so a TestPyPI package can shadow its
+  PyPI namesake (the maintainer decided not to track it).
 - Never run (no shipped claim rests on them): HPC chunked-Jacobian peak at 512
   lanes, untiled-vs-tiled throughput, GPU parity, exhaustive config-combination
   oracle sweeps, long oracles for every vendored example, the nonsense-value
