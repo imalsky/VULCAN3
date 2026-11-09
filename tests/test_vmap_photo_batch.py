@@ -28,7 +28,7 @@ RTOL = 5e-2
 # closure-baked photo field makes lane 1 equal soloA (ratio ~1). Bit
 # identity depends on the XLA version. The photolysis cadence differs (tick
 # vs accepted count), so rejected steps move the lanes apart: 1.6e-4 with the
-# Step control (8 rejections of 39 attempts on lane A).
+# step control (8 rejections of 39 attempts on lane A).
 SCALE_TOL = 1e-3
 
 
@@ -81,7 +81,7 @@ def test_photo_lane_matches_its_solo_run():
     integB = _build_integ()
     sB_own, atmB_own = integB.prepare_runstate(rsB)
 
-    # --- vacuity: per-lane T-dep cross sections differ ------------------
+    # vacuity: per-lane T-dep cross sections differ
     n_absp_T = sA.pv.p_absp_T_cross.shape[0]
     tdiff = _max_rel_diff(sB.pv.p_absp_T_cross, sA.pv.p_absp_T_cross, floor=0.0)
     jdiff = _max_rel_diff(sB.pv.p_cross_J_T, sA.pv.p_cross_J_T, floor=0.0)
@@ -104,14 +104,14 @@ def test_photo_lane_matches_its_solo_run():
         jdiff,
     )
 
-    # --- solo runs --------------------------------------------------------
+    # solo runs
     soloA = integA._runner(sA, atmA)
     soloB = integB._runner(sB_own, atmB_own)
 
     # Setup fills the flux too: only the loop's refresh can have moved it.
     assert not np.array_equal(np.asarray(soloA.aflux), np.asarray(sA.aflux)), "photo branch never fired in soloA"
 
-    # --- batch on A's runner ----------------------------------------------
+    # batch on A's runner
     batched = integA.run_batch(
         stack_integ_states([sA, sB]),
         stack_atm_statics([atmA, atmB]),
@@ -135,7 +135,7 @@ def test_photo_lane_matches_its_solo_run():
     profiles_differ = _max_rel_diff(soloB.ymix, soloA.ymix)
     assert profiles_differ >= 1e-6, ("profiles identical", profiles_differ)
 
-    # --- same-star guard ----------------------------------------------------
+    # same-star guard
     rsC = rsB._replace(photo=rsB.photo._replace(sflux_top=rsB.photo.sflux_top * 2.0))
     with pytest.raises(ValueError):
         integA.prepare_runstate(rsC)
@@ -145,9 +145,9 @@ def test_photo_lane_matches_its_solo_run():
 def test_lane_gone_nonfinite_on_a_photo_tick_keeps_its_whole_carry():
     """A lane whose step goes non-finite freezes at its last good carry, leaf for leaf and bitwise.
 
-    Also when that step's tick updated its photolysis arrays. The batched freeze never re-selects the convergence
-    ring (the step writes its slot already frozen) and reads the pre-step photolysis arrays only inside the
-    photolysis tick's cond, so a regression in either shows up here as a frozen lane that kept part of the failed
+    This holds when that step's tick updated its photolysis arrays too. The batched freeze never re-selects the
+    convergence ring (the step writes its slot already frozen) and reads the pre-step photolysis arrays only inside
+    the photolysis tick's cond, so a regression in either shows up here as a frozen lane that kept part of the failed
     tick.
 
     Lane 1 is lane 0 with one thermal rate row non-finite and dt at dt_min:
@@ -255,8 +255,8 @@ def test_queue_on_photo_lanes_matches_the_batch():
 def test_refill_on_a_photo_tick_applies_photolysis_once():
     """A lane refilled at a tick on its photolysis cadence takes photolysis once, from its first step's own gate.
 
-    As a plain-batch lane does at tick 0. With the photo and geometry cadences at 1 every tick is on cadence, so the
-    refilled job sees the ticks it would see alone and the two results are bitwise equal. A second application at
+    A plain-batch lane does the same at tick 0. With the photo and geometry cadences at 1 every tick is on cadence, so
+    the refilled job sees the ticks it would see alone and the two results are bitwise equal. A second application at
     the refill moves aflux_change, which gates the convergence certificate.
     """
     vulcan_cfg = _pin_cfg(ini_update_photo_frq=1, final_update_photo_frq=1, update_frq=1)

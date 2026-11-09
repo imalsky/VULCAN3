@@ -28,8 +28,7 @@ def test_photo_branch_matches_python_photo_path():
     from vulcan3._pack_state import unpack_state
     from vulcan3.state import RunState, legacy_view, runstate_from_store
 
-    # --- Build HD189 reference state with the photo pre-loop (as
-    # `vulcan3.py` does before entering the integration loop). ---
+    # The HD189 reference state with the photo pre-loop, as the CLI builds it before the integration loop.
     rs = RunState.with_pre_loop_setup(vulcan_cfg)
     data_var, data_atm, data_para = legacy_view(rs)
     output = op.Output()
@@ -45,7 +44,7 @@ def test_photo_branch_matches_python_photo_path():
     # the 2nd photo update, not the 1st.
     var_B = copy.deepcopy(data_var)
 
-    # --- Path A: Python-side compute_tau / compute_flux / compute_J ---
+    # Path A: Python-side compute_tau / compute_flux / compute_J
     solver = op_jax.Ros2JAX()
     if rs.photo_static is not None:
         solver._photo_static = rs.photo_static
@@ -54,7 +53,7 @@ def test_photo_branch_matches_python_photo_path():
     solver.compute_J(data_var, data_atm)
     _rates_mod.apply_photo_remove(vulcan_cfg, data_var, _network)
 
-    # --- Path B: photo branch inside the JAX runner ---
+    # Path B: photo branch inside the JAX runner
     integ = outer_loop.OuterLoop(solver, output)
     integ.ensure_runner(var_B, data_atm)
     rs_entry = runstate_from_store(var_B, data_atm, data_para)._replace(photo_static=rs.photo_static)

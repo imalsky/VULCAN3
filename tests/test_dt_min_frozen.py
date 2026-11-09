@@ -128,7 +128,8 @@ def test_the_message_repeats_the_trial_that_failed():
     assert int(final.termination_reason) == TERM_DT_MIN_FROZEN
     assert float(final.dt) == 2.0 * _FLOOR_S
     ratio, _, _ = integ._failed_trial(final, atm_static)
-    # Dense repeat against the loop's matrix-free step, so not bitwise everywhere (todo, arm64). Twice the dt is far.
+    # Dense repeat against the loop's matrix-free step, so not bitwise everywhere (todo.md "arm64: matrix-free primal
+    # under jvp"). Twice the dt is far.
     assert float(final.delta) > 0.0
     assert float(jnp.max(ratio)) == pytest.approx(float(final.delta), rel=1e-12)
 

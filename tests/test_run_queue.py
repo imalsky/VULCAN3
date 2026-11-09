@@ -63,9 +63,9 @@ def _cat_jobs(a, b):
 
 
 def _poisoned(jobs, sl):
-    """Job `sl` with y AND y_prev all-NaN: a rejected Ros2 step reverts y to y_prev.
+    """Job `sl` with y AND y_prev all-NaN.
 
-    So poisoning y alone self-heals and the lane never goes non-finite (test_vmap_while_loop makes the same point).
+    A rejected Ros2 step reverts y to y_prev, so poisoning y alone self-heals and the lane never goes non-finite.
     """
     st, atm = _take_jobs(jobs, sl)
     return (

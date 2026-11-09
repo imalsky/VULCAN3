@@ -102,11 +102,11 @@ def test_cwd_configs_override(tmp_path, monkeypatch):
 
 
 def test_loader_refuses_bad_input(tmp_path, monkeypatch):
-    """One refusal per failure class (fail-fast rule): missing config.
+    """One refusal per failure class.
 
-    The removed `gs` knob (migration message, also through `validate_overrides`), an unknown override, an unknown
-    key authored in the YAML itself, and duplicate YAML keys. Scientific notation must parse as float (the CWD test
-    covers the int case).
+    A missing config, the removed `gs` knob (migration message, also through `validate_overrides`), an unknown
+    override, an unknown key authored in the YAML itself, and duplicate YAML keys. Scientific notation must parse as
+    float (the CWD test covers the int case).
     """
     with pytest.raises(FileNotFoundError):
         load_config("no_such_config_name_xyz")

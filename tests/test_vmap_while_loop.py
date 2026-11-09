@@ -44,10 +44,7 @@ def _pin_cfg():
 
 
 def _build_rs(vulcan_cfg, *, Tiso=None, gs=None, Rp=None):
-    """Build a RunState, optionally overriding temperature / gravity / radius.
-
-    So two calls produce genuinely different atmospheres.
-    """
+    """Build a RunState, optionally overriding temperature / gravity / radius for a genuinely different atmosphere."""
     from vulcan3.state import RunState
 
     if Tiso is not None:
@@ -102,7 +99,7 @@ def test_run_batch_matches_solo_runs():
             K,
         )
 
-    # --- 1. Heterogeneous freeze-on-done --------------------------------
+    # 1. Heterogeneous freeze-on-done
     # Per-lane starting accept_count offsets: lanes hit count_max at different
     # absolute iterations, so early finishers must freeze while others run.
     offsets = [0, 10, 20, 30]  # K lanes
@@ -117,7 +114,7 @@ def test_run_batch_matches_solo_runs():
         assert rel <= RTOL, ("heterogeneous", i, o, rel, reason)
         assert reason == 3, ("heterogeneous", i, o, rel, reason)
 
-    # --- 2. Non-finite isolation ----------------------------------------
+    # 2. Non-finite isolation
     bad = 1
     nan_states = [init_state] * K
     # Poison both y AND y_prev: a rejected Ros2 step reverts y to y_prev, so
@@ -133,7 +130,7 @@ def test_run_batch_matches_solo_runs():
         rel = _max_rel_diff(nan_out[i].ymix, ref.ymix, floor=BATCH_FLOOR)
         assert rel <= RTOL, ("nan neighbour lane corrupted", i, rel)
 
-    # --- 3. Genuinely different profiles --------------------------------
+    # 3. Genuinely different profiles
     # Profile B differs in gravity + radius, so n_0 / Tco / geometry / Kzz all
     # differ from A. Run B solo on its own runner and as lane 1 of a batch
     # whose runner closure is baked from A: any per-profile field left in the

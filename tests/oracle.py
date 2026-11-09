@@ -92,7 +92,7 @@ def run_oracle_subprocess(test_file, family: str, config_rel: str | None = None)
     )
 
 
-# --- inside the re-exec'd child ------------------------------------------------
+# inside the re-exec'd child
 # The parent verified the pin and set VULCAN_MASTER_DIR to a copy with no .git.
 # Upstream imports these modules by top-level name; none of them exists in
 # tests/ or among the port's imports (src/vulcan3 is a package).

@@ -45,7 +45,7 @@ def test_production_kernel_matches_reference(mode):
         data_atm.vm = (rng.standard_normal((nz - 1, ni)) * 50.0).astype(np.float64)
         vulcan_cfg.use_vm_mol = True
 
-    # --- Production kernel ---
+    # Production kernel
     atm_static = jax_step.make_atm_static(data_atm, ni, nz, cfg=vulcan_cfg)
     grav = jax_step.compute_diff_grav(atm_static)
     A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, _ = jax_step._build_diff_coeffs_jax(jnp.asarray(y), atm_static, grav)
@@ -53,7 +53,7 @@ def test_production_kernel_matches_reference(mode):
         jax_step._apply_diffusion_jax(jnp.asarray(y), A_eddy, B_eddy, C_eddy, A_mol, B_mol, C_mol, atm_static)
     )
 
-    # --- NumPy reference ---
+    # NumPy reference
     coeffs = diff_ref.build_diffusion_coeffs(y, data_atm, vulcan_cfg, mode=mode)
     diff_numpy = diff_ref.apply_diffusion(y, coeffs)
 

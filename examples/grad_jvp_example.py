@@ -28,7 +28,7 @@ from vulcan3.jax_step import AtmStatic, jax_ros2_step
 
 def main() -> int:
     """Run the example; return 0 on success."""
-    # ---- Build a small synthetic atmosphere just big enough to step. ----
+    # Build a small synthetic atmosphere just big enough to step.
     net = _chem_mod.to_jax(_net_mod.parse_network(default_config().network))
     nz, ni = 12, net.ni
     y = jnp.full((nz, ni), 1e10)
@@ -58,7 +58,7 @@ def main() -> int:
         use_botflux=jnp.bool_(False),
     )
 
-    # ---- Forward-mode tangent: dy_out / dy_in along a random direction ----
+    # Forward-mode tangent: dy_out / dy_in along a random direction.
     rng = np.random.default_rng(0)
     tangent = jnp.asarray(rng.normal(size=y.shape) * 1e8)
 
@@ -72,7 +72,7 @@ def main() -> int:
     print(f"finite primal:  {bool(jnp.all(jnp.isfinite(sol_primal)))}")
     print(f"finite tangent: {bool(jnp.all(jnp.isfinite(sol_tangent)))}")
 
-    # ---- Reverse mode through the per-step kernel ----
+    # Reverse mode through the per-step kernel.
     def loss(y_in):
         sol, _ = jax_ros2_step(y_in, k_arr, jnp.float64(1e-3), atm, net)
         return jnp.sum(sol**2)
@@ -80,7 +80,6 @@ def main() -> int:
     g = jax.grad(loss)(y)
     print(f"jax.grad through one Ros2 step finite: {bool(jnp.all(jnp.isfinite(g)))}")
 
-    # ---- Note about the full integration loop ----
     print()
     print(
         "Note: for a certified end-to-end tangent use OuterLoop.run_jvp; for "

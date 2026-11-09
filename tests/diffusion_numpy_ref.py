@@ -76,7 +76,6 @@ def build_diffusion_coeffs(y: np.ndarray, atm, cfg, mode: str = "auto") -> Diffu
     DiffusionCoeffs
         Coefficients for `apply_diffusion` and `diffusion_block_diags`.
     """
-    # Resolve mode from cfg if 'auto'
     if mode == "auto":
         use_vm = bool(getattr(cfg, "use_vm_mol", False))
         use_set = bool(getattr(cfg, "use_settling", False))
@@ -120,7 +119,7 @@ def build_diffusion_coeffs(y: np.ndarray, atm, cfg, mode: str = "auto") -> Diffu
     vm = atm.vm if use_vm else np.zeros((y.shape[0] - 1, y.shape[1]), dtype=np.float64)
     vs = atm.vs if use_set else np.zeros((y.shape[0] - 1, y.shape[1]), dtype=np.float64)
 
-    # --- Surface (j = 0) ---
+    # Surface (j = 0)
     A[0] = -1.0 / dzi[0] * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[0]
     B[0] = 1.0 / dzi[0] * (Kzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[1]
     # vertical advection at j=0
@@ -149,7 +148,7 @@ def build_diffusion_coeffs(y: np.ndarray, atm, cfg, mode: str = "auto") -> Diffu
             Ai[0] -= ((vs[0] > 0) * vs[0]) / dzi[0]
             Bi[0] -= ((vs[0] < 0) * vs[0]) / dzi[0]
 
-    # --- Top (j = nz - 1) ---
+    # Top (j = nz - 1)
     A[nz - 1] = -1.0 / dzi[nz - 2] * (Kzz[nz - 2] / dzi[nz - 2]) * (ysum[nz - 1] + ysum[nz - 2]) / 2.0 / ysum[nz - 1]
     C[nz - 1] = 1.0 / dzi[nz - 2] * (Kzz[nz - 2] / dzi[nz - 2]) * (ysum[nz - 1] + ysum[nz - 2]) / 2.0 / ysum[nz - 2]
     A[nz - 1] += ((vz[-1] < 0) * vz[-1]) / dzi[-1]
@@ -181,7 +180,7 @@ def build_diffusion_coeffs(y: np.ndarray, atm, cfg, mode: str = "auto") -> Diffu
             Ai[nz - 1] += ((vs[-1] < 0) * vs[-1]) / dzi[-1]
             Ci[nz - 1] += ((vs[-1] > 0) * vs[-1]) / dzi[-1]
 
-    # --- Interior (1 <= j <= nz - 2) ---
+    # Interior (1 <= j <= nz - 2)
     for j in range(1, nz - 1):
         dz_ave = 0.5 * (dzi[j - 1] + dzi[j])
         A[j] = (

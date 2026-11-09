@@ -1,9 +1,7 @@
-"""Validate the NumPy diffusion reference against op.diffdf.
-
-Op.lhs_jac_tot and the vm / settling / settling_vm variants.
+"""Validate the NumPy diffusion reference against op.diffdf and op.lhs_jac_tot.
 
 The central operator and its Jacobian assembly are compared on master's own
-pre-loop state. The variants run on the port's pre-loop state with synthetic
+pre-loop state. The vm / settling / settling_vm variants run on the port's pre-loop state with synthetic
 vm/vs populated.
 """
 
@@ -25,7 +23,7 @@ FLOOR_FRAC = 1e-12  # variants: cancellation-residue floor, a fraction of the re
 
 
 def main() -> None:
-    # === Set up VULCAN-master state for reference ===
+    # Set up VULCAN-master state for reference
     enter_master()
     import build_atm as ba_v
     import chem_funs as cf_v
@@ -50,7 +48,7 @@ def main() -> None:
     # lhs = c0*I - chem_J - diff_J, so this is already the negated contribution.
     chem_jac_ref = -np.asarray(cf_v.symjac(y, data_atm.M, data_var.k), dtype=np.float64)
 
-    # === Switch to VULCAN-JAX modules ===
+    # Switch to VULCAN-JAX modules
     leave_master()
 
     import diffusion_numpy_ref as diff_mod
@@ -71,13 +69,13 @@ def main() -> None:
     coeffs = diff_mod.build_diffusion_coeffs(y, data_atm, cfg_jax)
     diff_jax = diff_mod.apply_diffusion(y, coeffs)
 
-    # === Compare RHS (operator) ===
+    # Compare RHS (operator)
     # Absolute floor so cancellation residues near zero (physically zero
     # diffusion at near-zero abundance) don't blow up the relative error.
     abs_tol = max(1e-12, 1e-12 * np.abs(diff_ref).max())
     scores = {"diffdf": (relerr(diff_jax, diff_ref, floor=abs_tol), OP_RTOL)}
 
-    # === Compare Jacobian blocks ===
+    # Compare Jacobian blocks
     diag_d, sup_d, sub_d = diff_mod.diffusion_block_diags(coeffs)
 
     # Isolate the diffusion blocks as (lhs_ref - c0*I - chem_jac_ref).
@@ -105,7 +103,7 @@ def main() -> None:
     scores["jac super block"] = (_err(diff_jac_only[idx[:-1], idx[1:]], -sup_d), OFFDIAG_RTOL)
     scores["jac sub block"] = (_err(diff_jac_only[idx[1:], idx[:-1]], -sub_d), OFFDIAG_RTOL)
 
-    # === Variants (= op.diffdf_vm / diffdf_settling / diffdf_settling_vm) ===
+    # Variants (= op.diffdf_vm / diffdf_settling / diffdf_settling_vm)
     # Synthetic mixed-sign interface velocities (shape (nz-1, ni)) so the
     # sign-dependent upwind branches are actually exercised; setup leaves
     # atm.vm all-zero with use_vm_mol=False.

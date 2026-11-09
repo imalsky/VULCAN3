@@ -1,7 +1,4 @@
-"""A layer with ysum = 0 or disabled molecular diffusion (diffusion coefficients), or mu = 0 (atm refresh).
-
-Must give finite outputs.
-"""
+"""Finite outputs on degenerate layers: ysum = 0 or no molecular diffusion (diffusion), mu = 0 (atm refresh)."""
 
 from __future__ import annotations
 
@@ -10,10 +7,7 @@ import numpy as np
 
 
 def test_diffusion_ysum_zero_layer():
-    """Diffusion terms must be finite when a layer has ysum=0 and when molecular diffusion is off (Dzz=0, Hpi=0).
-
-    Where 0 * inf would give NaN.
-    """
+    """Diffusion terms stay finite (no 0 * inf) on a ysum=0 layer and with molecular diffusion off (Dzz=0, Hpi=0)."""
     from vulcan3.jax_step import AtmStatic, _build_diff_coeffs_jax, compute_diff_grav
 
     nz, ni = 8, 4

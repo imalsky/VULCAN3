@@ -1,6 +1,4 @@
-"""Formula correctness of the three pure-JAX conden kernels in `conden.py`.
-
-Fed synthetic but physically-shaped inputs.
+"""Formula correctness of the three pure-JAX conden kernels in `conden.py`, on synthetic, physically shaped inputs.
 
     1. `update_conden_rates` vs the `op.conden` loop body (op.py:1119-1148).
     2. `apply_h2o_relax_jax` vs `op.h2o_conden_evap_relax` (op.py:1331-1367).
@@ -95,9 +93,9 @@ def _make_static(
 
 
 def _nh3_case(seed):
-    """NH3 (column 0) and NH3_l_s (column 1) with condensing and evaporating layers.
+    """NH3 (column 0) and NH3_l_s (column 1) with condensing and evaporating layers, some at and above the cold trap.
 
-    Some at and above the cold trap so the conden_top clamp triggers. Returns (y, ymix, n_0, Dg, sat).
+    Returns (y, ymix, n_0, Dg, sat); the layers above the trap make the conden_top clamp fire.
     """
     rng = np.random.default_rng(seed)
     nz, ni = 7, 3
@@ -221,10 +219,7 @@ def test_apply_h2o_relax_jax():
 
 
 def test_apply_nh3_relax_jax():
-    """Match a per-cell numpy port of op.nh3_conden_evap_relax.
-
-    Including the conden_top clamp and the NH3_l_s >= 0 clip.
-    """
+    """Match a per-cell numpy port of op.nh3_conden_evap_relax, the conden_top clamp and NH3_l_s >= 0 clip included."""
     import vulcan3.conden as _conden_mod
 
     y, ymix, n_0, Dg, sat = _nh3_case(11)

@@ -48,7 +48,7 @@ def test_count_capped_run_conv_ring_and_termination():
 
     assert float(final.t) == float(rs_out.step.t), "runner t != integ(rs) t"
 
-    # ---- 1. Ring buffer + chronological reconstruction ----
+    # 1. Ring buffer + chronological reconstruction
     count = int(final.accept_count)
     conv_step = int(vulcan_cfg.conv_step)
     n_kept = min(count, conv_step)
@@ -58,18 +58,18 @@ def test_count_capped_run_conv_ring_and_termination():
     assert np.all(np.diff(t_arr) > 0), "ring reconstruction is in the wrong order"
     assert t_arr[-1] == float(final.t), "last ring t != final t"
 
-    # ---- 2. longdy / longdydt populated ----
+    # 2. longdy / longdydt populated
     longdy, longdydt = rs_out.step.longdy, rs_out.step.longdydt
     assert np.isfinite(longdy), longdy
     assert longdy > 0, longdy
     assert np.isfinite(longdydt), longdydt
     assert longdydt > 0, longdydt
 
-    # ---- 3. Single-shot termination via count_max ----
+    # 3. Single-shot termination via count_max
     assert int(rs_out.params.count) == vulcan_cfg.count_max + 1
     assert int(rs_out.params.end_case) == 3, "expected end_case 3 (count_max exceeded)"
 
-    # ---- 4. Conservation and a finite clock ----
+    # 4. Conservation and a finite clock
     for atom, loss in zip(rs_out.atoms.atom_order, np.asarray(rs_out.atoms.atom_loss), strict=False):
         assert abs(loss) <= MAX_ATOM_LOSS, f"atom_loss[{atom}] = {loss:.3e}"
     t, dt = float(rs_out.step.t), float(rs_out.step.dt)

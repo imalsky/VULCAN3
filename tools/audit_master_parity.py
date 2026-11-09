@@ -37,7 +37,9 @@ INTENTIONAL_JAX_DELTAS = {
     "bot_BC_flux_file",
     "dt_max",  # capped at config.DT_MAX_S = 1e15 s; master derives 1e17
     "nega_cut",  # -1e4 cm^-3; master's -1 never fires (notes "Parity ledger")
-    "dt_min",  # 1e-15 s; a floor above the step S4's estimate accepts freezes it under C29 (notes "Parity ledger")
+    # 1e-15 s against master's 1e-14: a floor above the step the error estimate accepts on a fast species (S4) freezes
+    # the run once a force-accept keeps the state (notes "Parity ledger")
+    "dt_min",
 }
 
 # Network files carrying master's CH2CN + H + M correction (k0 1.00E-29,
@@ -212,7 +214,7 @@ _ROW = re.compile(r"^\s*(\d+)?\s*\[(.*?)\](.*)$")
 def _items(path: Path) -> list[tuple[str, ...]]:
     """Return the file as a sequence of ("row", equation, rest) and ("text", line) items, in file order.
 
-    With ids and the equation's spacing normalised. VULCAN-JAX history lines dropped.
+    Ids and the equation's spacing are normalised, and lines marked `VULCAN-JAX:` are dropped.
     """
     items = []
     for line in path.read_text().splitlines():
@@ -225,9 +227,9 @@ def _items(path: Path) -> list[tuple[str, ...]]:
 
 
 def _known_row_divergence_only(master_path: Path, jax_path: Path, reactions: tuple[str, ...]) -> list[str]:
-    """Outside the allowlisted reactions, every row and every other line must agree.
+    """Outside the allowlisted reactions, every row and every other line must agree, in the same order.
 
-    In the same order (so a moved section heading is caught). The allowlisted rows themselves are not compared here:
+    The order catches a moved section heading. The allowlisted rows themselves are not compared here:
     their exact text is guarded by the file's sha256 pin in tests/science_sources.yaml.
     """
     keep = lambda items: [i for i in items if not (i[0] == "row" and any(rx in i[1] for rx in reactions))]  # noqa: E731 (a one-line predicate, used once)

@@ -11,7 +11,7 @@ from oracle import assert_below, enter_master, leave_master, run_oracle_subproce
 
 
 def main() -> None:
-    # === VULCAN-master pipeline + Ros2 step ===
+    # VULCAN-master pipeline + Ros2 step
     enter_master()
     import build_atm as ba_v
     import op as op_v
@@ -43,7 +43,7 @@ def main() -> None:
     var_after, _ = solver_v.solver(data_var, data_atm, data_para)
     sol_ref = np.asarray(var_after.y, dtype=np.float64).copy()
 
-    # === Switch to VULCAN-JAX ===
+    # Switch to VULCAN-JAX
     leave_master()
 
     import jax.numpy as jnp
@@ -53,7 +53,6 @@ def main() -> None:
 
     nz, ni = y0.shape
 
-    # Pack k into JAX array
     k_arr = np.zeros((chem_funs.nr + 1, nz), dtype=np.float64)
     for i, v in k_dict.items():
         k_arr[i] = v

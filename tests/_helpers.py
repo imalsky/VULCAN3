@@ -36,9 +36,7 @@ def set_cfg(**overrides):
 def load_tpk_state():
     """`(var, atm, make_atm)` after f_pico and load_TPK (and sp_sat under use_condense).
 
-    On the process default config, in the legacy containers.
-
-    Partial setup: no rates, EQ seed or photo reads.
+    A partial setup on the process default config, in the legacy containers: no rates, EQ seed or photo reads.
     """
     from vulcan3.atm_setup import Atm
     from vulcan3.config import default_config
@@ -181,9 +179,7 @@ def run_self(test_file, *args, network: str, atom_list: str, cwd) -> None:
 
 
 def run_child(child_src: str, *, network: str, label: str, timeout: int = 600, platforms: str = "cpu"):
-    """Run `child_src` in a fresh interpreter with `network` selected.
-
-    On the JAX `platforms` (CPU unless the caller checks a GPU path).
+    """Run `child_src` in a fresh interpreter with `network` selected, on the JAX `platforms`.
 
     A cold start is required: the network is import-frozen, so it can only be
     chosen through the environment before `vulcan3` is first imported.

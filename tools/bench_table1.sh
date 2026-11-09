@@ -35,7 +35,7 @@ P=HD189
 NETWORK=thermo/NCHO_photo_network.txt  # import-locked in VULCAN-JAX: set before the import
 ATOMS=H,O,C,N
 
-# ---------------------------------------------------------------- preflight
+# Preflight.
 # Advisory only: sysctl/uptime are blocked in some sandboxes, so a missing load
 # average must not abort the run. The cpu/wall guard below is the real gate.
 load1="$(uptime 2>/dev/null | sed -n 's/.*averages*: *\([0-9.]*\).*/\1/p')"
@@ -80,7 +80,7 @@ PYTHONPATH="$JAX_REPO/tests" "$PY" -c 'import sys, shutil, pathlib, oracle; shut
 
 printf '%-8s %-12s %8s %8s %8s %9s %7s\n' PLANET CODE REAL USER SYS CPU/WALL STEPS | tee "$OUT/summary.txt"
 
-# ---------------- VULCAN 2.0 in a disposable copy: upstream setup writes into thermo/ and
+# VULCAN 2.0 in a disposable copy: upstream setup writes into thermo/ and
 # fastchem_vulcan/, so nothing is linked back to the pinned clone.
 W="$OUT/master_$P"; mkdir -p "$W/output" "$W/plot"
 for d in atm thermo fastchem_vulcan; do cp -R "$MASTER/$d" "$W/$d"; done
@@ -102,7 +102,7 @@ m_steps=$(grep -oE 'successfully run to steady-state with [0-9]+ steps' "$W/run.
 m_ratio=$(awk "BEGIN{printf \"%.2f\", ($m_user+$m_sys)/$m_real}")
 printf '%-8s %-12s %8s %8s %8s %9s %7s\n' "$P" "VULCAN2.0" "$m_real" "$m_user" "$m_sys" "$m_ratio" "${m_steps:-?}" | tee -a "$OUT/summary.txt"
 
-# ---------------- VULCAN-JAX 3.0, fresh subprocess + empty XLA cache (Table 1's protocol)
+# VULCAN-JAX 3.0, fresh subprocess + empty XLA cache (Table 1's protocol)
 J="$OUT/jax_$P"; mkdir -p "$J"
 # One chunk: the CLI otherwise syncs and prints every print_prog_num steps,
 # and Table 1 times the uninterrupted loop. A config that sets no knob is
@@ -117,7 +117,7 @@ j_steps=$(grep -oE 'successfully run to steady-state with [0-9]+ steps' "$J/run.
 j_ratio=$(awk "BEGIN{printf \"%.2f\", ($j_user+$j_sys)/$j_real}")
 printf '%-8s %-12s %8s %8s %8s %9s %7s\n' "$P" "VULCAN-JAX" "$j_real" "$j_user" "$j_sys" "$j_ratio" "${j_steps:-?}" | tee -a "$OUT/summary.txt"
 
-# ---------------- the guard: only report a speedup if master actually got its core
+# The guard: only report a speedup if master actually got its core
 if awk "BEGIN{exit !($m_ratio < $CPU_WALL_MIN)}"; then
   {
     echo "  !! TIMING REJECTED for $P: VULCAN 2.0 cpu/wall = $m_ratio < $CPU_WALL_MIN."

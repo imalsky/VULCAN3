@@ -58,7 +58,7 @@ def fake_oracle(tmp_path):
     return repo
 
 
-# --- manifest shape ---------------------------------------------------------
+# manifest shape
 
 
 def test_manifest_is_well_formed():
@@ -142,7 +142,7 @@ def test_abundance_presets_keep_fastchem_slot_order(preset):
     assert rows == FASTCHEM_SLOT_ORDER, preset.name
 
 
-# --- revision + cleanliness enforcement -------------------------------------
+# revision + cleanliness enforcement
 
 
 def test_missing_oracle_dir_skips_locally_but_fails_in_release_ci(monkeypatch):
@@ -194,7 +194,7 @@ def test_dirty_checkout_fails_and_says_why(fake_oracle, monkeypatch):
     assert "not a git checkout" in str(exc.value)
 
 
-# --- non-mutation ------------------------------------------------------------
+# non-mutation
 
 
 def test_worktree_gives_a_copy_and_proves_the_original_is_untouched(fake_oracle, monkeypatch):

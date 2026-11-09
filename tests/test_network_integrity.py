@@ -114,9 +114,7 @@ def _file_ids_by_position(path: str) -> list[tuple[int, int, str]]:
 
 @pytest.mark.parametrize("net_path", _SHIPPED_NETWORKS, ids=os.path.basename)
 def test_photo_rate_index_is_positional_and_in_range(net_path):
-    """The photo/ion indices must be exactly the parser positions of the photo/ion rows.
-
-    Each an in-range odd (forward) slot of k_arr.
+    """The photo/ion indices must be exactly the parser positions of the photo/ion rows, each an in-range forward slot.
 
     `k_arr` has `nr + 1` rows with row 0 unused, so a valid forward slot is
     odd and `<= nr`.

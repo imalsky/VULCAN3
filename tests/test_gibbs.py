@@ -30,7 +30,7 @@ def main() -> None:
     from vulcan3 import rates_jax
     import vulcan3.gibbs as gibbs_mod
 
-    # === 1. VULCAN setup: build atm + read forward rates, then reverse rates ===
+    # 1. VULCAN setup: build atm + read forward rates, then reverse rates
     use_lowT = bool(getattr(vulcan_cfg, "use_lowT_limit_rates", False))
     rate = op.ReadRate()
     data_var, data_atm = upstream_preloop(vulcan_cfg, store.Variables(), store.AtmData(), Atm(), rate)
@@ -43,7 +43,7 @@ def main() -> None:
     T = np.asarray(data_atm.Tco, dtype=np.float64)
     M = np.asarray(data_atm.M, dtype=np.float64)
 
-    # === 2. VULCAN-JAX computation on the same atmosphere ===
+    # 2. VULCAN-JAX computation on the same atmosphere
     net = net_mod.parse_network(vulcan_cfg.network)
     k_fwd = np.asarray(rates_jax.compute_forward_k(net, T, M))
     coeffs, present = gibbs_mod.load_nasa9(net.species, "thermo")
@@ -61,7 +61,7 @@ def main() -> None:
     if missing:
         print(f"  Missing: {missing}")
 
-    # === 3. Forward k against read_rate's. Only forward, non-photo/conden/
+    # 3. Forward k against read_rate's. Only forward, non-photo/conden/
     # ion/radiative reactions are populated by compute_forward_k; read_rate
     # leaves the photo, condensation and radiative slots at zero, and the
     # port must too.
@@ -70,11 +70,11 @@ def main() -> None:
     dead = [i for i in fwd if not k_forward[i].max() > 0]
     print(f"forward k compared: {len(live)} nonzero, {len(dead)} zero rows")
 
-    # === 4. Reverse k against rev_rate's ===
+    # 4. Reverse k against rev_rate's
     rev = [i for i in range(2, net.stop_rev_indx, 2) if i in data_var.k]
     print(f"reverse k compared: {len(rev)}")
 
-    # === 5. Beyond stop_rev_indx all reverses are zero ===
+    # 5. Beyond stop_rev_indx all reverses are zero
     bad_zero = sum(k_full[i].max() != 0.0 for i in range(net.stop_rev_indx + 1, net.nr + 1, 2))
 
     assert_below(

@@ -383,7 +383,7 @@ def test_default_hd189_preloop_and_matched_steps_match_master(
     )
 
 
-# --- condensation: the `fix_species` pin snapshot ----------------------------
+# condensation: the `fix_species` pin snapshot
 # Upstream's Earth methodology (cfg_examples/vulcan_cfg_Earth.py:107-120).
 # No shipped config condenses, so this is the only guard on the order of
 # pin snapshot and relax. It uses the smallest vendored network with a

@@ -61,7 +61,7 @@ def test_grid_and_runner_overrides_reach_setup_and_runner_without_leakage():
 def test_one_outer_loop_runs_fresh_runstates_each_on_its_own_atoms():
     """`integ(rs)` rebuilds the certificate ring, the element budget and the hybrid phase from zero.
 
-    None of which a RunState carries, so handing it an integrated RunState must fail instead of resuming on a blank
+    A RunState carries none of them, so handing it an integrated RunState must fail instead of resuming on a blank
     history. A second fresh RunState is fine, and its result reports its own atoms, not those of the profile the
     runner was first built for.
     """
@@ -160,7 +160,7 @@ def test_import_locked_overrides_fail_fast(overrides, pattern, tmp_path):
 def test_save_cfg_serializes_active_cfg(tmp_path, monkeypatch):
     """Output(cfg=cfg).save_cfg writes the ACTIVE cfg's values under dname, whatever the cwd.
 
-    Not a copy of the packaged vulcan_cfg.py: make_config runs are reproducible.
+    It writes no copy of a packaged cfg file, so a make_config run can be reproduced from its output.
     """
     import vulcan3
     from vulcan3 import legacy_io
@@ -178,10 +178,7 @@ def test_save_cfg_serializes_active_cfg(tmp_path, monkeypatch):
 
 
 def test_clip_fn_degenerate_layer_stays_finite():
-    """An all-zero (or all-negative) gas layer must not produce NaN/inf ymix.
-
-    In either the gas-mask or no-mask clip branch.
-    """
+    """An all-zero (or all-negative) gas layer must not produce NaN/inf ymix, with or without the gas mask."""
     import jax.numpy as jnp
 
     from vulcan3._step_control import _make_clip_fn

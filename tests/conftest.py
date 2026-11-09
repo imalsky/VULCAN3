@@ -61,10 +61,7 @@ def _clear_jax_caches() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def _cfg_snapshot_session():
-    """Snapshot the process default config (a single object that `state._cfg_overlay` mutates in place).
-
-    So `_cfg_guard` can restore it after every test.
-    """
+    """Snapshot the process default config, which `state._cfg_overlay` mutates in place, for `_cfg_guard`."""
     from vulcan3.config import default_config
 
     canonical = default_config()
@@ -157,7 +154,7 @@ def hd189_state(_hd189_pristine: HD189State) -> HD189State:
     )
 
 
-# --- numerical-oracle fixture guard -----------------------------------------
+# Numerical-oracle fixture guard.
 # Untracked .npz oracles (~36 MB; `python tests/gen_fixtures.py --all`). A
 # missing one would make its tests skip and the suite pass, so collection
 # fails instead.

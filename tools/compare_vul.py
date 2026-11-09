@@ -1,8 +1,9 @@
-"""Compare two converged VULCAN outputs (.vul pickles): per species.
+"""Compare two converged VULCAN outputs (.vul pickles) species by species.
 
-The worst |dlog10 VMR| over the cells where both are above a floor, and the pressure it sits at. The end-to-end check of
-a solver path (the CUDA kernel, the grouped RHS, a GPU) against VULCAN 2 on matched inputs, or against another vulcan3
-path; the CPU port's own agreement with VULCAN 2 on the same case is the envelope to read it against.
+Per species: the worst |dlog10 VMR| over the cells where both are above a floor, and the pressure it sits at. The
+end-to-end check of a solver path (the CUDA kernel, the grouped RHS, a GPU) against VULCAN 2 on matched inputs, or
+against another vulcan3 path; the CPU port's own agreement with VULCAN 2 on the same case is the envelope to read it
+against.
 
     python tools/compare_vul.py REF.vul TEST.vul [--species H2O,CO,CO2,CH4,SO2,H2S] [--floor 1e-12]
 

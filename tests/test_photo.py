@@ -28,7 +28,7 @@ def main() -> None:
     # (var, atm) that the JAX side then reads (var.cross[sp] etc.).
     from vulcan3.state import _AtmData, _Variables
 
-    # === Set up state with photochemistry ===
+    # Set up state with photochemistry
     make_atm = Atm()
     rate = op.ReadRate()
     data_var, data_atm = upstream_preloop(
@@ -45,7 +45,7 @@ def main() -> None:
     solver_v.compute_tau(data_var, data_atm)
     tau_ref = data_var.tau.copy()
 
-    # === Pack photo data and run JAX version ===
+    # Pack photo data and run JAX version
     leave_master()
     from vulcan3 import chem_funs
 
@@ -63,7 +63,7 @@ def main() -> None:
     tau_jax = np.asarray(photo_mod.compute_tau_jax(jnp.asarray(data_var.y), jnp.asarray(data_atm.dz), photo_data))
     assert tau_jax.shape == tau_ref.shape, (tau_jax.shape, tau_ref.shape)
 
-    # === compute_flux validation ===
+    # compute_flux validation
     # Reset VULCAN's dflux_u/d to zero so JAX's zero-init matches first-call behavior
     data_var.dflux_u = np.zeros_like(data_var.dflux_u)
     data_var.dflux_d = np.zeros_like(data_var.dflux_d)
@@ -95,7 +95,7 @@ def main() -> None:
     nonzero_mask = np.abs(aflux_ref) > 1e-30
     flux_err = relerr(aflux_jax, aflux_ref, mask=nonzero_mask) if nonzero_mask.any() else 0.0
 
-    # === compute_J validation ===
+    # compute_J validation
     solver_v.compute_J(data_var, data_atm)
     J_ref = dict(data_var.J_sp)
 

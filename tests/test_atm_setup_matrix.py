@@ -65,7 +65,7 @@ def test_load_TPK_atm_types(atm_type, P_b, P_t, nz, gs):
     cfg = tpk_cfg(atm_type=atm_type, P_b=P_b, Mp=mass_for_gravity(gs, HD189_RP_CM))
     out = load_TPK(cfg, pco, pico=pico)
 
-    # --- Tco reference ---
+    # Tco reference
     if atm_type == "isothermal":
         Tco_ref = np.full(nz, cfg.Tiso, dtype=np.float64)
     elif atm_type == "analytical":
@@ -337,9 +337,9 @@ def test_compute_pico_matches_master_formula():
     ids=["rocky", "gas_giant"],
 )
 def test_compute_mu_dz_g_anchor(rocky, Rp, g, P_b, P_t, nz, T_bot, T_top, mix, ms):
-    """rocky=True anchors pref_indx at the surface (index 0).
+    """`rocky=True` anchors pref_indx at the surface (index 0).
 
-    Rocky=False with P_b >= 1 bar anchors it at the layer nearest 1 bar. At the anchor zco = 0 and g is the surface
+    `rocky=False` with P_b >= 1 bar anchors it at the layer nearest 1 bar. At the anchor zco = 0 and g is the surface
     gravity; zco increases upward.
     """
     from vulcan3.atm_setup import compute_mu_dz_g, compute_pico, surface_gravity
@@ -360,10 +360,7 @@ def test_compute_mu_dz_g_anchor(rocky, Rp, g, P_b, P_t, nz, T_bot, T_top, mix, m
 
 
 def test_compute_settling_velocity_h2so4_negative():
-    """`use_settling=True` produces negative (downward) vs for non-gas species.
-
-    When atm_base has a tabulated viscosity polynomial.
-    """
+    """`use_settling=True` gives negative (downward) vs for non-gas species when atm_base has a viscosity fit."""
     from vulcan3.atm_setup import compute_settling_velocity
 
     cfg = SimpleNamespace(use_settling=True, atm_base="N2", non_gas_sp=["H2SO4_l"])

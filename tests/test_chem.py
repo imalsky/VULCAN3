@@ -11,7 +11,7 @@ from oracle import assert_below, enter_master, leave_master, run_oracle_subproce
 
 
 def main() -> None:
-    # === 1. Run VULCAN-master pipeline to get reference y/M/k state and chemdf/symjac ===
+    # 1. Run VULCAN-master pipeline to get reference y/M/k state and chemdf/symjac
     enter_master()
     import build_atm as ba_v
     import chem_funs as cf_v
@@ -32,7 +32,7 @@ def main() -> None:
     dydt_ref = np.asarray(cf_v.chemdf(y, M, k_dict)).copy()
     J_ref = np.asarray(cf_v.symjac(y, M, k_dict)).copy()
 
-    # === 2. Switch over to VULCAN-JAX modules ===
+    # 2. Switch over to VULCAN-JAX modules
     leave_master()
 
     import jax.numpy as jnp
@@ -50,7 +50,7 @@ def main() -> None:
     for i, vec in k_dict.items():
         k_full[i] = vec
 
-    # === 3. Compute JAX chem_rhs ===
+    # 3. Compute JAX chem_rhs
     y_j = jnp.asarray(y)
     M_j = jnp.asarray(M)
     k_j = jnp.asarray(k_full)
@@ -69,7 +69,7 @@ def main() -> None:
     cell_floor = 1e-6 * np.maximum(per_species_peak[None, :], 1e-30)
     significant = np.abs(dydt_ref) > cell_floor
 
-    # === 4. Compute JAX chem_jac ===
+    # 4. Compute JAX chem_jac
     from _oracles import chem_jac
 
     Jblk_jax = np.asarray(chem_jac(y_j, M_j, k_j, net_jax))

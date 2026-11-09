@@ -238,10 +238,7 @@ def _kernel_case(nz, ni, kind):
 
 
 def _kernel_run(device, d, s, c, r):
-    """Raw factor and solve of the ffi kernel on `device`: [lu, perm, x, xs].
-
-    Xs the solve of the stack (r, 2r, -r) on the same factors.
-    """
+    """Raw factor and solve of the ffi kernel on `device`: [lu, perm, x, xs], xs the solve of (r, 2r, -r)."""
     a = [jax.device_put(jnp.asarray(v), device) for v in (d, s, c, r, np.stack([r, 2.0 * r, -r]))]
     lu, perm = jax.jit(fast_mod._ffi_factor)(*a[:3])
     x = jax.jit(fast_mod._ffi_solve)(lu, perm, a[1], a[2], a[3])
@@ -296,7 +293,7 @@ def test_cuda_kernel_matches_cpu_kernel(nz, ni, kind):
 def test_cuda_ffi_refuses_more_than_96_species(ni, cuda, refused, monkeypatch):
     """`ffi` on a CUDA backend refuses ni > GJ_MAX_NI while the step is traced, before the kernel library is loaded.
 
-    Ni 96 on CUDA, and any ni on the CPU kernel, go on to load it. No GPU needed: the platform query and the loader
+    ni = 96 on CUDA, and any ni on the CPU kernel, go on to load it. No GPU needed: the platform query and the loader
     are patched.
     """
 
@@ -607,7 +604,7 @@ def check_real_blocks(fixture: str, cfg_name: str, backend: str):
             assert r["tangent_rel"] < tangent_bar, r
             assert r["tres_cand"] <= max(2.0 * r["tres_cur"], 10.0 * r["tres_dense"]), r
             assert r["gres_cand"] <= max(2.0 * r["gres_cur"], 10.0 * r["gres_dense"]), r
-            if backend == "fast":  # the transpose runs on the same factors as today
+            if backend == "fast":  # the transpose runs on factors bitwise equal to the reference's
                 assert r["grad_rel"] < 1e-6, r
         # The vmapped solve is judged by its residual, and by solution
         # agreement wherever batching does not change the arithmetic: on CPU

@@ -35,10 +35,7 @@ FD_RTOL = 1e-5  # forward-mode tangent vs a central difference
 
 
 def _rel(a, b):
-    """Max relative error, with an absolute floor tied to the field's own magnitude.
-
-    So all-zero reference fields compare cleanly (0 vs 0).
-    """
+    """Max relative error, with an absolute floor tied to the field's own magnitude so all-zero fields compare."""
     a = np.asarray(a, dtype=np.float64)
     b = np.asarray(b, dtype=np.float64)
     if a.size == 0:

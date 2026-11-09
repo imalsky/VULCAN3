@@ -33,9 +33,7 @@ BASIS_TOL = 1e-10  # orthonormality and span of the QR null basis
 HD189_FD_ANCHORS = {13: -5.651e-01, 14: +5.651e-01}
 
 
-# --------------------------------------------------------------------------- #
-# Fast unit tests (no converged column, no Krylov)                            #
-# --------------------------------------------------------------------------- #
+# Fast unit tests (no converged column, no Krylov)
 
 
 def test_safe_inv_y_masks_exact_zeros():
@@ -48,9 +46,9 @@ def test_safe_inv_y_masks_exact_zeros():
 
 
 def test_conserved_null_basis_annihilates_atom_vectors():
-    """The deflation projector kills the analytic atom-count vectors; a wrong `dz`.
+    """The deflation projector kills the analytic atom-count vectors.
 
-    A mis-sliced `compo` or a wrong log-space scaling breaks it.
+    A wrong `dz`, a mis-sliced `compo` or a wrong log-space scaling breaks it.
     """
     rng = np.random.default_rng(0)
     nz, ni, n_atoms = 6, 4, 3
@@ -168,9 +166,7 @@ def test_body_dt_danger_zone_rejected():
         )
 
 
-# --------------------------------------------------------------------------- #
-# Slow end-to-end regression on a real HD189 column                           #
-# --------------------------------------------------------------------------- #
+# Slow end-to-end regression on a real HD189 column
 
 
 @pytest.mark.slow

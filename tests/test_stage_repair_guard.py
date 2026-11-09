@@ -119,9 +119,9 @@ def test_guard_keeps_the_w39b_trace_carrier_band_positive(w39b_band_counts):
     ),
 )
 def test_unguarded_repair_inverts_the_w39b_band(w39b_band_counts):
-    """Non-vacuity: without the guard the band inverts somewhere.
+    """Non-vacuity: without the guard the band inverts at one of the two dt.
 
-    At one of the two dt (on the 2025-network fixture at 1e8, on the 2021 one at 1e11).
+    On the 2025-network fixture it does at 1e8, on the 2021 one at 1e11.
     """
     assert max(c["unguarded"] for c in w39b_band_counts.values()) >= 1, w39b_band_counts
 

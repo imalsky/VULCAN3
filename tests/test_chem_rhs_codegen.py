@@ -304,10 +304,10 @@ def test_codegen_matches_numpy_oracle(hd189_state):
 )
 @pytest.mark.parametrize("n_lanes", [0, 8], ids=["solo", "vmap8"])
 def test_grouped_rhs_is_bitwise_codegen(hd189_state, monkeypatch, n_lanes):
-    """`VULCAN3_CHEM_RHS=grouped` evaluates the codegen's operation trees as vectorised gathers.
+    """`VULCAN3_CHEM_RHS=grouped` must equal the codegen RHS bit for bit.
 
-    So it must equal the codegen RHS bit for bit, solo and under a lane vmap of perturbed columns (the batched
-    runner's shape).
+    It evaluates the codegen's operation trees as vectorised gathers. Checked solo and under a lane vmap of perturbed
+    columns (the batched runner's shape).
     """
     import jax
     import jax.numpy as jnp

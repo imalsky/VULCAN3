@@ -30,7 +30,7 @@ def _cfg(**overrides):
     return SimpleNamespace(**base)
 
 
-# --- forward-config hardening -----------------------------------------------
+# forward-config hardening
 
 
 @pytest.mark.parametrize(
@@ -56,7 +56,7 @@ def test_validate_condensation(overrides, expect):
         assert any(expect in e for e in errs), errs
 
 
-# --- input-sensitivity refusal ---------------------------------------------
+# input-sensitivity refusal
 
 
 def _dummy_input_sensitivity(body_terms, **kw):

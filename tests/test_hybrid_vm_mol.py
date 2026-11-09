@@ -51,10 +51,10 @@ def test_non_hybrid_run_never_flips(use_vm, expected):
 
 @pytest.mark.slow
 def test_hybrid_flips_and_extends_budget():
-    """A completed hybrid run always ends in phase 1: phase 0 ends (here by hitting the small count_max).
+    """A completed hybrid run always ends in phase 1.
 
-    Flips hybrid_use_vm 1.0 -> 0.0, and extends the step budget for the central-difference phase (vm_branch
-    count+1000).
+    Phase 0 ends (here on the small count_max), hybrid_use_vm flips 1.0 -> 0.0, and the central-difference phase gets
+    an extended step budget (vm_branch count+1000).
     """
     vc = _pin_cfg()
     count_max = 30

@@ -68,7 +68,7 @@ def _profiles():
     return T_iso, T_slope, pco, n_0, Dzz
 
 
-# --- independent NumPy oracle (upstream formulas, re-typed from master) ----
+# Independent NumPy oracle: upstream formulas, re-typed from master.
 
 
 def _sat_p_np(sp, T):
@@ -155,10 +155,7 @@ def test_make_conden_spec_inactive_species_skipped():
 
 
 def test_builder_matches_upstream_formulas(spec):
-    """Machine-precision parity with the independent NumPy oracle.
-
-    Both on an isothermal and a non-isothermal column.
-    """
+    """Machine-precision parity with the independent NumPy oracle, on an isothermal and a non-isothermal column."""
     T_iso, T_slope, pco, n_0, Dzz = _profiles()
     for T in (T_iso, T_slope):
         prof = conden.build_conden_profile(spec, T, pco, n_0, Dzz)
@@ -261,7 +258,7 @@ def test_jvp_matches_finite_difference(spec):
 def test_zero_reaction_and_inactive_blocks_shapes():
     """use_condense with no live reactions/relax blocks packs zero-size or zero-filled arrays with stable shapes.
 
-    The runner still builds a branch.
+    The runner still builds a conden branch from them.
     """
     cfg, var, atm = _fake_setup(condense_sp=(), use_relax=(), fix_species=())
     sp = conden.make_conden_spec(cfg, var, atm, SPECIES_IDX)

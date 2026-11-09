@@ -36,7 +36,7 @@ def main() -> None:
     from vulcan3.atm_setup import Atm
     from vulcan3.state import RunState, legacy_view, runstate_from_store
 
-    # --- Build HD189 reference state ---
+    # Build HD189 reference state
     rs = RunState.with_pre_loop_setup(vulcan_cfg)
     data_var, data_atm, data_para = legacy_view(rs)
     make_atm = Atm()
@@ -51,14 +51,14 @@ def main() -> None:
     data_var.ymix = data_var.ymix / np.sum(data_var.ymix, axis=1, keepdims=True)
     data_var.y = data_atm.n_0[:, None] * data_var.ymix
 
-    # --- Path A: Python-side update_mu_dz / update_phi_esc ---
+    # Path A: Python-side update_mu_dz / update_phi_esc
     atm_A = copy.deepcopy(data_atm)
     var_A = copy.deepcopy(data_var)
     integ_ref = op.Integration(op.Ros2(), output)
     atm_A = integ_ref.update_mu_dz(var_A, atm_A, make_atm)
     atm_A = integ_ref.update_phi_esc(var_A, atm_A)
 
-    # --- Path B: atm-refresh branch via JAX runner ---
+    # Path B: atm-refresh branch via JAX runner
     solver_B = op_jax.Ros2JAX()
     if vulcan_cfg.use_photo and rs.photo_static is not None:
         solver_B._photo_static = rs.photo_static
