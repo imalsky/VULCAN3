@@ -16,6 +16,7 @@ refused before anything launches (checked without a GPU).
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -634,10 +635,11 @@ def check_matrix_free(fixture: str, cfg_name: str, backend: str):
     and a pinned row is exactly `c0 x`; (2) the step's primal is unchanged and its tangent in y, k, dt and every
     float atmosphere field agrees with the dense operator's. The tangent passes through blocks of cond up to ~6e19,
     so (2) is a wiring check at 1e-3 (worst, both at dt 1e6: HD189 8.5e-5 `fast` / 8.1e-6 `ffi`, W39b 1.4e-7 /
-    3.2e-13); a lost or wrong dA x reads O(1) and above. The primal is bitwise on the CPU and measured bitwise on
-    the GH200 too (0.0 in all 12 cases, both backends, every dt and pinning); off the CPU the primal bar is 1e-9,
-    roundoff amplified by the block conditioning with room to spare. dt 1e11 is not compared (the tangent is
-    O(1)-conditioned there). Also run by the SNCHO child for W39b.
+    3.2e-13); a lost or wrong dA x reads O(1) and above. The primal is bitwise on the x86-64 CPU and measured
+    bitwise on the GH200 too (0.0 in all 12 cases, both backends, every dt and pinning); off the CPU the primal bar is
+    1e-9, roundoff amplified by the block conditioning with room to spare. On Apple Silicon XLA:CPU rounds the two
+    orders apart on W39b-2025 (1.1e-11 to 2.6e-9; HD189 bitwise), so the bar there is 1e-8. dt 1e11 is not compared
+    (the tangent is O(1)-conditioned there). Also run by the SNCHO child for W39b.
     """
     from vulcan3 import jax_step
 
@@ -694,7 +696,12 @@ def check_matrix_free(fixture: str, cfg_name: str, backend: str):
         got = [free(*c) for c in cases]  # traced now, on the matrix-free operator
         jax_step.solve_block_thomas_diag_offdiag = lambda factors, rhs, **_: solve0(factors, rhs)
         dense = jax.jit(lambda *c: stages(*c))  # traced after the patch: the dense operator
-        primal_bar = 0.0 if jax.default_backend() == "cpu" else 1e-9
+        if jax.default_backend() != "cpu":
+            primal_bar = 1e-9
+        elif sys.platform == "darwin" and platform.machine() == "arm64":
+            primal_bar = 1e-8
+        else:
+            primal_bar = 0.0
         for c, (p_free, t_free) in zip(cases, got, strict=False):
             p_dense, t_dense = dense(*c)
             for a, b in zip(p_free, p_dense, strict=False):
