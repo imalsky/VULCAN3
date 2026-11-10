@@ -5,9 +5,8 @@ topic. A run is recorded by its result and its name; git history is the log. Ope
 is in `todo.md`; retrieval-side studies are in vulcan-retrieval's `notes.md`.
 [M] measured, [E] estimated, [I] inferred. Upstream citations (`op.py:NNN`,
 `build_atm.py:NNN`) are the pinned clone exoclime@80f75b9 in
-`VULCAN_Project/.oracles/vulcan2_ncho`, or vm_branch@84d010d where marked. A
-reference to `analysis/<name>` means the `<name>` entry here or in vulcan-retrieval's
-notes (the NAS `analysis/` tree no longer exists).
+`VULCAN_Project/.oracles/vulcan2_ncho`, or vm_branch@84d010d where marked. A study
+name in parentheses is the entry of that name here or in vulcan-retrieval's notes.
 
 ## Current state
 
@@ -16,11 +15,10 @@ notes (the NAS `analysis/` tree no longer exists).
 - Consumers floor `vulcan3>=0.18.0`. Production: vulcan-retrieval's WASP-39b on NAS GH200s (2025 SNCHO file, ni 93; v5
   ran the 2021 file, ni 89; `ffi`, grouped RHS).
 - Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209 1206, W39b 1084 on x86-64 and
-  on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test: 2603 on
-  arm64 before C25; on x86-64 it certifies at 7801 steps on one CPU, 7802 on three, with the nega_cut of -1e4 [M].
-- `oracle.yml` is `workflow_dispatch` only; last green dispatch at
-  `1ab5f37`. On daw (x86-64, CPU) the full tier with the pinned clone gives 441 passed, 38 skipped [M]; every
-  skip is a GPU or arm64 case. The two oracle tests of todo 6 pass only through the delta.
+  on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test: on x86-64 it certifies at
+  7801 steps on one CPU, 7802 on three, with the nega_cut of -1e4 [M].
+- `oracle.yml` is `workflow_dispatch` only; last green dispatch at `1ab5f37`. On daw (x86-64, CPU) the full tier
+  with the pinned clone gives 441 passed, 38 skipped [M]; every skip is a GPU or arm64 case.
 - Oracle clones (revisions in `tests/science_sources.yaml`, path in the header above) are clean on daw with `core.fileMode false`.
 - Fixtures: the tracked `FIXTURES.json` is the arm64 manifest of a laptop rebuild at the C30 code (each record
   names its commit). daw's `tests/data` is an x86-64 rebuild; `--all` and `--verify` use the
@@ -105,10 +103,7 @@ A real VULCAN discretization effect, not a port bug.
   draw 301 by -0.072 in both, draw 345 -0.878 (master) vs -0.914 (vulcan3).
   Master's own shipped W39b example is already converged (75 vs 600 layers: <=
   0.03 dex). (vulcan2_xcheck)
-- Low-Kzz "bistability": two locally stable states that differ by where the
-  photochemical front (H2 -> H, H2O photolysis, 1e-7..1e-6 bar) sits, by whole
-  grid layers. At 100 layers 35/40 split lanes merge, at 150 layers 40/40. A
-  62-layer grid artifact, not physics. (bistable_policy)
+- Low-Kzz "bistability" is a 62-layer grid artifact: vulcan-retrieval notes "Low-Kzz hole" (bistable_policy).
 - At nz 150 the vertical scheme is sound [M]: a manufactured tracer on a
   15x-stretched grid gives eddy order 1.95-1.99, central moldiff 2.00 (upwind
   1.00); HD189 nz 150 vs 597: CH4 5.5e-2, NH3 1.7e-2, ~1% at p95 at observable
@@ -155,9 +150,8 @@ Integrator
   :720, :738; no knob) and `config.DT_MAX_S` 1e15 (upstream `runtime*1e-5` =
   1e17). Reason: stage vectors leak element content at large dt; pinned upstream
   fails the same column (S +32%). From later, unaudited commits.
-- Retry cap with force-accept (`batch_max_retries` 110, C11). Inert, and refused otherwise: at `dt_var_min` 0.5 the 100th
-  consecutive reject from `DT_MAX_S` 1e15 (the 87th from the retrieval's 1e11) takes dt below `dt_min` 1e-15, which ends
-  the chain first, as in master. A force-accepted step keeps the previous state; a second at `dt_min` stops the run (C29).
+- Retry cap with force-accept (`batch_max_retries` 110, C11): inert and refused otherwise; a second force-accept at
+  `dt_min` stops the run (C29).
 - `dt_min` 1e-15 against master's 1e-14, which C29 turned from a soft floor into a hard one. Before C30 counted M as a
   collision partner, S4 + M -> S2 + S2 + M had a lifetime 1/L of 4e-14 to 8e-14 s at the hot bottom of a frozen WASP-39 b
   column, 600 times under the next one on the two draws checked [M]. C30 now holds it to at least 1/(K_COLL M); with that
@@ -167,10 +161,11 @@ Integrator
 - Step control C29: master's rules let a wrong step through or accept a rejected
   composition ("Parity ledger"). `nega_cut` is -1e4 cm^-3 against master's -1, which only
   C29 made live: at -1 HD189 photo off stalls ("Forward mode").
-- `default.yaml` rtol 0.2, use_adapt_rtol false, count_max 1e4 (from 3938cf9):
-  [M] rtol and count_max equal upstream's HD189 example
-  (`vulcan_cfg_HD189.py:151`, `:136`); that example has no `use_adapt_rtol` line
-  and `op.py:836` reads it unconditionally.
+- `default.yaml` rtol 0.2, use_adapt_rtol false, count_max 1e4 (from 3938cf9): [M] rtol and
+  count_max equal upstream's HD189 example (`vulcan_cfg_HD189.py:151`, `:136`), not its root
+  `vulcan_cfg.py` (0.25, adaptive, `['HC3N']`, 3e4); that example has no `use_adapt_rtol` line
+  and `op.py:836` reads it unconditionally. `rtol_min`/`rtol_max` (0 / 1; upstream root
+  0.02 / 2.5) are dormant while `use_adapt_rtol` is false.
 
 Inputs and data
 - `thermo/solar_element_abundances.dat` replaced in ccc40f7, still the default:
@@ -228,9 +223,6 @@ review pass made without notes.md and todo.md found 5 of 9 findings settled or w
   (vulcan-forward's `ConvDiag` carries no geometry field). Both are extra stopping rules
   that can open likelihood holes, sized by their incidence at the first
   chemistry-qualified candidate on a saved W39b batch.
-- rtol 0.2, `conver_ignore` [], `count_max` 1e4 equal upstream's HD189 example, not its root
-  `vulcan_cfg.py` (0.25, adaptive, `['HC3N']`, 3e4). `rtol_min`/`rtol_max` (0 / 1; upstream
-  root 0.02 / 2.5) are dormant while `use_adapt_rtol` is false.
 - Photolysis cadence: W39b 5/5; batched runs key it on the shared attempted tick and
   give a refilled lane one initial update. Effect unmeasured.
 - Abundance file: keep. He is 13.5% below upstream's Lodders 2009 file, but upstream's
@@ -308,7 +300,7 @@ A. Upstream errors corrected in the port
 | C20 | `OH + CH3 + M` Troe width in ln, not log10 | `op.py:204-205` | `rates_jax._troe_OH_CH3`; both sides via `ORACLE_CODE_DELTAS`; `test_troe_oh_ch3_is_visscher_moses_eq14` | rate 1.19-1.21x at Pr 0.1; max 0.111 ln VMR (HD189 CH4); gates unchanged | no |
 | C25 | low-T reverse rates above the collision limit: NH3 + CH removed; NCO + HCN and S + CN rewritten in the exothermic direction (CN + HNCO 2.50E-11, Tsang 1992; N + CS 3.80E-11 (T/300)^0.5 exp(-1160/T), UMIST RATE22); CH + M and C2H + M first removed, then kept under C30 (removing them moved up to 1.9 dex in hot gas) | NCHO, CHO, SNCHO, TiSNCHO network rows | `low_t_reverse_rates`; declared (`KNOWN_THERMO_DIVERGENCES`, `ORACLE_DATA_DELTAS`) | reverse at 300 K, 1 bar up to 2e5x collision; NH3 + CH alone moves no scored gas in maxichem's 395,114-row 0-D yardstick | NH3 + CH only (39f1906) |
 | C26 | (was P8) `HNCO + M -> H + NCO` carries M on the reactant side only | 9 network files | product M added (as a68d7151); declared | 1.3e-5 / 5.0e-5 / 6.0e-4 ln VMR on the gates (P8's measurement) | a68d7151, 6 files |
-| C27 | (was P10) N(2D) NASA-9 thermo is a molecule's (Cp/R near 4, S 69.8 J/mol/K above N) | `thermo/NASA9/N_2D.txt` | rebuilt from N: Cp 2.5 R, H(N) + 230.017 kJ/mol, S(N) + R ln(10/4); `n2d_thermo`, declared | K_eq 1.6e3-1.5e4x; HD209 1211 -> 1206 (P10's measurement) | no |
+| C27 | (was the first P10) N(2D) NASA-9 thermo is a molecule's (Cp/R near 4, S 69.8 J/mol/K above N) | `thermo/NASA9/N_2D.txt` | rebuilt from N: Cp 2.5 R, H(N) + 230.017 kJ/mol, S(N) + R ln(10/4); `n2d_thermo`, declared | K_eq 1.6e3-1.5e4x; HD209 1211 -> 1206 (the first P10's measurement) | no |
 | C28 | CS, CS2, COS, first HCS masses inconsistent with the file's own atomic masses | `thermo/all_compose.txt:133-136` | 44.071 / 76.131 / 60.071 / 45.079; `sulfur_compose_masses`, declared | mean mass, moldiff only | no |
 | C30 | no rate may exceed collision rates: a rate fit extrapolated far from its range (the reverse of CH + M -> C + H + M is ~6e-5 cm3/s at 300 K, 1 bar), or a dissociation reverse from K_eq (S4 + M -> S2 + S2 + M 8.6e-7 cm3/s at 2620 K) | `rates_jax.build_rate_array` | `apply_collision_limit`: each thermal pair scaled by c = min(1, 1e-9 cm3/s / q), q the larger direction's bimolecular-equivalent rate k M^three-body M^(molecules - 2), counted where molecules + three-body >= 2 (M is a collision partner, so q = k for A + M); a first-order direction (s^-1) does not count; `remove_list` is applied first, so a removed slot does not scale its partner (master's `rev_rate` zeroes a removed reverse before the oracle copy's limit); both directions scaled, so K_eq and the equilibrium are kept; `tests/test_collision_limit.py` (value, tangent and removal order) and the oracle copy through `ORACLE_CODE_DELTAS`, whose agreement `test_gibbs` checks on the slots its HD189 column caps | two-body: in NCHO the CH + M and C2H + M reverses (CH below ~560-650 K, C2H below ~900 K at 1 bar, ~1830 K at 100 bar), NH + M (<= 4x, <= 351 K), the forward fits of NCO + NH2 (<= 2x, >= 1880 K) and CN + C2H6 (<= 1.2x, >= 2890 K); SNCHO adds SH + O2 and S + CS + M, TiSNCHO C + SH and Ti + CN. Dissociations, 4-9 slots per network on a 300-3500 K, 1e-4-100 bar grid: S4 + M from ~1100 K (2.3e3x at 3500 K), C4H3 + M in CHO_photo_network_lowT from ~1100 K (6.5e4x), and above ~2000 K the reverses of C2H2 + C4H3, C3H3 + C3H3, CH2 + C2H2, C2H2 + C2H3, H + C2H4, CH3 + SH, S4 + S4 (up to 5e4x at 3500 K, 1e-4 bar). Gates HD189 / HD209 / W39b keep 1495 / 1206 / 1084 on `fast` and `reference`; y moves at most 4.8e-7 / 4.8e-5 / 3.0e-6 relative above 1 cm^-3 (HD209 at its 2754 K bottom, hydrocarbons up to 2.4e-5 above vmr 1e-12) [M]; the limit 1e-9 is a regularization ceiling, not a measured rate | no |
 | C31 | `C2H + C -> C3H + H` does not balance hydrogen (SNCHO_photo_network_C3 only) | `thermo/SNCHO_photo_network_C3.txt` row 861 | written `C2H + C -> C3 + H` (Hickson et al. 2016, the row's reference) | the file had no consumer that checks balance | no |
@@ -329,9 +321,8 @@ commit `8b30242`: W39b 1084, HD189's bits move and its count does not. C32: bitw
 
 The counts do not follow the machine: 1, 2 and 6 CPUs and `--xla_cpu_max_isa=SSE4_2` (no
 FMA) change the `.vul` hash on all three and leave every count and the exit longdy to about
-1e-6 (0.0910, 0.0303, 0.0955 against 0.1) [M]. arm64 and x86-64 read the same pins at the
-last two network states (`2441e6c`, commit record); arm64 at this code is unread [I]. The
-gates read no fixture, and `oracle.yml` runs them on x86-64, so they are pinned at daw's.
+1e-6 (0.0910, 0.0303, 0.0955 against 0.1) [M]. The gates read no fixture, and `oracle.yml`
+runs them on x86-64, so they are pinned at daw's.
 
 Port defects fixed back to parity, and JAX-only additions
 
@@ -357,7 +348,6 @@ B. Found in upstream, kept at parity
 | P3 | condensate mass in the gas mean molecular weight | `build_atm.py:520-525` | `atm_setup.compute_mean_mass` callers | condensation only; fix = restrict to `gas_indx` | no |
 | P4 | `atm_type='table'` stale `pico` for `dz` | `vulcan.py:118` -> `build_atm.py:406,530,554` | same | `dzi` up to 12%; not live | no |
 | P5 | `const_lowT` sum omits NH3, He as remainder | `build_atm.py:48`, `:213` | `ini_abun._load_const_lowT_y` | He/H 0.83% low at 10x N; not live | no |
-| P6 | = C16 | | | | no |
 | P7 | photolysis quadrature skips the bin-grid join interval | `op.py:2771-2780` | `photo.compute_J_jax_flat` | HO2 J 0.06% (W39b) / 0.32% (HD189), others <= 0.05% | no |
 | P9 | moldiff boundary rows do not conserve the column | `op.py:1549-1558` | `bdry0_grav` / `bdry_top_grav` in `jax_step` | +6.6e-19 to +7.9e-18 /s; C23 bounds it | no |
 | P10 | escape Jacobian entry `top_flux/y[-1]` too large by `dzi[-1]` | `op.py:2106-2107` vs RHS `:1689` | comment at the `diff_lim` term in `jax_ros2_step` | LHS only; HD209's `diff_esc` inert | no |
@@ -425,7 +415,6 @@ ledger" or the named repo's notes.
   `count_max=3` 30.0 -> 1.6 s warm). Localize a miss with
   `JAX_DEBUG_LOG_MODULES=jax._src.cache_key` and `PYTHONHASHSEED=0`. `dt_max` is
   not in the model cache key: compare two values in two processes.
-- Node cgh10n04 has a broken GPU: fail fast when `jax.default_backend() != 'gpu'`.
 - daw's RTX 6000 Ada (FP64 at 1/64) is a development device: bitwise
   reproducible, W39b 207-213 s against 101 s on one CPU core.
 - The `use_print_prog` progress block (`legacy_io.Output.print_prog`) goes through
@@ -450,14 +439,10 @@ Rules whose evidence has no section of its own.
   agrees to 1e-15.
 - Clip on the post-solve `ymix`: fed the pre-step `ymix`, 267 / 204 / 204
   negatives survived at dt 1e4 / 1e8 / 1e12 and steps master accepts were rejected.
-- SymPy-faithful codegen: XLA otherwise rewrites `H*H` as `exp(2*log(H))`; RHS vs
-  NumPy oracle ~2e-13 worst cell.
 - `conver_ignore`: before C20, HD189 `[]` and `['HC3N']` both took 1495 steps
   (atomic C controls); a 13-hydrocarbon list from a hand-patched master copy gave
   1296 by shrinking the metric. Every shipped run converges on the loose branch
-  (`longdy < yconv_min` 0.1 with `longdydt < slope_min`, `op.py:1056`); realised
-  longdy on daw 0.09098 / 0.03018 / 0.09919 (HD189 / HD209 / W39b, 1% under the
-  threshold for W39b).
+  (`longdy < yconv_min` 0.1 with `longdydt < slope_min`, `op.py:1056`).
 - `vm` in-loop: freezing it at setup put He 0.43 dex and CH4 1.7 dex off at
   `const_Kzz=1e7`, photo off (<= 0.16 dex after). The scheme matters only at low
   Kzz: HD189 (Kzz 1e10) central vs hybrid <= 0.008 dex, at `const_Kzz=1e7` up to
@@ -592,9 +577,7 @@ reaches those dt (every solve instrumented):
   `photo_switch_longdy_thresh` pinned at 1.0 (it is derived as `yconv_min * 10`,
   so pin it in any photo-on convergence study) a tolerance ladder runs 2776 ->
   8715 steps and the shipped column sits 5.3e-3 (top-decile median |d ln VMR|)
-  from the 8715-step reference. On x86-64 a 20000-step phase-1 budget certifies at
-  7152 on the arm64 column: the same fixed point on a longer path; `reference`
-  gives the same 4018. The end message then names `count_max`, not the
+  from the 8715-step reference. The end message names `count_max`, not the
   `count_max_dyn` it hit (cosmetic).
 
 ## Certificates
@@ -708,23 +691,16 @@ were not obtained).
   `steady_state_grad.make_body_terms` cannot disagree. Nothing writes run results
   back into cfg. `integ(rs)` refuses a RunState with `params.count > 0`: a
   RunState does not carry the certificate ring, the element budget or the hybrid phase.
-- Frozen knobs (`docs/settings.md`): on a cfg that differs (`state._frozen_mismatch`; a
-  byte-identical file copy matches) the CLI re-execs once (guard
-  `$VULCAN3_CLI_RELAUNCHED`), `with_pre_loop_setup` raises. A pre-import launcher cannot
-  live in the package (any submodule import runs `__init__` -> `state` -> `chem_funs`).
+- Frozen knobs (`docs/settings.md`): on a cfg that differs (`state._frozen_mismatch`; a byte-identical
+  file copy matches) `with_pre_loop_setup` raises; the CLI's re-exec guard is `$VULCAN3_CLI_RELAUNCHED`.
 - A named config sets only the knobs that differ from `default.yaml` (`HD189.yaml` is `{}`).
   `<X>_H` is accepted for any symbol of the composition table. Validation resolves assets
   with `resolve_data_path` (cwd first, then package data), as the run does.
-- `termination_reason`: 0 running, 1 converged, 2 runtime, 3 step count, 5
-  non-finite; `end_case` follows master's 1/2/3, and 0/5 or a non-finite
-  "converged" state read 5.
 - `runner_chunk` is the runner's while_loop with `& (accept_count < target)`, target a
   jit argument (`tests/test_save_evolution.py`). The CLI always runs chunked at
   `print_prog_num`; Ctrl+C opens a shell on
   `integ.interrupted_runstate`, then exits 130. One loop cannot be interrupted:
   SIGINT reaches Python only when XLA returns.
-- `release.sh` refuses a dirty tree or a branch other than `main`, runs the suite
-  before the version bump and stages only `_version.py`.
 
 ### Code contracts not obvious from the modules
 
@@ -844,20 +820,19 @@ terms stay (both referees recommended it): the rule "keep VULCAN's original
 convergence criteria" keeps every VULCAN 2 test and allows extra tests that fix a
 confirmed defect; a relaxation of VULCAN's gate is never adopted.
 
-The parity audit's three ion-mode / low-T items stay at parity; P4, P5, P7, P9
-stay; every confirmed data and step-control defect is corrected (C25-C29, which replace P8, P10
+The parity audit's three ion-mode / low-T items stay at parity; P4, P5, P7, P9 stay; every
+confirmed data and step-control defect is corrected (C25-C29, which replace P8, the first P10
 and the old "NH3 and CH stay" decision); the C20 report is not filed upstream; the
-tangent-stall early stop is not built; `test_vmap_photo_batch`'s ymix assertion
-is the scale ratio `max|lane - solo| / max|soloA - soloB|` (`SCALE_TOL` 1e-3 since C29: 1.6e-4 measured, a closure leak gives ~1); the
-photo-on batched deviation (13 of 87 carry leaves at the last bit) is accepted as
-roundoff; the AD-build `dt_max` cap stays off the cold solve; `config.DT_MAX_S`
-stays 1e15. The JAX paper quotes 0.6.0, the version its data came from. The CUDA
-solve guard stays at its ~7% solve cost ("Efficiency program"). Upstream's rocky
-seed (`use_other_ele` + `fastchem_met_scale`: FastChem holds O in species the
-network drops) is not ported: the seed is ExoGibbs over the network's elements.
-C30 counts M as a collision partner, so it caps dissociations such as S4 + M. The oracle
-copy keeps the limit through `ORACLE_CODE_DELTAS`: it is the declared-defect mechanism, and
-`test_gibbs` at 1e-8 is the check that the copy's arithmetic and `apply_collision_limit` agree.
+tangent-stall early stop is not built; `test_vmap_photo_batch`'s ymix assertion is the scale
+ratio `max|lane - solo| / max|soloA - soloB|` (`SCALE_TOL` 1e-3 since C29: 1.6e-4 measured, a
+closure leak gives ~1); the photo-on batched deviation (13 of 87 carry leaves at the last bit)
+is accepted as roundoff; the AD-build `dt_max` cap stays off the cold solve. The JAX paper
+quotes 0.6.0, the version its data came from. The CUDA solve guard stays at its ~7% solve cost
+("Efficiency program"). Upstream's rocky seed (`use_other_ele` + `fastchem_met_scale`:
+FastChem holds O in species the network drops) is not ported: the seed is ExoGibbs over the
+network's elements. The oracle copy keeps the C30 limit through `ORACLE_CODE_DELTAS`: it is
+the declared-defect mechanism, and `test_gibbs` at 1e-8 is the check that the copy's
+arithmetic and `apply_collision_limit` agree.
 
 ## Known and deliberately untracked
 
@@ -867,7 +842,6 @@ copy keeps the limit through `ORACLE_CODE_DELTAS`: it is the declared-defect mec
   lanes, untiled-vs-tiled throughput, GPU parity, exhaustive config-combination
   oracle sweeps, long oracles for every vendored example, the nonsense-value
   config space, whether the `update_frq` refresh cadence costs convergence.
-- `photo_setup`'s T-dependent cross sections follow `cfg.cross_folder`, as its other files do (they read the packaged folder before); shipped configs are unchanged.
 - The `run_queue` refill defaults (`_QUEUE_REFILL_CHUNK` 8, `_QUEUE_REFILL_EVERY` 100)
   are untuned; the `save_evolution` buffer is sized from the static `count_max`.
 - Pin configs only: `steady_state_grad`'s body map sets the layer-0 pins after the
@@ -876,8 +850,7 @@ copy keeps the limit through `ORACLE_CODE_DELTAS`: it is the declared-defect mec
 - `analytical_TP_H14`'s `expn` is slow on arrays mixing arguments below and above
   1 (nz 50 `load_TPK` 4:14 on one core); no shipped config uses it.
 - `tools/bench_table1.sh` writes under the system temp dir unless `BENCH_OUT` is set.
-- Script-style `main()` bodies in 10 test files stay for oracle runs in a subprocess. `steady_state_grad`,
-  `HD189.yaml` and `VULCAN3_SOLVER=reference` stay.
+- `steady_state_grad`, `HD189.yaml` and `VULCAN3_SOLVER=reference` stay.
 - Per-step costs left (daw, HD189, one core): block solve 17.5 of a 24.9 ms step, mostly
   the factor's explicit inverse (no bitwise-equal cheaper form [I]); photolysis ~17 ms a
   call x 115; `compute_diff_grav` 0.17 ms a step; a 3.1 MB photo-array copy an iteration.
@@ -995,7 +968,7 @@ Parity and data
 - "Fixing" the escape-flux Jacobian entry or the S8 diagonal cells to match upstream, or patching the TiSNCHO / SNCHO_C3 duplicates or `CH3SH_branch.csv`: breaks bit-parity or touches unconsumed data.
 - Matched-step parity past ~step 145 at rtol >= 0.25 (FP amplification): compare converged states.
 - A higher-order vertical transport scheme: the shipped eddy and central moldiff kernels measure second order (1.95-2.00) on a 15x-stretched grid, and nz 150 is converged to about 1% at observable pressures.
-- Bit-moving refactors: folding atm_setup's mu/dz scans into `atm_refresh.hydrostatic_column` (1-2 ulp eager) or `update_mu_dz_jax` onto `atm_setup.mu_dz_g_jax` (`zco` 1 ulp on W39b under jit), one bin-weight contraction in `photo.compute_J_jax_flat`, the shared transport-kernel helpers (`c756201`, reverted `f3dfdf7`: vulcan-forward's `test_queue_is_differentiable` tangent 3.0e-4 -> 1.6e-2, then inside that test's bit-level noise [I], its notes "Batched routes"). Transport-kernel refactors need that full-tier test.
+- Bit-moving refactors: folding atm_setup's mu/dz scans into `atm_refresh.hydrostatic_column` (1-2 ulp eager) or `update_mu_dz_jax` onto `atm_setup.mu_dz_g_jax` (`zco` 1 ulp on W39b under jit), one bin-weight contraction in `photo.compute_J_jax_flat`, the shared transport-kernel helpers (`c756201`, reverted `f3dfdf7`: vulcan-forward's `test_queue_is_differentiable` tangent 3.0e-4 -> 1.6e-2, then inside that test's bit-level noise [I], its notes "Batched routes (`converged_y_batch`, `converged_y_queue`)"). Transport-kernel refactors need that full-tier test.
 - ExoGibbs's bundled FastChem 3.1.3 tables as the seed's data (a second dataset, no excited states); exogibbs with its declared dependencies; `scan_hot_from_top` (cheaper, but moves the seed and HD189_vulcan3 misses its 20000-step cap).
 - Deselecting the `oracle.yml` HD209 codegen cases or pinning their arm64 FMA residual: they assert the platform-independent invariant since `ebcb780`.
 
