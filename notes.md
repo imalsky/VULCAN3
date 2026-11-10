@@ -19,7 +19,7 @@ notes (the NAS `analysis/` tree no longer exists).
   on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test: 2603 on
   arm64 before C25; on x86-64 it certifies at 7801 steps on one CPU, 7802 on three, with the nega_cut of -1e4 [M].
 - `oracle.yml` is `workflow_dispatch` only; last green dispatch at
-  `e91db66`. On daw (x86-64, CPU) the full tier with the pinned clone gives 441 passed, 38 skipped [M]; every
+  `1ab5f37`. On daw (x86-64, CPU) the full tier with the pinned clone gives 441 passed, 38 skipped [M]; every
   skip is a GPU or arm64 case. The two oracle tests of todo 6 pass only through the delta.
 - Oracle clones (revisions in `tests/science_sources.yaml`, path in the header above) are clean on daw with `core.fileMode false`.
 - Fixtures: the tracked `FIXTURES.json` is the arm64 manifest of a laptop rebuild at the C30 code (each record
