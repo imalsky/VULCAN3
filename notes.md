@@ -35,7 +35,7 @@ grouped RHS. The setup state differs at the last bit between 4 and 6 CPUs in the
 comparison needs the same CPU count on both sides. Swapping the operands of a comparison moves HLO, which is why the Yoda rule
 stays off [M]. Ruff's unnecessary-lambda fix would have removed fresh-trace closures (`ini_abun._seed_controls`, some tests).
 
-Refusing `ffi` reverse mode removes its transpose from every `ffi` program: the lowered text changes, the optimised CPU program of `runner` is equal once instruction names are stripped, and a 30-step carry is bitwise [M]; GPU not run.
+Refusing `ffi` reverse mode removes its transpose from every `ffi` program: the lowered text changes, the optimised CPU program of `runner` is equal once instruction names are stripped, and a 30-step carry is bitwise [M]. On a GH200 the rebuilt kernel loads and the kernel test job passes at `05db2db` (34 passed, 14 skipped, after a rebuild of the node's stale `tests/data`) [M].
 Inlining `body_fn`'s helpers at the same point in the step leaves the lowered text equal, so the tracing order is what HLO sees [M].
 
 mypy is a pre-commit hook and a CI step, at zero: the config names the five unannotated JAX functions it cannot type (13 calls), and each `type: ignore` says why.
@@ -86,6 +86,11 @@ TFLOP/s at 528 and 264 lanes, 2.5 at 396 (2 blocks/SM: a half-empty 2nd wave), 1
 Steps to certification (HD189) [M]: 1054 of 1495 steps are model time at the 3.775e4 s
 plateau, ~441 the ramp from dttry 1e-10 plus five dt collapses on photolysis refreshes.
 The live levers are the photolysis cadence and the certificate window (a science decision).
+
+Batch sweep [M] (one GH200, `05db2db`, the default `fast` path, HD189 with photochemistry off, nz 150, one
+`run_batch` call with its compile): 77.6 s at batch 1 and 144.7 s at 256, so 0.013 -> 1.77 profiles/s (137x); every
+lane certifies in 611 steps; peak device memory 26.6 GB at 256. It replaces the 0.6.0 sweep behind the paper's
+throughput figure (76x).
 
 ## Grid resolution
 
