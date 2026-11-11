@@ -71,16 +71,20 @@ jobs:
 
       # The full tier: the `slow` tests only (the normal tier is tests.yml),
       # among them the CLI step-count gates HD189 1495 / HD209 1206 / W39b
-      # 1084. HD189_vulcan3's count is arm64-only and is not run here.
+      # 1084 and, against the clone, oracle.md's 10 % step-count rule.
+      # HD189_vulcan3's count is arm64-only and is not run here.
       # One process per test, run in sequence: the W39b tangent certificate
       # peaks at 12.6 GB on this 16 GB runner, so memory one test leaves
       # behind must not carry into the next. Each failure prints at once
-      # instead of being lost when the runner is killed. 59 test-minutes on daw, one test at a time; the longest is 12.
+      # instead of being lost when the runner is killed. About 82 test-minutes on daw, one test at a time; the longest
+      # is 12.
       - name: Full tier
         if: matrix.family == 'vulcan2_ncho'
         timeout-minutes: 90
         env:
           VULCAN3_RUN_SLOW: "1"
+          VULCAN_MASTER_DIR: ${{ runner.temp }}/oracle-${{ matrix.family }}
+          VULCAN3_REQUIRE_ORACLE: "1"
         run: |
           collected="$(python -m pytest tests -m slow --collect-only -q)" || { echo "$collected"; echo "slow-test collection failed"; exit 1; }
           mapfile -t slow < <(grep '::' <<< "$collected")

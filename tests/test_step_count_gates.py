@@ -5,7 +5,7 @@ physics-neutral change keeps them. HD189_vulcan3 is left out because its count
 is platform-dependent. The oracle test runs the pinned VULCAN 2 on the same
 three cases and holds vulcan3's count within 10 % of it (oracle.md "Step
 counts"); it also needs `$VULCAN_MASTER_DIR`. Each run is a full integration,
-so the file is slow-gated; oracle.yml runs the gates in the release gate.
+so the file is slow-gated; oracle.yml's full tier runs both tests in the release gate.
 """
 
 from __future__ import annotations
