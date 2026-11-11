@@ -22,6 +22,7 @@ import pytest
 from test_default_master_parity import MASTER_ONLY
 
 from tools.audit_master_parity import INTENTIONAL_JAX_DELTAS
+from vulcan3 import config
 from vulcan3._paths import PACKAGE_ROOT
 from vulcan3.atm_setup import surface_gravity
 from vulcan3.config import load_config
@@ -29,7 +30,7 @@ from vulcan3.config import load_config
 _GATES = {"HD189": 1495, "HD209": 1206, "W39b": 1084}
 # The CLI selects each config's import-frozen network by re-executing itself;
 # an inherited selection would run the config on the wrong network.
-_FROZEN_ENV = ("VULCAN3_NETWORK", "VULCAN3_ATOM_LIST", "VULCAN3_COM_FILE", "VULCAN3_CLI_RELAUNCHED")
+_FROZEN_ENV = (*config._FROZEN_ENV.values(), "VULCAN3_CLI_RELAUNCHED")
 # oracle.md "Step counts": vulcan3's converged count within 10 % of VULCAN 2's.
 STEP_RTOL = 0.10
 # Inputs copied from the package into the oracle copy, as `oracle.apply_data_deltas` copies the corrected networks:
@@ -78,14 +79,14 @@ def _master_count(name: str) -> int:
     overrides.update(MASTER_ONLY)
     with oracle_worktree("vulcan2_ncho", fastchem_abundance=abundance.name) as root:
         for key in _STAGED_KEYS:
-            target = root / getattr(cfg, key)
+            rel = getattr(cfg, key)
+            target, source = root / rel, PACKAGE_ROOT / rel
             # Replacing a file the clone ships is declared in tests/oracle.py, never done on the side.
-            declared = getattr(cfg, key) in ORACLE_DATA_DELTAS + ORACLE_NETWORK_TRANSPLANTS
-            source = PACKAGE_ROOT / getattr(cfg, key)
+            declared = rel in ORACLE_DATA_DELTAS + ORACLE_NETWORK_TRANSPLANTS
             changes_clone = target.exists() and target.read_bytes() != source.read_bytes()
-            assert declared or not changes_clone, f"{getattr(cfg, key)} changes a clone file and is not declared"
+            assert declared or not changes_clone, f"{rel} changes a clone file and is not declared"
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(PACKAGE_ROOT / getattr(cfg, key), target)
+            shutil.copy2(source, target)
         write_master_cfg(
             root,
             (root / "cfg_examples" / "vulcan_cfg_HD189.py").read_text()

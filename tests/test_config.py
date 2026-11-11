@@ -213,4 +213,4 @@ def test_dump_config_names_the_solver_and_still_loads(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     again = load_config("dumped")
     assert again.nz == 37
-    assert vars(again).keys() == vars(cfg).keys()
+    assert vars(again) == vars(cfg)

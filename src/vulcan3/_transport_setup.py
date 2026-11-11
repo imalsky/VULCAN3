@@ -43,7 +43,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 # Pressure (dyne/cm^2, 1 bar) where `Rp` and `G Mp / Rp^2` apply on a gas giant, VULCAN 2's anchor
-# (build_atm.py:532-535). Fixed, not a config key: jwst-transit-authority restates this rule
+# (build_atm.py:533-536). Fixed, not a config key: jwst-transit-authority restates this rule
 # (`chem_build.chem_radius_anchor_bar`), so moving it needs a change there first.
 _RP_REF_PRESSURE = BAR_CGS
 
@@ -246,7 +246,7 @@ def compute_mu_dz_g(
     gs = surface_gravity(cfg)
 
     # `pref_indx` anchors g(z)=gs: gas giants with P_b >= _RP_REF_PRESSURE anchor at the
-    # interface nearest it; rocky planets at index 0 (build_atm.py:532-535).
+    # interface nearest it; rocky planets at index 0 (build_atm.py:533-536).
     pico_host = np.asarray(pico_j)
     if (not bool(cfg.rocky)) and float(cfg.P_b) >= _RP_REF_PRESSURE:
         pref_indx = int(min(range(nz + 1), key=lambda i: abs(np.log10(pico_host[i]) - np.log10(_RP_REF_PRESSURE))))
@@ -444,8 +444,9 @@ def _alpha_array_for_base(atm_base: str, species_list: list[str], mol_mass: Call
     Defaults to zero. H2 base: H = -0.1, He = 0.145, then every species over
     4 amu (He included) gets 0.25, as master (build_atm.py:690-693). N2/O2/CO2
     base: H/H2/He = -0.25, Ar = 0.17. Other atm_base raises. Fixed with the data:
-    the H2-base values are simplified from Moses 2000a, the N2/O2/CO2 ones carry
-    no source upstream (VULCAN 2 build_atm.py:689-718). The overwritten He value
+    upstream calls the H2-base H value "simplified from Moses 2000a" (VULCAN 2
+    build_atm.py:690) and gives no source for the others (691-693, and the
+    N2/O2/CO2 tables at 699-702, 708-711 and 717-720). The overwritten He value
     is in notes "Known bugs, all repos".
     """
     ni = len(species_list)

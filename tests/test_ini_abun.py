@@ -199,9 +199,13 @@ def test_const_lowT_refuses_an_unconverged_solve(monkeypatch):
 
     from vulcan3 import ini_abun
 
-    monkeypatch.setattr(ini_abun._CFG, "fastchem_newton_max_iter", 0)
-    with pytest.raises(RuntimeError, match="did not converge"):
-        ini_abun._load_const_lowT_y(SimpleNamespace(M=np.ones(int(ini_abun._CFG.nz))))
+    column = SimpleNamespace(M=np.ones(int(ini_abun._CFG.nz)))
+    # no iteration: the norm is infinite; one iteration at an unreachable tolerance: finite and above it
+    for max_iter, tol in ((0, 1e-12), (1, 1e-300)):
+        monkeypatch.setattr(ini_abun._CFG, "fastchem_newton_max_iter", max_iter)
+        monkeypatch.setattr(ini_abun._CFG, "fastchem_newton_tol", tol)
+        with pytest.raises(RuntimeError, match="did not converge"):
+            ini_abun._load_const_lowT_y(column)
 
 
 def test_const_lowT_accepts_a_solve_that_ends_exactly_at_the_tolerance(monkeypatch):
