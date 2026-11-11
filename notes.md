@@ -834,11 +834,13 @@ Both kept for parity.
   would reach 0.5 nm) and on W39b, whose stellar file starts at 0.05 nm and cross sections at 0.06 nm (grid 0.06-654
   nm, 2608 bins) [M, daw CPU, `RunState.with_pre_loop_setup`]. Thresholds above
   700 nm exist only outside the default networks: NO3 at 703 nm in `NCHO_full_photo_network.txt`, O3 at 900 nm there
-  and in `SNCHO_DMS_photo_network_Tsai2024.txt` [M, read]. W39b converged with `photo_lambda_min` 0.05 against 2 nm
-  (CLI, daw CPU, `76b837a`): both 1084 steps, longdy 0.0959 / 0.0955; over species above VMR 1e-12, largest relative
-  VMR difference 1.5e-2 (O_1 at VMR 9e-12, 1.1e-7 bar), SO2 6.7e-3 at 1.9e-5 bar, median 7.9e-6 [M]. That is above
-  W39b's converged median against VULCAN 2 (1.1e-9, "Parity numbers"), so the edge is not shown harmless; HD209 is
-  not measured (todo).
+  and in `SNCHO_DMS_photo_network_Tsai2024.txt` [M, read]. W39b converged (CLI, daw CPU, `76b837a`; the 2.06 nm run
+  at `4a56666`, which changes only validation), all 1084 steps, longdy 0.0955-0.0959, relative VMR differences over
+  species above 1e-12 [M]: the data below 2 nm (0.05 against 2.06 nm, one bin alignment) max 2.6e-7 (S2O at VMR
+  5e-12, 7.6 bar), SO2 1.3e-7, median 2.4e-9; the 0.1 nm grid shifted by 0.06 nm (2.06 against 2) max 1.5e-2 (O_1
+  at VMR 9e-12, 1.1e-7 bar), SO2 6.7e-3 at 1.9e-5 bar, median 7.9e-6. Opening the edge moves `bin_min` and so
+  realigns the whole grid below 240 nm: the bin phase, not the cut data, carries the change. Both are above W39b's
+  converged median against VULCAN 2 (1.1e-9, "Parity numbers"); HD209 is not measured (todo).
 
 ### Decided by the maintainer, not to be re-opened
 
