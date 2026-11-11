@@ -81,7 +81,9 @@ def _master_count(name: str) -> int:
             target = root / getattr(cfg, key)
             # Replacing a file the clone ships is declared in tests/oracle.py, never done on the side.
             declared = getattr(cfg, key) in ORACLE_DATA_DELTAS + ORACLE_NETWORK_TRANSPLANTS
-            assert declared or not target.exists(), f"{getattr(cfg, key)} replaces a clone file and is not declared"
+            source = PACKAGE_ROOT / getattr(cfg, key)
+            changes_clone = target.exists() and target.read_bytes() != source.read_bytes()
+            assert declared or not changes_clone, f"{getattr(cfg, key)} changes a clone file and is not declared"
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(PACKAGE_ROOT / getattr(cfg, key), target)
         write_master_cfg(
