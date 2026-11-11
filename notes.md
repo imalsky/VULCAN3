@@ -831,10 +831,14 @@ Both kept for parity.
 - The window `photo_lambda_min` / `photo_lambda_max` (2 / 700 nm, VULCAN 2 `store.py:79-80`). The upper edge binds
   on no shipped case: the photolysis grid ends at 654 nm, the default networks' highest threshold, and opening the
   window to 0.2-1000 nm leaves HD189's grid as it is (2.00-654 nm, 2588 bins). The lower edge binds on HD209 (the grid
-  would reach 0.5 nm) and on W39b (0.2 nm, 2606 bins) [M, daw CPU, `RunState.with_pre_loop_setup`]. Thresholds above
+  would reach 0.5 nm) and on W39b, whose stellar file starts at 0.05 nm and cross sections at 0.06 nm (grid 0.06-654
+  nm, 2608 bins) [M, daw CPU, `RunState.with_pre_loop_setup`]. Thresholds above
   700 nm exist only outside the default networks: NO3 at 703 nm in `NCHO_full_photo_network.txt`, O3 at 900 nm there
-  and in `SNCHO_DMS_photo_network_Tsai2024.txt` [M, read]. The effect of the lower edge on a column is not measured
-  (todo).
+  and in `SNCHO_DMS_photo_network_Tsai2024.txt` [M, read]. W39b converged with `photo_lambda_min` 0.05 against 2 nm
+  (CLI, daw CPU, `76b837a`): both 1084 steps, longdy 0.0959 / 0.0955; over species above VMR 1e-12, largest relative
+  VMR difference 1.5e-2 (O_1 at VMR 9e-12, 1.1e-7 bar), SO2 6.7e-3 at 1.9e-5 bar, median 7.9e-6 [M]. That is above
+  W39b's converged median against VULCAN 2 (1.1e-9, "Parity numbers"), so the edge is not shown harmless; HD209 is
+  not measured (todo).
 
 ### Decided by the maintainer, not to be re-opened
 
