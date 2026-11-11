@@ -113,5 +113,5 @@ repos:
       - id: no-attribution-lines
         name: no attribution lines in the commit message
         language: pygrep
-        entry: '(?i)^(co-authored-by|claude-session):'
+        entry: '(?i)^(co-authored-by|[a-z0-9-]+-session):'
         stages: [commit-msg]
