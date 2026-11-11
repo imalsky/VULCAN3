@@ -1,4 +1,7 @@
-"""The convergence test: the ring lookback, the longdy reduction, the two-branch test, the certificate, the stop test.
+"""Decide when a run has reached steady state and when the loop stops.
+
+Holds the comparison against an earlier saved state (`longdy`), VULCAN 2's tight-or-loose steady-state check, the
+convergence certificate, and the loop's stop condition.
 
 Public names: `conv_normal`, `certificate_failures`. Rules: notes "Certificates".
 """

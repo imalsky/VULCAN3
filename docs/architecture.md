@@ -12,7 +12,7 @@ writes a `.vul` pickle from a `RunState` only.
 |---|---|
 | `outer_loop` | `OuterLoop` |
 | `_carry` | the carry and closure pytrees, what the step closes over, field lists, batch axes |
-| `_convergence` | the ring lookback, longdy, the convergence test and certificate, the stop test |
+| `_convergence` | when a run has reached steady state and when the loop stops: the comparison against an earlier saved state (`longdy`), the tight-or-loose check, the certificate, the stop condition |
 | `_step_control` | clip, aggregate truncation error, adaptive rtol, next step size |
 | `_loop_body`, `_loop_branches` | one trial step, in program order; its photolysis and condensation branches |
 | `_runners`, `_runner_jvp`, `_runner_queue` | solo, chunk and batch; forward mode; queue and compaction |
