@@ -885,6 +885,11 @@ packaged default's load) and is never refused.
   1 (nz 50 `load_TPK` 4:14 on one core); no shipped config uses it.
 - `tools/bench_table1.sh` writes under the system temp dir unless `BENCH_OUT` is set.
 - `steady_state_grad`, `HD189.yaml` and `VULCAN3_SOLVER=reference` stay.
+- Validation refuses `slope_min_cap` above 1e-7 and `slope_min_floor` above 1e-9 s^-1 (10x the shipped values; no
+  bound follows from the code, since the slope test turns vacuous only at yconv_min / dt_lookback, a run-time value).
+  `slope_cri`, `yconv_cri`, `yconv_min` and `flux_cri` have no upper bound and no finite check, though a large one
+  empties its term the same way: tests set `slope_cri` / `yconv_cri` to 1e3 to switch the tight branch off, and the
+  JWST tool exposes `yconv_min`.
 - Per-step costs left (daw, HD189, one core): block solve 17.5 of a 24.9 ms step, mostly
   the factor's explicit inverse (no bitwise-equal cheaper form [I]); photolysis ~17 ms a
   call x 115; `compute_diff_grav` 0.17 ms a step; a 3.1 MB photo-array copy an iteration.

@@ -54,6 +54,9 @@ _NAN = float("nan")
         # each alone fails only the finite-and-positive check, so that check is what refuses it
         {"slope_min_cap": float("inf")},
         {"slope_min_floor": -1e-10},
+        # each above its 10x guard, the floor still under the cap
+        {"slope_min_cap": 2e-7},
+        {"slope_min_floor": 5e-9},
         {"photo_lambda_max": 1.0},
         {"photo_lambda_min": -2.0},
         {"photo_lambda_max": float("inf")},

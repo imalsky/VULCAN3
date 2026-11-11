@@ -114,15 +114,19 @@ def test_slope_min_keys_set_the_loose_certificate(key, value, kzz, longdydt):
 
 
 @pytest.mark.strict_isolation
-def test_a_looser_slope_threshold_ends_the_run_sooner():
+def test_a_looser_slope_threshold_ends_the_run_sooner(monkeypatch):
     """The runner reads the slope keys: a looser loose-branch threshold certifies where the default runs to the cap.
 
     `yconv_min` is opened so that the slope test alone decides the loose branch on this small photo-off column.
     """
     import vulcan3
     import vulcan3.legacy_io as op
-    from vulcan3 import op_jax, outer_loop
+    from vulcan3 import op_jax, outer_loop, runtime_validation
     from vulcan3.state import RunState
+
+    # This column's slope is still 1e-4 s^-1 after 3000 steps, so only a threshold validation refuses can flip it.
+    monkeypatch.setattr(runtime_validation, "_SLOPE_MIN_CAP_MAX", 1.0e-2)
+    monkeypatch.setattr(runtime_validation, "_SLOPE_MIN_FLOOR_MAX", 1.0e-2)
 
     counts = {}
     for name, loose in (("default", {}), ("loose", {"slope_min_cap": 1.0e-2, "slope_min_floor": 1.0e-2})):

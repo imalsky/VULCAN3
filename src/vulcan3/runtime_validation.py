@@ -193,6 +193,12 @@ _FINITE_POSITIVE = (
     "photo_lambda_min",
     "photo_lambda_max",
 )
+# Loosest loose-branch slope threshold accepted, s^-1: 10x the shipped `slope_min_cap` and `slope_min_floor`. The slope
+# test passes vacuously once slope_min reaches yconv_min / dt_lookback, a run-time value, so no bound follows from the
+# config: these guard against a typo or a switched-off test, not a physical limit. `slope_min_hp_frac` needs none: a
+# smaller one raises Kzz / (hp_frac Hp)^2, but the cap clips it.
+_SLOPE_MIN_CAP_MAX = 1.0e-7
+_SLOPE_MIN_FLOOR_MAX = 1.0e-9
 _COUNTERS = (
     "count_min",
     "count_max",
@@ -230,9 +236,8 @@ def _validate_numerical_bounds(cfg: Config) -> list[str]:
         off = key == "element_budget_tol" and v == math.inf
         if not ((math.isfinite(v) or off) and v > 0.0):
             errors.append(f"{key}={v} must be finite and > 0.")
-    # An inverted pair runs on: the floor would override the cap, or the photolysis grid would be empty.
-    if not float(cfg.slope_min_floor) <= float(cfg.slope_min_cap):
-        errors.append(f"slope_min_floor={cfg.slope_min_floor:g} must be <= slope_min_cap={cfg.slope_min_cap:g}.")
+    errors.extend(_validate_slope_min(cfg))
+    # An inverted window runs on to an empty photolysis grid.
     if not float(cfg.photo_lambda_min) < float(cfg.photo_lambda_max):
         errors.append(
             f"photo_lambda_min={cfg.photo_lambda_min:g} must be < photo_lambda_max={cfg.photo_lambda_max:g} nm."
@@ -272,6 +277,22 @@ def _validate_numerical_bounds(cfg: Config) -> list[str]:
             f"loss_ex={loss_ex} must be a subset of atom_list={atom_list} "
             "without H (the element budget is measured relative to H)."
         )
+    return errors
+
+
+def _validate_slope_min(cfg: Config) -> list[str]:
+    """Return errors for loose-branch slope settings that change what "converged" means without a word."""
+    errors: list[str] = []
+    # An inverted pair runs on: the floor would override the cap.
+    if not float(cfg.slope_min_floor) <= float(cfg.slope_min_cap):
+        errors.append(f"slope_min_floor={cfg.slope_min_floor:g} must be <= slope_min_cap={cfg.slope_min_cap:g}.")
+    for key, bound in (("slope_min_cap", _SLOPE_MIN_CAP_MAX), ("slope_min_floor", _SLOPE_MIN_FLOOR_MAX)):
+        v = float(getattr(cfg, key))
+        if math.isfinite(v) and v > bound:
+            errors.append(
+                f"{key}={v:g} s^-1 is above {bound:g}, 10x its shipped value: so loose a slope test lets a column that "
+                f"has not settled count as converged. Set {key} <= {bound:g} or remove it."
+            )
     return errors
 
 
