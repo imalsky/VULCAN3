@@ -826,10 +826,13 @@ Both kept for parity.
 - The >240 nm grid (`dbin2: 2.0`) point-samples ~0.1 nm data: TOA J errors OH
   +24.8% (HD189), W39b SH +47.6%; at 1e-5..1 bar the worst is NH3 0.6%. `dbin2`
   0.5 removes ~90% of it for +24% bins. Kept with P19.
-- The window `photo_lambda_min` / `photo_lambda_max` (2 / 700 nm, VULCAN 2 `store.py:79-80`) cuts vendored data
-  [M, read]: thresholds NO3 703 nm, O3 and H_m 900 nm (photolysed only in `NCHO_full_photo_network.txt` and
-  `SNCHO_DMS_photo_network_Tsai2024.txt`); CO2's cross section starts at 0.2 nm (both default networks photolyse
-  CO2). The effect on a column is unmeasured.
+- The window `photo_lambda_min` / `photo_lambda_max` (2 / 700 nm, VULCAN 2 `store.py:79-80`). The upper edge binds
+  on no shipped case: the photolysis grid ends at 654 nm, the default networks' highest threshold, and opening the
+  window to 0.2-1000 nm leaves HD189's grid as it is (2.00-654 nm, 2588 bins). The lower edge binds on HD209 (the grid
+  would reach 0.5 nm) and on W39b (0.2 nm, 2606 bins) [M, daw CPU, `RunState.with_pre_loop_setup`]. Thresholds above
+  700 nm exist only outside the default networks: NO3 at 703 nm in `NCHO_full_photo_network.txt`, O3 at 900 nm there
+  and in `SNCHO_DMS_photo_network_Tsai2024.txt` [M, read]. The effect of the lower edge on a column is not measured
+  (todo).
 
 ### Decided by the maintainer, not to be re-opened
 

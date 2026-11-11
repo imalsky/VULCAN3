@@ -4,8 +4,8 @@ Evidence for these items is in `notes.md` (this repo's, unless another repo is n
 
 1. [owed] Re-baseline after the C25-C29 data and step-control fixes and the C30 extension to dissociations: the arm64 full tier.
 2. [decision] The test of `oracle.md`'s 10 % step-count rule against VULCAN 2 does not run in `oracle.yml`.
-3. [science] The photolysis window (`photo_lambda_min` 2 nm, `photo_lambda_max` 700 nm, VULCAN 2's values) cuts
-   cross-section data at both ends.
+3. [science] The photolysis window's 2 nm lower edge cuts data on HD209 and W39b; the 700 nm upper edge binds on no
+   shipped case.
 4. [decision] The 1 bar level where `Rp` and gravity apply is a fixed constant; a config key needs a coordinated
    change in jwst-transit-authority first.
 
@@ -25,12 +25,14 @@ the comparisons step does not set `VULCAN3_RUN_SLOW`. Setting the clone on the f
 test-minutes on daw (6-9 a planet) to a tier at 59 of its 90. The maintainer decides where it runs. Done when an
 `oracle.yml` dispatch runs it green.
 
-## 3. The photolysis window cuts data
+## 3. The photolysis window's lower edge
 
-Evidence: notes "Photolysis decisions". The defaults (2 and 700 nm) cut O3, NO3 and H_m above 700 nm and CO2 below
-2 nm. vulcan-forward's `_check_stellar_span` refuses a network whose thresholds pass `photo_lambda_max`. The maintainer
-decides whether the defaults move (a change to every shipped photo-on result, with the step-count gates re-pinned).
-Done when the window is kept with a measured reason, or moved and re-baselined.
+Evidence: notes "Photolysis decisions". With the window opened to 0.2-1000 nm the photolysis grid of HD189 does not
+change (2.00-654 nm, 2588 bins), HD209 extends down to 0.5 nm and W39b to 0.2 nm (2606 bins): the 2 nm lower edge
+(`photo_lambda_min`, VULCAN 2's value) cuts stellar and cross-section data on those two, and the 700 nm upper edge
+binds on none, because the default networks' highest threshold is 654 nm. The effect of the lower edge on a column is
+not measured. The maintainer decides whether `photo_lambda_min` moves (a change to the HD209 and W39b results, with
+their step-count gates re-pinned). Done when the edge is kept with a measured reason, or moved and re-baselined.
 
 ## 4. The `Rp` anchor pressure
 

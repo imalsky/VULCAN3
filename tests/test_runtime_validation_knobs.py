@@ -51,7 +51,12 @@ _NAN = float("nan")
         {"element_budget_tol": -float("inf")},
         {"slope_min_hp_frac": 0.0},
         {"slope_min_cap": 1e-11},
+        # each alone fails only the finite-and-positive check, so that check is what refuses it
+        {"slope_min_cap": float("inf")},
+        {"slope_min_floor": -1e-10},
         {"photo_lambda_max": 1.0},
+        {"photo_lambda_min": -2.0},
+        {"photo_lambda_max": float("inf")},
         {"dt_min": 1e16},
         {"sl_angle": 58.0},
         {"batch_max_retries": 64},

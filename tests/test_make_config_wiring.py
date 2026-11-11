@@ -28,7 +28,8 @@ def test_grid_and_runner_overrides_reach_setup_and_runner_without_leakage():
     global_pb_before = vulcan_cfg.P_b
     global_cmax_before = int(vulcan_cfg.count_max)
 
-    cfg = vulcan3.make_config(nz=12, P_b=1e5, P_t=1e-2, count_max=37, slope_min_cap=3e-8, use_photo=False)
+    slope = {"slope_min_hp_frac": 0.2, "slope_min_cap": 3e-8, "slope_min_floor": 2e-10}
+    cfg = vulcan3.make_config(nz=12, P_b=1e5, P_t=1e-2, count_max=37, use_photo=False, **slope)
     assert cfg is not vulcan_cfg
 
     rs = RunState.with_pre_loop_setup(cfg)
@@ -45,7 +46,8 @@ def test_grid_and_runner_overrides_reach_setup_and_runner_without_leakage():
     assert integ._cfg is cfg
     statics = build_statics(integ, var, atm)
     assert int(statics.count_max) == 37, f"count_max override did not reach the runner: {int(statics.count_max)}"
-    assert statics.slope_min_cap == 3e-8, f"slope_min_cap override did not reach the runner: {statics.slope_min_cap}"
+    reached = {key: getattr(statics, key) for key in slope}
+    assert reached == slope, f"a slope override did not reach the runner: {reached}"
 
     # (3) zero leakage: the global module is exactly as it was before the call.
     assert vulcan_cfg.nz == global_nz_before, "nz leaked onto the global module"

@@ -168,11 +168,16 @@ def test_frozen_env_replacing_a_named_value_is_logged(monkeypatch, caplog):
 
 
 def test_photo_lambda_keys_clamp_the_stellar_span():
-    """`photo_lambda_min` / `photo_lambda_max` bound the photolysis grid; the HD189 file spans 2-800 nm."""
-    from vulcan3.state import load_stellar_flux
+    """`photo_lambda_min` / `photo_lambda_max` bound the photolysis grid; the HD189 file spans 2-800 nm.
+
+    The second half goes through the setup a run uses, where the grid is built from the run's own config.
+    """
+    from vulcan3.state import RunState, legacy_view, load_stellar_flux
 
     assert load_stellar_flux(load_config("default")) == (2.0, 700.0)
     assert load_stellar_flux(load_config("default", photo_lambda_min=5.0, photo_lambda_max=500.0)) == (5.0, 500.0)
+    var, _, _ = legacy_view(RunState.with_pre_loop_setup(load_config("default", nz=12, photo_lambda_min=5.0)))
+    assert (var.def_bin_min, float(var.bins.min())) == (5.0, 5.0)
 
 
 def test_dt_max_is_capped_where_the_stage_repair_is_resolvable():
