@@ -181,7 +181,18 @@ def _validate_network_assets(cfg: Config) -> list[str]:
 
 
 # Knobs `_validate_numerical_bounds` checks.
-_FINITE_POSITIVE = ("Mp", "Rp", "rtol", "geom_conv_tol", "element_budget_tol")
+_FINITE_POSITIVE = (
+    "Mp",
+    "Rp",
+    "rtol",
+    "geom_conv_tol",
+    "element_budget_tol",
+    "slope_min_hp_frac",
+    "slope_min_cap",
+    "slope_min_floor",
+    "photo_lambda_min",
+    "photo_lambda_max",
+)
 _COUNTERS = (
     "count_min",
     "count_max",
@@ -219,6 +230,13 @@ def _validate_numerical_bounds(cfg: Config) -> list[str]:
         off = key == "element_budget_tol" and v == math.inf
         if not ((math.isfinite(v) or off) and v > 0.0):
             errors.append(f"{key}={v} must be finite and > 0.")
+    # An inverted pair runs on: the floor would override the cap, or the photolysis grid would be empty.
+    if not float(cfg.slope_min_floor) <= float(cfg.slope_min_cap):
+        errors.append(f"slope_min_floor={cfg.slope_min_floor:g} must be <= slope_min_cap={cfg.slope_min_cap:g}.")
+    if not float(cfg.photo_lambda_min) < float(cfg.photo_lambda_max):
+        errors.append(
+            f"photo_lambda_min={cfg.photo_lambda_min:g} must be < photo_lambda_max={cfg.photo_lambda_max:g} nm."
+        )
     dt_min, dt_max = float(cfg.dt_min), float(cfg.dt_max)
     if not dt_min < dt_max:
         errors.append(f"dt_min={dt_min:g} must be < dt_max={dt_max:g}.")

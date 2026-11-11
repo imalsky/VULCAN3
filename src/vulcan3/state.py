@@ -348,25 +348,19 @@ class RunState(NamedTuple):
             return _build_pre_loop_runstate_impl(cfg)
 
 
-# Photolysis wavelength window (nm): the stellar-flux bin range is clamped to
-# it, as master's store.py:79-80.
-_SFLUX_BIN_MIN_NM = 2.0
-_SFLUX_BIN_MAX_NM = 700.0
-
-
 def load_stellar_flux(cfg: Config) -> tuple[float, float]:
     """Read the stellar flux file and return the spectral-bin extents.
 
     Parameters
     ----------
     cfg : Config
-        The run's config: `use_photo`, `sflux_file`.
+        The run's config: `use_photo`, `sflux_file`, `photo_lambda_min`, `photo_lambda_max`.
 
     Returns
     -------
     def_bin_min, def_bin_max : float
-        The file's first and last wavelength, clamped to [2, 700] nm; `(0.0, 0.0)` when `cfg.use_photo` is False,
-        so callers can call unconditionally.
+        The file's first and last wavelength, nm, clamped to [`photo_lambda_min`, `photo_lambda_max`] (VULCAN 2's
+        store.py:79-80); `(0.0, 0.0)` when `cfg.use_photo` is False, so callers can call unconditionally.
     """
     if not bool(cfg.use_photo):
         return 0.0, 0.0
@@ -378,8 +372,8 @@ def load_stellar_flux(cfg: Config) -> tuple[float, float]:
     )
     wavelength = np.asarray(sflux_data["lambda"], dtype=np.float64)
     return (
-        float(max(wavelength[0], _SFLUX_BIN_MIN_NM)),
-        float(min(wavelength[-1], _SFLUX_BIN_MAX_NM)),
+        float(max(wavelength[0], float(cfg.photo_lambda_min))),
+        float(min(wavelength[-1], float(cfg.photo_lambda_max))),
     )
 
 

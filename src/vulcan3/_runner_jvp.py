@@ -130,7 +130,7 @@ def make_runner_jvp(env: RunnerEnv, active_state: tuple[bool, ...], active_atm: 
         def cond(carry: _JvpCarry) -> jnp.ndarray:
             s, _ds, tangent_longdy, tangent_longdydt = carry
             real_term, _ = real_terminate(
-                statics, s, jnp.all(two_branch(statics, tangent_longdy, tangent_longdydt, _slope_min(s)))
+                statics, s, jnp.all(two_branch(statics, tangent_longdy, tangent_longdydt, _slope_min(s, statics)))
             )
             return jnp.logical_not(real_term)
 
@@ -138,7 +138,7 @@ def make_runner_jvp(env: RunnerEnv, active_state: tuple[bool, ...], active_atm: 
         final, dfinal_active, tangent_longdy, tangent_longdydt = jax.lax.while_loop(
             cond, body, (state, list(dstate_active), inf, inf)
         )
-        tangent_ok = jnp.all(two_branch(statics, tangent_longdy, tangent_longdydt, _slope_min(final)))
+        tangent_ok = jnp.all(two_branch(statics, tangent_longdy, tangent_longdydt, _slope_min(final, statics)))
         _real_term, reason = real_terminate(statics, final, tangent_ok)
         return (
             final._replace(termination_reason=reason),

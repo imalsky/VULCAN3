@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 _CFG = default_config()
 
-# log10 stand-in for log10(0) = -inf in T-axis log-space interpolation.
+# log10 stand-in for log10(0) = -inf in T-axis log-space interpolation, as VULCAN 2 op.py:679-683.
 _LOWT_SENTINEL = -100.0
 
 # Nominal temperature (K) of the room-temperature cross-section file, i.e. the

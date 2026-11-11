@@ -50,7 +50,10 @@ _CFG = default_config()
 # carrier. Only pairs the active network supports are used (C-H-N-O networks
 # conserve H/O/C/N; SNCHO adds S via H2S). One reservoir per atom keeps the
 # reservoir count matrix square, so one linear solve zeros every atom residual
-# at once, including the H that H2S also carries.
+# at once, including the H that H2S also carries. Each is its element's main
+# carrier in an H2-dominated column; where a carrier is a trace, the stage
+# repair drops a correction over `_REPAIR_MAX_CELL_FRAC` of it and the
+# element-budget term sees what is left. Fixed: the tables are built at import.
 _ATOM_RESERVOIRS = (
     ("H", "H2"),
     ("O", "H2O"),

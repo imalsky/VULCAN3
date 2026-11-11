@@ -442,7 +442,7 @@ Rules whose evidence has no section of its own.
 - `conver_ignore`: before C20, HD189 `[]` and `['HC3N']` both took 1495 steps
   (atomic C controls); a 13-hydrocarbon list from a hand-patched master copy gave
   1296 by shrinking the metric. Every shipped run converges on the loose branch
-  (`longdy < yconv_min` 0.1 with `longdydt < slope_min`, `op.py:1056`).
+  (`longdy < yconv_min` 0.1 with `longdydt < slope_min`, `op.py:1056`; `slope_min_*` keys).
 - `vm` in-loop: freezing it at setup put He 0.43 dex and CH4 1.7 dex off at
   `const_Kzz=1e7`, photo off (<= 0.16 dex after). The scheme matters only at low
   Kzz: HD189 (Kzz 1e10) central vs hybrid <= 0.008 dex, at `const_Kzz=1e7` up to
@@ -701,6 +701,7 @@ were not obtained).
   RunState does not carry the certificate ring, the element budget or the hybrid phase.
 - Frozen knobs (`docs/settings.md`): on a cfg that differs (`state._frozen_mismatch`; a byte-identical
   file copy matches) `with_pre_loop_setup` raises; the CLI's re-exec guard is `$VULCAN3_CLI_RELAUNCHED`.
+  A variable that replaces what a loaded config file names logs a WARNING (a log line: consumers' pytest errors on warnings).
 - A named config sets only the knobs that differ from `default.yaml` (`HD189.yaml` is `{}`).
   `<X>_H` is accepted for any symbol of the composition table. Validation resolves assets
   with `resolve_data_path` (cwd first, then package data), as the run does.
@@ -825,6 +826,10 @@ Both kept for parity.
 - The >240 nm grid (`dbin2: 2.0`) point-samples ~0.1 nm data: TOA J errors OH
   +24.8% (HD189), W39b SH +47.6%; at 1e-5..1 bar the worst is NH3 0.6%. `dbin2`
   0.5 removes ~90% of it for +24% bins. Kept with P19.
+- The window `photo_lambda_min` / `photo_lambda_max` (2 / 700 nm, VULCAN 2 `store.py:79-80`) cuts vendored data
+  [M, read]: thresholds NO3 703 nm, O3 and H_m 900 nm (photolysed only in `NCHO_full_photo_network.txt` and
+  `SNCHO_DMS_photo_network_Tsai2024.txt`); CO2's cross section starts at 0.2 nm (both default networks photolyse
+  CO2). The effect on a column is unmeasured.
 
 ### Decided by the maintainer, not to be re-opened
 
@@ -848,6 +853,11 @@ FastChem holds O in species the network drops) is not ported: the seed is ExoGib
 network's elements. The oracle copy keeps the C30 limit through `ORACLE_CODE_DELTAS`: it is
 the declared-defect mechanism, and `test_gibbs` at 1e-8 is the check that the copy's
 arithmetic and `apply_collision_limit` agree.
+Fixed numbers: the loose-branch slope threshold (`slope_min_*`) and the photolysis window are config keys at VULCAN
+2's values; `ag0`, the thermal-diffusion factors, the Dzz fits, `K_COLL`, `_ATOM_RESERVOIRS`, `BODY_MAP_DT`,
+`_LOWT_SENTINEL` and the 1 bar `Rp` anchor stay fixed, each with its reason in the code; the NASA-9 200-6000 K
+range warns only. A `$VULCAN3_*` value that replaces what a loaded config file names logs a warning (not at the
+packaged default's load) and is never refused.
 
 ## Known and deliberately untracked
 

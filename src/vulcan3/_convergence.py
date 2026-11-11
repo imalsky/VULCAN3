@@ -30,15 +30,6 @@ if TYPE_CHECKING:
 
 __all__ = ["certificate_failures", "conv_normal"]
 
-# The loose convergence branch's slope threshold (s^-1), master's conv()
-# (exoclime@80f75b9 op.py:1028-1029): min over the interfaces of
-# Kzz / (0.1 Hp)^2, capped at 1e-8 and floored at 1e-10.
-_SLOPE_MIN_HP_FRAC = 0.1
-
-_SLOPE_MIN_CAP = 1e-8
-
-_SLOPE_MIN_FLOOR = 1e-10
-
 # Force-accepts at dt_min that keep the state before a run stops: the second repeats the first's trial.
 _FROZEN_REPEATS = 2
 
@@ -50,13 +41,17 @@ def _frozen(s: JaxIntegState) -> jnp.ndarray:
 
 
 # In the certificate functions below, `c` is the runner's `_Statics` or a config: both carry yconv_cri, yconv_min,
-# slope_cri and flux_cri under these names.
-def _slope_min(s: JaxIntegState) -> jnp.ndarray:
+# slope_cri, flux_cri and the slope_min_* keys under these names.
+def _slope_min(s: JaxIntegState, c: _Statics | Config) -> jnp.ndarray:
+    """Return the loose branch's slope threshold, s^-1: min over interfaces of Kzz / (hp_frac Hp)^2, capped, floored.
+
+    VULCAN 2's conv() (op.py:1028-1029); the three numbers are the `slope_min_*` config keys.
+    """
     slope_min = jnp.minimum(
-        jnp.min(s.pv.Kzz / (_SLOPE_MIN_HP_FRAC * s.Hp[:-1]) ** 2),
-        jnp.float64(_SLOPE_MIN_CAP),
+        jnp.min(s.pv.Kzz / (float(c.slope_min_hp_frac) * s.Hp[:-1]) ** 2),
+        jnp.float64(float(c.slope_min_cap)),
     )
-    return jnp.maximum(slope_min, jnp.float64(_SLOPE_MIN_FLOOR))
+    return jnp.maximum(slope_min, jnp.float64(float(c.slope_min_floor)))
 
 
 def _branches(
@@ -75,7 +70,7 @@ def _convergence_ok(s: JaxIntegState, c: _Statics | Config) -> jnp.ndarray:
     two-branch predicate as upstream (op.py:1060); shipped configs exit on
     the loose branch.
     """
-    tight, loose = _branches(s.longdy, s.longdydt, _slope_min(s), c)
+    tight, loose = _branches(s.longdy, s.longdydt, _slope_min(s, c), c)
     ok: jnp.ndarray = (tight | loose) & (s.aflux_change < jnp.float64(c.flux_cri))
     return ok
 
@@ -116,7 +111,7 @@ def conv_normal(final: JaxIntegState, cfg: Config) -> tuple[jnp.ndarray, jnp.nda
         int32: 1 when the tight branch certified, 2 the loose one, 0 when `ok` is False.
     """
     ok = _certified(final, cfg)
-    tight, _ = _branches(final.longdy, final.longdydt, _slope_min(final), cfg)
+    tight, _ = _branches(final.longdy, final.longdydt, _slope_min(final, cfg), cfg)
     branch = jnp.where(ok, jnp.where(tight, jnp.int32(1), jnp.int32(2)), jnp.int32(0))
     return ok, branch
 
@@ -145,7 +140,7 @@ def certificate_failures(
     list of tuple of (str, float, float)
         `(term, value, threshold)` per failed term.
     """
-    slope_min = _slope_min(final)
+    slope_min = _slope_min(final, cfg)
     tight, loose = _branches(final.longdy, final.longdydt, slope_min, cfg)
     out = []
     if not bool(tight | loose):

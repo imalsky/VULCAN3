@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import functools
+import logging
 import re
 import sys
 import types
@@ -25,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from . import _settings
+from ._paths import resolve_data_path
 
 if TYPE_CHECKING:
     import os
@@ -87,6 +89,8 @@ _FROZEN_ENV = {
 }
 
 _settings.refuse_old_prefix()
+
+logger = logging.getLogger(__name__)
 
 # Largest step the Ros2 stage repair (jax_step._repair_stage) can resolve;
 # its correction system is as singular as the stage system by 1e17 s.
@@ -271,16 +275,30 @@ def _read_text(name_or_path: str | os.PathLike) -> str:
     )
 
 
-def _apply_frozen_env(d: dict[str, Any]) -> None:
-    """Overlay the import-frozen knobs from ``$VULCAN3_*`` (env wins)."""
+def _same_frozen_value(key: str, named: Any, selected: Any) -> bool:
+    """Compare a file's import-frozen value with the environment's: a list, or a path as the run resolves it."""
+    if key == "atom_list":
+        return list(named) == list(selected)
+    return bool(Path(resolve_data_path(str(named))).resolve() == Path(resolve_data_path(str(selected))).resolve())
+
+
+def _apply_frozen_env(d: dict[str, Any], raw: dict[str, Any], source: str) -> None:
+    """Overlay the import-frozen knobs from ``$VULCAN3_*`` (env wins).
+
+    Log a warning for each knob the config file `raw` names with another value. The packaged ``default.yaml`` is not
+    a choice the caller made, so its load (``default_config()`` at the first import) logs nothing.
+    """
+    named_by_file = raw != _packaged_defaults()
     for key, env in _FROZEN_ENV.items():
         val = _settings.frozen_override(env)
         if val is None:
             continue
-        if key == "atom_list":
-            d[key] = [s for s in val.split(",") if s]
-        else:
-            d[key] = val
+        selected = [s for s in val.split(",") if s] if key == "atom_list" else val
+        if named_by_file and key in raw and not _same_frozen_value(key, raw[key], selected):
+            logger.warning(
+                "%s names %s %r; $%s selects %r, which this process runs.", source, key, raw[key], env, selected
+            )
+        d[key] = selected
 
 
 def _resolve_derived(d: dict[str, Any]) -> None:
@@ -322,7 +340,7 @@ def load_config(name_or_path: str | os.PathLike = "default", /, **overrides: Any
         )
     # A config file overlays default.yaml: a knob it omits takes that value.
     d: dict[str, Any] = {**copy.deepcopy(_packaged_defaults()), **raw}
-    _apply_frozen_env(d)
+    _apply_frozen_env(d, raw, f"config {name_or_path!r}")
     d.update(overrides)
     for key in _validate_keys(d, f"config {name_or_path!r}"):
         del d[key]

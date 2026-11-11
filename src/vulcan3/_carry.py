@@ -228,6 +228,9 @@ class _Statics(NamedTuple):
     yconv_cri: float
     yconv_min: float
     slope_cri: float
+    slope_min_hp_frac: float  # loose-branch slope threshold: Kzz / (hp_frac Hp)^2, capped, floored
+    slope_min_cap: float  # s^-1
+    slope_min_floor: float  # s^-1
     flux_cri: float
     geom_conv_tol: float  # certificate: max relative move of the refreshed geometry
     element_budget_tol: float  # certificate: max cumulative column element drift

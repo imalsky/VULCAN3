@@ -11,7 +11,9 @@ hc = 1.98644582e-9  # Planck constant * c (erg*nm)
 au = 1.49597871e13  # Astronomical unit (cm)
 r_sun = 6.957e10  # solar radius (cm)
 G_grav = 6.67430e-8  # gravitational constant (cm^3 g^-1 s^-2), astropy G.cgs
-ag0 = 0  # asymmetry factor in RT (0 = isotropic scattering)
+# Scattering asymmetry factor g in the two-stream RT. Fixed at 0: every scatterer is Rayleigh (photo_setup reads only
+# rayleigh/<sp>_scat.txt), whose phase function is forward-backward symmetric. VULCAN 2 phy_const.py:11.
+ag0 = 0
 
 BAR_CGS = 1.0e6  # dyne/cm^2 per bar
 ATM_BAR = 1.01325  # bar per standard atmosphere

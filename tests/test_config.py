@@ -152,6 +152,29 @@ def test_frozen_env_overrides_yaml(monkeypatch):
     assert cfg.network == "thermo/SNCHO_photo_network.txt"
 
 
+def test_frozen_env_replacing_a_named_value_is_logged(monkeypatch, caplog):
+    """A config file that names another network than $VULCAN3_NETWORK logs both; the packaged default logs nothing."""
+    monkeypatch.setenv("VULCAN3_NETWORK", "thermo/NCHO_photo_network.txt")
+    monkeypatch.setenv("VULCAN3_ATOM_LIST", "H,O,C,N,S")  # what W39b.yaml names: no line for it
+    with caplog.at_level("WARNING", logger="vulcan3.config"):
+        load_config("default")
+        assert caplog.records == []
+        cfg = load_config("W39b")
+    assert cfg.network == "thermo/NCHO_photo_network.txt"
+    (record,) = caplog.records
+    message = record.getMessage()
+    assert "thermo/SNCHO_photo_network_2025.txt" in message, message
+    assert "$VULCAN3_NETWORK selects 'thermo/NCHO_photo_network.txt'" in message, message
+
+
+def test_photo_lambda_keys_clamp_the_stellar_span():
+    """`photo_lambda_min` / `photo_lambda_max` bound the photolysis grid; the HD189 file spans 2-800 nm."""
+    from vulcan3.state import load_stellar_flux
+
+    assert load_stellar_flux(load_config("default")) == (2.0, 700.0)
+    assert load_stellar_flux(load_config("default", photo_lambda_min=5.0, photo_lambda_max=500.0)) == (5.0, 500.0)
+
+
 def test_dt_max_is_capped_where_the_stage_repair_is_resolvable():
     """Derived dt_max saturates at DT_MAX_S.
 

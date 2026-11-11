@@ -36,6 +36,8 @@ SOLVER_MAP = "renorm"
 
 PhotoRecomputeArg = Callable[[jnp.ndarray], jnp.ndarray] | None
 
+# Default probe step (s) of the reverse-mode body map, a keyword of steady_state_reaction_sensitivity. The usable
+# window depends on the column and network (steady_state_grad.BODY_MAP_DT_CANDIDATES; notes "Adjoint record").
 BODY_MAP_DT = 1e7
 
 # Hard guard: above this the implicit step goes near-singular; refuse rather than return a silently divergent gradient.

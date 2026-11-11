@@ -42,6 +42,11 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
+# Pressure (dyne/cm^2, 1 bar) where `Rp` and `G Mp / Rp^2` apply on a gas giant, VULCAN 2's anchor
+# (build_atm.py:532-535). Fixed, not a config key: jwst-transit-authority restates this rule
+# (`chem_build.chem_radius_anchor_bar`), so moving it needs a change there first.
+_RP_REF_PRESSURE = BAR_CGS
+
 
 def compute_mean_mass(ymix: jnp.ndarray, ms_arr: jnp.ndarray) -> jnp.ndarray:
     """Mean molecular weight per layer.
@@ -240,11 +245,11 @@ def compute_mu_dz_g(
 
     gs = surface_gravity(cfg)
 
-    # `pref_indx` anchors g(z)=gs: gas giants with P_b >= 1 bar anchor at the
-    # layer nearest 1 bar; rocky planets at index 0 (build_atm.py:533-535).
+    # `pref_indx` anchors g(z)=gs: gas giants with P_b >= _RP_REF_PRESSURE anchor at the
+    # interface nearest it; rocky planets at index 0 (build_atm.py:532-535).
     pico_host = np.asarray(pico_j)
-    if (not bool(cfg.rocky)) and float(cfg.P_b) >= BAR_CGS:
-        pref_indx = int(min(range(nz + 1), key=lambda i: abs(np.log10(pico_host[i]) - np.log10(BAR_CGS))))
+    if (not bool(cfg.rocky)) and float(cfg.P_b) >= _RP_REF_PRESSURE:
+        pref_indx = int(min(range(nz + 1), key=lambda i: abs(np.log10(pico_host[i]) - np.log10(_RP_REF_PRESSURE))))
     else:
         pref_indx = 0
 
@@ -418,8 +423,9 @@ def settling_coeff_array(
 def _Dzz_gen_for_base(atm_base: str) -> Callable[[jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray]:
     """Return a JAX lambda `(T, n_tot, mi) -> Dzz` for an atm_base.
 
-    Coefficients are species-pair fits from Moses 2000a (H2 base) and the
-    analogous N2/O2/CO2 forms.
+    Published pair fits, fixed with the data: CH4-H2 from Moses 2000a (H2 base); CH4-N2 and CH4-O2 from Banks &
+    Kockarts 1973 and H2-CO2 from Hu & Seager, each scaled by molecular mass (VULCAN 2 build_atm.py:684-714 and its
+    comments there).
     """
     if atm_base == "H2":
         return lambda T, n_tot, mi: 2.2965e17 * T**0.765 / n_tot * (16.04 / mi * (mi + 2.016) / 18.059) ** 0.5
@@ -437,7 +443,10 @@ def _alpha_array_for_base(atm_base: str, species_list: list[str], mol_mass: Call
 
     Defaults to zero. H2 base: H = -0.1, He = 0.145, then every species over
     4 amu (He included) gets 0.25, as master (build_atm.py:690-693). N2/O2/CO2
-    base: H/H2/He = -0.25, Ar = 0.17. Other atm_base raises.
+    base: H/H2/He = -0.25, Ar = 0.17. Other atm_base raises. Fixed with the data:
+    the H2-base values are simplified from Moses 2000a, the N2/O2/CO2 ones carry
+    no source upstream (VULCAN 2 build_atm.py:689-718). The overwritten He value
+    is in notes "Known bugs, all repos".
     """
     ni = len(species_list)
     alpha = np.zeros(ni, dtype=np.float64)

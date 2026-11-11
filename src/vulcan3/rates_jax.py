@@ -390,7 +390,9 @@ def fill_reverse_k(net: Network, k_fwd: jnp.ndarray, K_eq: jnp.ndarray) -> jnp.n
     return jnp.where(even_rev_m, k_rev, k_fwd)
 
 
-K_COLL = 1e-9  # cm3 s^-1: the collision limit of apply_collision_limit (notes "Parity ledger")
+# cm3 s^-1: the collision limit of apply_collision_limit (notes "Parity ledger" C30). A ceiling at the gas-kinetic
+# collision rate constant, not a measured rate; fixed, and repeated by the oracle copy's patch in tests/oracle.py.
+K_COLL = 1e-9
 
 
 def apply_collision_limit(net: Network, k: jnp.ndarray, M: jnp.ndarray) -> jnp.ndarray:

@@ -153,6 +153,13 @@ loss_eps: 0.1
 yconv_cri: 0.01
 slope_cri: 0.0001
 yconv_min: 0.1
+# The loose branch's slope threshold (s^-1): longdydt must fall below min over the interfaces of
+# Kzz / (slope_min_hp_frac * Hp)^2, capped at slope_min_cap and floored at slope_min_floor. These are VULCAN 2's own
+# values (op.py:1028-1029). Every shipped run exits on the loose branch, so changing them changes what "converged"
+# means.
+slope_min_hp_frac: 0.1
+slope_min_cap: 1.0e-8
+slope_min_floor: 1.0e-10
 flux_cri: 0.1
 flux_atol: 1.0
 loss_ex: []
@@ -162,6 +169,10 @@ edd: 0.5
 dbin1: 0.1
 dbin2: 2.0
 dbin_12trans: 240.0
+# Photolysis wavelength window (nm): the stellar-flux span is clamped to it before the bins are built (VULCAN 2's
+# 2 and 700 nm, store.py:79-80). The cross sections and dissociation thresholds then narrow it further.
+photo_lambda_min: 2.0
+photo_lambda_max: 700.0
 ini_update_photo_frq: 100
 final_update_photo_frq: 5
 use_moldiff: true
