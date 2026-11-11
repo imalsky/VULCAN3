@@ -62,6 +62,12 @@ def test_shipped_config_loads_and_resolves(name):
     # No shipped config loosens the column element-budget certificate.
     assert cfg.element_budget_tol <= 1e-2
 
+    # Every case names its own star, so a caller can tell a stated star from default.yaml's.
+    from vulcan3._paths import PACKAGE_ROOT
+
+    stated = yaml.safe_load((PACKAGE_ROOT / "configs" / f"{name}.yaml").read_text())
+    assert {"r_star", "orbit_radius", "sflux_file"} <= set(stated), name
+
 
 def test_overrides_win_over_yaml_and_derived():
     cfg = load_config("default", nz=99, runtime=1.0e19)

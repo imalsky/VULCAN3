@@ -18,6 +18,12 @@
 
 # ====== Setting up paths and filenames for the input and output files ======
 out_name: HD189_vulcan3.vul
+# The star, stated with default.yaml's values so the case names its own (as HD189.yaml does).
+sflux_file: atm/stellar_flux/sflux-HD189_Moses11.txt
+
+# ====== Setting up photochemistry ======
+r_star: 0.805
+orbit_radius: 0.03142
 
 # ====== Setting up numerical parameters for the ODE solver ======
 # vm_branch vulcan_cfg.py:121 -- count_max = int(2E4)

@@ -704,7 +704,8 @@ were not obtained).
 - Frozen knobs (`docs/settings.md`): on a cfg that differs (`state._frozen_mismatch`; a byte-identical
   file copy matches) `with_pre_loop_setup` raises; the CLI's re-exec guard is `$VULCAN3_CLI_RELAUNCHED`.
   A variable that replaces what a loaded config file names logs a WARNING (a log line: consumers' pytest errors on warnings).
-- A named config sets only the knobs that differ from `default.yaml` (`HD189.yaml` is `{}`).
+- A named config sets only the knobs that differ from `default.yaml`, plus its star (`r_star`, `orbit_radius`,
+  `sflux_file`), which every case states: `HD189.yaml` holds only those three, at `default.yaml`'s values.
   `<X>_H` is accepted for any symbol of the composition table. Validation resolves assets
   with `resolve_data_path` (cwd first, then package data), as the run does.
 - `runner_chunk` is the runner's while_loop with `& (accept_count < target)`, target a

@@ -1,6 +1,9 @@
 # VULCAN3 configuration (HD189): HD 189733 b, the VULCAN 2 parity case.
-# Overlays default.yaml, which is this case: no knob differs, so none is set
-# (`{}`, the empty mapping; a config file must parse to a mapping).
-# Authored surface: replace `{}` with the knobs to change (or use a CWD
-# ./configs/HD189.yaml override).
-{}
+# Overlays default.yaml, which is this case: no knob differs. The star is stated
+# all the same, with default.yaml's values, so a caller that requires a case to
+# name its own star (vulcan-forward does) accepts this file.
+# Authored surface: add the knobs to change (or use a CWD ./configs/HD189.yaml
+# override).
+sflux_file: atm/stellar_flux/sflux-HD189_Moses11.txt
+r_star: 0.805
+orbit_radius: 0.03142
