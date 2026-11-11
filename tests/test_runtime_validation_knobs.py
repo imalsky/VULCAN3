@@ -74,3 +74,26 @@ def test_silently_wrong_values_are_refused(bad):
     off = SimpleNamespace(**{**_VALID, "element_budget_tol": float("inf")})
     assert _validate_numerical_bounds(off) == []
     assert len(_validate_numerical_bounds(SimpleNamespace(**{**_VALID, **bad}))) == 1
+
+
+@pytest.mark.parametrize(
+    ("flags", "expect"),
+    [
+        ({}, None),
+        ({"use_vm_mol": True, "use_hybrid_vm_mol": True}, None),
+        ({"use_moldiff": False}, None),
+        ({"use_moldiff": False, "use_vm_mol": True}, "use_vm_mol=True needs use_moldiff"),
+        ({"use_moldiff": False, "use_settling": True}, "use_settling=True needs use_moldiff"),
+        ({"use_hybrid_vm_mol": True}, "use_hybrid_vm_mol=True needs use_vm_mol"),
+    ],
+)
+def test_a_diffusion_option_the_run_would_ignore_is_refused(flags, expect):
+    from types import SimpleNamespace
+
+    from vulcan3.runtime_validation import _validate_diffusion_flags
+
+    cfg = SimpleNamespace(
+        **{"use_moldiff": True, "use_vm_mol": False, "use_settling": False, "use_hybrid_vm_mol": False, **flags}
+    )
+    errors = _validate_diffusion_flags(cfg)
+    assert errors == [] if expect is None else any(expect in e for e in errors), errors

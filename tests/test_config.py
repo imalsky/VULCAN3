@@ -163,3 +163,19 @@ def test_dt_max_is_capped_where_the_stage_repair_is_resolvable():
     assert load_config("default", runtime=1e18).dt_max == 1.0e13
     with pytest.raises(ValueError, match="DT_MAX_S"):
         OuterLoop(None, None, cfg=load_config("default", dt_max=1e17))
+
+
+def test_dump_config_names_the_solver_and_still_loads(tmp_path, monkeypatch):
+    """The dumped file records the process's solver and RHS form in a comment, and loads back to the same values."""
+    from vulcan3 import _settings
+    from vulcan3.config import dump_config
+
+    cfg = load_config("default", nz=37)
+    (tmp_path / "configs").mkdir()
+    dump_config(cfg, tmp_path / "configs" / "dumped.yaml")
+    first = (tmp_path / "configs" / "dumped.yaml").read_text().splitlines()[0]
+    assert first == f"# written with VULCAN3_SOLVER={_settings.solver()} VULCAN3_CHEM_RHS={_settings.chem_rhs()}"
+    monkeypatch.chdir(tmp_path)
+    again = load_config("dumped")
+    assert again.nz == 37
+    assert vars(again).keys() == vars(cfg).keys()

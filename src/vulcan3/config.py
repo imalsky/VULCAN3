@@ -333,7 +333,9 @@ def dump_config(cfg: Config, path: str | os.PathLike) -> None:
     """Write a resolved Config back to YAML so a run can be reproduced exactly.
 
     Dumps the full attribute set (including the derived values), so re-loading
-    the file with ``load_config`` reconstructs the same run inputs verbatim.
+    the file with ``load_config`` reconstructs the same run inputs verbatim. The
+    first line is a comment naming the solver and the right-hand-side form of
+    the writing process.
 
     Parameters
     ----------
@@ -343,7 +345,10 @@ def dump_config(cfg: Config, path: str | os.PathLike) -> None:
         The YAML file to write.
     """
     d = {k: v for k, v in vars(cfg).items() if not k.startswith("_") and not callable(v)}
-    Path(path).write_text(yaml.safe_dump(d, sort_keys=False, default_flow_style=False, width=100))
+    # The solver and the right-hand-side form are process settings, not config keys: recorded as a comment, so the file
+    # still loads.
+    header = f"# written with VULCAN3_SOLVER={_settings.solver()} VULCAN3_CHEM_RHS={_settings.chem_rhs()}\n"
+    Path(path).write_text(header + yaml.safe_dump(d, sort_keys=False, default_flow_style=False, width=100))
 
 
 @functools.cache

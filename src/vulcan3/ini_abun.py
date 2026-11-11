@@ -667,6 +667,16 @@ def _load_const_lowT_y(data_atm: types.SimpleNamespace) -> tuple[np.ndarray, lis
             tol=tol,
         )
     )
+    # The loop also ends at the iteration cap or on a non-finite iterate; neither is a solution.
+    ratios = (jnp.asarray(r) for r in (O_H, C_H, He_H, N_H))
+    residual = float(np.linalg.norm(np.asarray(_abun_lowT_residual(jnp.asarray(ini_mol), *ratios))))
+    if not (np.isfinite(residual) and residual <= tol):
+        raise RuntimeError(
+            f"ini_mix='const_lowT': the H2/H2O/CH4/He/NH3 Newton solve did not converge: residual norm "
+            f"{residual:.3e} against fastchem_newton_tol={tol:g} after at most {max_iter} iterations "
+            f"(O_H={O_H:g}, C_H={C_H:g}, He_H={He_H:g}, N_H={N_H:g}). Raise fastchem_newton_max_iter, or check "
+            "the element ratios."
+        )
 
     nz_ = _CFG.nz
     y = np.zeros((nz_, chem_funs.ni), dtype=np.float64)

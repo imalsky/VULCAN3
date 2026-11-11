@@ -192,3 +192,14 @@ def test_column_atoms_uses_the_operator_invariant():
         "zi,ia->a", y0, compo
     )
     np.testing.assert_allclose(column_change(y2, y0, dz_u), unweighted, rtol=COLUMN_TOL)
+
+
+def test_const_lowT_refuses_an_unconverged_solve(monkeypatch):
+    """A Newton loop that ends at its iteration cap is refused, not used as the start column."""
+    from types import SimpleNamespace
+
+    from vulcan3 import ini_abun
+
+    monkeypatch.setattr(ini_abun._CFG, "fastchem_newton_max_iter", 0)
+    with pytest.raises(RuntimeError, match="did not converge"):
+        ini_abun._load_const_lowT_y(SimpleNamespace(M=np.ones(int(ini_abun._CFG.nz))))

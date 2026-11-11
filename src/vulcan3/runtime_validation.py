@@ -257,6 +257,24 @@ def _validate_numerical_bounds(cfg: Config) -> list[str]:
     return errors
 
 
+def _validate_diffusion_flags(cfg: Config) -> list[str]:
+    """Return errors for a molecular-diffusion option that is switched on where the run would ignore it."""
+    errors: list[str] = []
+    if not bool(cfg.use_moldiff):
+        errors.extend(
+            f"{key}=True needs use_moldiff=True: with molecular diffusion off the option does nothing. Set "
+            f"use_moldiff=True or drop {key}."
+            for key in ("use_vm_mol", "use_settling")
+            if bool(getattr(cfg, key))
+        )
+    if bool(cfg.use_hybrid_vm_mol) and not bool(cfg.use_vm_mol):
+        errors.append(
+            "use_hybrid_vm_mol=True needs use_vm_mol=True: the hybrid scheme switches the upwind velocity, which is "
+            "off. Set use_vm_mol=True or drop use_hybrid_vm_mol."
+        )
+    return errors
+
+
 def _validate_condensation(cfg: Config) -> list[str]:
     """Return errors for an unsupported or silently-inert condensation config.
 
@@ -386,6 +404,7 @@ def validate_runtime_config(cfg: Config) -> None:  # noqa: C901 (one refusal per
                 )
 
     errors.extend(_validate_condensation(cfg))
+    errors.extend(_validate_diffusion_flags(cfg))
 
     required_paths = [
         ("network", cfg.network),
