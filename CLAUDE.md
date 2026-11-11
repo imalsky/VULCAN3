@@ -13,7 +13,9 @@ Layout, Figures, Branches, Behind main and Tests are in the project-root `CLAUDE
 
 ## Docs
 
-Four root docs: `README.md` (the maintainer's; never edit it unasked), `notes.md` (the results and reasons behind the
+Five root docs: `oracle.md` (the maintainer's goals and what success and failure are: read it before planning work
+and compare a result with it before calling work done; never edit it unasked), `README.md` (the maintainer's; never
+edit it unasked), `notes.md` (the results and reasons behind the
 rules below, by topic section, never a dated history; pay for each new line by trimming a duplicate or stale one),
 `todo.md` (open work: read it first; open or close items in the same pass) and this file (directions only). Any other
 hand-written `.md` file goes in `docs/`. Name a notes section by its heading. Record a rejected approach in notes "Do

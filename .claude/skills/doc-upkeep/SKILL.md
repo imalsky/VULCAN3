@@ -5,8 +5,8 @@ description: Use when work in a VULCAN_Project repo (VULCAN-JAX, vulcan-forward,
 
 # Doc upkeep (CLAUDE.md / notes.md / todo.md)
 
-Each code repo has four root docs. README.md is the maintainer's; never
-touch it unasked. The other three have one job each, are tracked, and the
+Each code repo has five root docs. oracle.md and README.md are the
+maintainer's; never touch either unasked. The other three have one job each, are tracked, and the
 repos are public: write for public reading (no personal names except cited
 authors, no emails, mail/thread IDs, account names, keys or billing, no chat
 quotes, no judgments of people or sessions). Write each fact in exactly one
