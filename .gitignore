@@ -22,7 +22,7 @@ venv/
 # IDEs and editors
 .idea/
 .vscode/
-.claude/settings.local.json
+.claude/
 *.swp
 *.swo
 *~
