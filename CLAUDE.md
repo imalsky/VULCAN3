@@ -51,9 +51,9 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
 ### Physics and parity
 
 - Match the pinned VULCAN 2 by default: port all of master's live physics, not its dead paths, and do not chase oracle
-  tests for every knob. The target is scientific parity, not byte identity.
-- An intentional divergence must fix a confirmed, results-affecting defect; record it in notes "Parity ledger"
-  (file:line or symbol on both sides) and "Differences from VULCAN master".
+  tests for every knob (`oracle.md`, the goal).
+- Record an intentional divergence in notes "Parity ledger" (file:line or symbol on both sides) and "Differences from
+  VULCAN master"; `oracle.md` "Every departure is declared" says when one is allowed.
 - The VULCAN 2 reference is the pinned clones under `VULCAN_Project/.oracles/` (revisions in
   `tests/science_sources.yaml`), passed as `$VULCAN_MASTER_DIR`; a dirty clone is refused. Never edit a clone: declare a
   defect corrected on both sides once in `tests/oracle.py::ORACLE_CODE_DELTAS`, which patches only the disposable copy.
@@ -155,19 +155,18 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
 - Adding a field to `AtmStatic` touches two places in src (the NamedTuple, `make_atm_static`; a toggle also
   `_carry._ATM_TOGGLES`) plus every direct `AtmStatic(` call in examples/ and tests/. Splice defaults into saved-fixture loaders rather than
   regenerating.
-- Add no runtime dependency beyond jax / numpy / scipy / PyYAML and `exogibbs` (notes "Charter, configs, API").
+- Add no runtime dependency (`oracle.md` "Standalone"; notes "Charter, configs, API").
 
 ### Data, caches and tests
 
-- Vendored inputs are hash-pinned in `tests/science_sources.yaml`; re-pin in the same commit as any edit.
+- Re-pin a vendored input in `tests/science_sources.yaml` in the same commit as any edit (`oracle.md` "Inputs are
+  pinned").
 - conftest fails on missing `tests/data` fixtures (`python tests/gen_fixtures.py --all`).
   `VULCAN3_ALLOW_MISSING_FIXTURES` is the developer escape hatch: `tests.yml` sets it, `oracle.yml` must not. Before
   chasing a CI full-tier failure on daw, run `gen_fixtures.py --all --force`.
-- `.vul` is a pickle with master's three top-level keys and the same public keys, shapes and dtypes, so master's
-  `plot_py/` loads it. Byte identity is a non-goal.
+- Keep the `.vul` layout that master's `plot_py/` loads (`oracle.md` "Output VULCAN 2's tools read").
 - A function earns a test if it is hot-path, a numerical bridge to master, a jit/vmap/grad boundary, or a parser: the
-  bar is "could fail silently and matter". Usual bars: master equivalence at machine tolerance, vmap consistency ~1e-12,
-  gradient vs FD ~1e-6.
+  bar is "could fail silently and matter". The usual bars are in `oracle.md` "Default bars".
 - A test that takes minutes or several GB is marked `slow` (full tier), never deselected for its cost. Master-oracle
   tests run only with `$VULCAN_MASTER_DIR` set, in subprocesses against a disposable copy. Test-only reference kernels
   live in `tests/_oracles.py`.

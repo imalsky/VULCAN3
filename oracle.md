@@ -45,8 +45,11 @@ and step counts move by small amounts. A correct run is inside the tolerances se
   A physical constant or a numerical guard that is fixed on purpose is a named constant with its
   reason beside it.
 - **Convergence is VULCAN's own.** Every VULCAN 2 stopping test is kept. An extra test is allowed only
-  when it fixes a confirmed defect; a relaxation of VULCAN's gate is never adopted.
-- **Every departure is declared.** Machine-checked in `tests/science_sources.yaml`
+  when it fixes a confirmed defect; a relaxation of VULCAN's gate is never adopted. A run ends on the
+  certificate or on a cap, or it raises: a column frozen at its smallest step is an error, never a
+  result.
+- **Every departure is declared.** A departure is made only to fix a confirmed defect that changes
+  results. Machine-checked in `tests/science_sources.yaml`
   (`intentional_divergences`), `tools/audit_master_parity.py` and `tests/oracle.py`
   (`ORACLE_CODE_DELTAS`, `ORACLE_DATA_DELTAS`), or listed in notes "Parity ledger" with its reason. The
   oracle copy receives the same corrected data and code, so the comparison measures the port, not
@@ -64,6 +67,16 @@ and step counts move by small amounts. A correct run is inside the tolerances se
   sulfur network (`SNCHO_photo_network_2025.txt`, upstream VULCAN's current sulfur chemistry). A sulfur
   result on the older `SNCHO_photo_network.txt` is superseded. The 2025 file has no VULCAN 2 oracle
   (`oracle: null`); it is upstream's file, adopted by the maintainer.
+- **Default bars.** Where a test sets no bar of its own: agreement with VULCAN 2 at machine
+  tolerance, a vmapped kernel against the single call at about 1e-12, and a gradient against finite
+  differences at about 1e-6.
+- **Standalone.** vulcan3 runs from its own package: its data is vendored, it needs no sibling repo at
+  run time, and its runtime dependencies are jax, numpy, scipy, PyYAML and exogibbs.
+- **Inputs are pinned.** Every vendored input file is hash-pinned (`tests/science_sources.yaml`), so a
+  changed input is a declared change.
+- **Output VULCAN 2's tools read.** A run writes a `.vul` pickle with VULCAN 2's three top-level keys
+  and the same public keys, shapes and dtypes, so VULCAN 2's plotting scripts load it. Byte identity
+  is not a goal.
 - **The oracle is upstream as shipped.** Comparisons run against the pinned clones, never a
   hand-patched copy. The pin moves only within VULCAN 2 history, and a move re-baselines every oracle
   comparison and gate.
@@ -109,6 +122,9 @@ the maintainer closed are in "Decided by the maintainer, not to be re-opened".
 - A batch lane that depends on the batch width, or outside its bar against the solo run.
 - A shipped result on a superseded network, or a parity claim made against a patched copy.
 - A silent fallback or default where the code should refuse (project-root `CLAUDE.md`, "Error fast").
+- A column frozen at its smallest step returned as a result.
+- A vendored input changed without its pin, a new runtime dependency, or a sibling repo needed at run
+  time.
 - A change to a decided item without the maintainer.
 
 ## Ready to ship
