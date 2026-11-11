@@ -124,3 +124,7 @@ validation_artifacts_*/
 
 # A manifest of fixtures built on a machine other than the arm64 laptop (tests/gen_fixtures.py).
 tests/data/FIXTURES.*.json
+
+# Local working files, not part of the package
+release.sh
+todo.md
