@@ -175,6 +175,13 @@ def test_dump_config_names_the_solver_and_still_loads(tmp_path, monkeypatch):
     dump_config(cfg, tmp_path / "configs" / "dumped.yaml")
     first = (tmp_path / "configs" / "dumped.yaml").read_text().splitlines()[0]
     assert first == f"# written with VULCAN3_SOLVER={_settings.solver()} VULCAN3_CHEM_RHS={_settings.chem_rhs()}"
+    # Once the solver module is loaded its choice is frozen: a later change of the environment is not what ran.
+    from vulcan3 import jax_step
+
+    monkeypatch.setenv("VULCAN3_SOLVER", "fast" if jax_step._SOLVER == "reference" else "reference")
+    dump_config(cfg, tmp_path / "configs" / "dumped.yaml")
+    assert (tmp_path / "configs" / "dumped.yaml").read_text().splitlines()[0] == first
+    monkeypatch.delenv("VULCAN3_SOLVER")
     monkeypatch.chdir(tmp_path)
     again = load_config("dumped")
     assert again.nz == 37

@@ -141,16 +141,15 @@ def test_const_lowT_matches_scipy(O_H, C_H, He_H, N_H):
 
     x0 = [0.9, 0.1, 0.0, 0.0, 0.0]
     scipy_root = fsolve(master_res, x0, args=(O_H, C_H, He_H, N_H))
-    jax_root = np.asarray(
-        _jax_newton(
-            _abun_lowT_residual,
-            jnp.array(x0),
-            (O_H, C_H, He_H, N_H),
-            max_iter=NEWTON_MAX_ITER,
-            tol=NEWTON_TOL,
-        )
+    jax_root, norm = _jax_newton(
+        _abun_lowT_residual,
+        jnp.array(x0),
+        (O_H, C_H, He_H, N_H),
+        max_iter=NEWTON_MAX_ITER,
+        tol=NEWTON_TOL,
     )
-    np.testing.assert_allclose(scipy_root, jax_root, rtol=RTOL, atol=1e-15)
+    np.testing.assert_allclose(scipy_root, np.asarray(jax_root), rtol=RTOL, atol=1e-15)
+    assert float(norm) <= NEWTON_TOL
 
 
 def test_column_atoms_uses_the_operator_invariant():
@@ -203,3 +202,26 @@ def test_const_lowT_refuses_an_unconverged_solve(monkeypatch):
     monkeypatch.setattr(ini_abun._CFG, "fastchem_newton_max_iter", 0)
     with pytest.raises(RuntimeError, match="did not converge"):
         ini_abun._load_const_lowT_y(SimpleNamespace(M=np.ones(int(ini_abun._CFG.nz))))
+
+
+def test_const_lowT_accepts_a_solve_that_ends_exactly_at_the_tolerance(monkeypatch):
+    """A solve the loop called converged is never refused by a second, differently rounded residual.
+
+    The tolerance is set to the loop's own norm after one iteration, so the loop stops there with norm == tol; a
+    residual recomputed outside the loop rounds higher for these ratios and would refuse the start.
+    """
+    from types import SimpleNamespace
+
+    import jax.numpy as jnp
+
+    from vulcan3 import ini_abun
+
+    ratios = {"O_H": 1.0e-3, "C_H": 5.0e-4, "He_H": 0.10, "N_H": 1.0e-4}
+    _, norm = ini_abun._jax_newton(
+        ini_abun._abun_lowT_residual, jnp.array(ini_abun._LOWT_M0), tuple(ratios.values()), max_iter=1, tol=0.0
+    )
+    for key, value in ratios.items():
+        monkeypatch.setattr(ini_abun._CFG, key, value)
+    monkeypatch.setattr(ini_abun._CFG, "fastchem_newton_tol", float(norm))
+    y, _ = ini_abun._load_const_lowT_y(SimpleNamespace(M=np.ones(int(ini_abun._CFG.nz))))
+    assert np.all(np.isfinite(y))

@@ -433,13 +433,14 @@ def _jax_newton(
     args: tuple[float | jnp.ndarray, ...],
     max_iter: int,
     tol: float,
-) -> jnp.ndarray:
-    """Small dense Newton via `lax.while_loop` on residual norm.
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Small dense Newton via `lax.while_loop` on residual norm; returns the iterate and its residual norm.
 
     Solves the 5-element `_abun_lowT_residual` system. The Jacobian is built with
     `jax.jacrev`; the linear solve is `jnp.linalg.solve` (5x5 dense). Production callers pass
     `max_iter` / `tol` from `_CFG.fastchem_newton_max_iter` and
-    `_CFG.fastchem_newton_tol`.
+    `_CFG.fastchem_newton_tol`. The loop also ends at `max_iter` or on a non-finite norm, so the caller compares the
+    returned norm with `tol`: it is the loop's own exit value (infinite when no iteration ran).
     """
     jac_fn = jax.jacrev(residual_fn)
 
@@ -461,8 +462,8 @@ def _jax_newton(
         jnp.asarray(jnp.inf, dtype=jnp.float64),
         jnp.asarray(0, dtype=jnp.int32),
     )
-    final_m, _, _ = jax.lax.while_loop(cond_fn, body_fn, initial_state)
-    return final_m
+    final_m, residual_norm, _ = jax.lax.while_loop(cond_fn, body_fn, initial_state)
+    return final_m, residual_norm
 
 
 def compute_atom_ini(y: jnp.ndarray, compo_arr: jnp.ndarray = compo_array) -> jnp.ndarray:
@@ -658,18 +659,9 @@ def _load_const_lowT_y(data_atm: types.SimpleNamespace) -> tuple[np.ndarray, lis
     m0 = jnp.array(_LOWT_M0, dtype=jnp.float64)
     max_iter = int(_CFG.fastchem_newton_max_iter)
     tol = float(_CFG.fastchem_newton_tol)
-    ini_mol = np.asarray(
-        _jax_newton(
-            _abun_lowT_residual,
-            m0,
-            (O_H, C_H, He_H, N_H),
-            max_iter=max_iter,
-            tol=tol,
-        )
-    )
+    root, norm = _jax_newton(_abun_lowT_residual, m0, (O_H, C_H, He_H, N_H), max_iter=max_iter, tol=tol)
+    ini_mol, residual = np.asarray(root), float(norm)
     # The loop also ends at the iteration cap or on a non-finite iterate; neither is a solution.
-    ratios = (jnp.asarray(r) for r in (O_H, C_H, He_H, N_H))
-    residual = float(np.linalg.norm(np.asarray(_abun_lowT_residual(jnp.asarray(ini_mol), *ratios))))
     if not (np.isfinite(residual) and residual <= tol):
         raise RuntimeError(
             f"ini_mix='const_lowT': the H2/H2O/CH4/He/NH3 Newton solve did not converge: residual norm "

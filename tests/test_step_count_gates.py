@@ -29,7 +29,7 @@ from vulcan3.config import load_config
 _GATES = {"HD189": 1495, "HD209": 1206, "W39b": 1084}
 # The CLI selects each config's import-frozen network by re-executing itself;
 # an inherited selection would run the config on the wrong network.
-_FROZEN_ENV = ("VULCAN3_NETWORK", "VULCAN3_ATOM_LIST", "VULCAN3_CLI_RELAUNCHED")
+_FROZEN_ENV = ("VULCAN3_NETWORK", "VULCAN3_ATOM_LIST", "VULCAN3_COM_FILE", "VULCAN3_CLI_RELAUNCHED")
 # oracle.md "Step counts": vulcan3's converged count within 10 % of VULCAN 2's.
 STEP_RTOL = 0.10
 # Inputs copied from the package into the oracle copy, as `oracle.apply_data_deltas` copies the corrected networks:
@@ -66,8 +66,10 @@ def _master_count(name: str) -> int:
     `dt_max`, `dt_min` and `nega_cut`), plus `gs` from `Mp`/`Rp`. Both seeds
     read the config's abundance file.
     """
-    from oracle import oracle_worktree, write_master_cfg
+    from oracle import ORACLE_DATA_DELTAS, ORACLE_NETWORK_TRANSPLANTS, oracle_worktree, write_master_cfg
 
+    inherited = sorted(k for k in _FROZEN_ENV if k in os.environ)
+    assert not inherited, f"{inherited} are set: the case must come from its config, not from the environment"
     cfg = load_config(name)
     abundance = Path(cfg.fastchem_solar_abundance_file)
     assert abundance.parent == Path("thermo"), abundance
@@ -77,6 +79,9 @@ def _master_count(name: str) -> int:
     with oracle_worktree("vulcan2_ncho", fastchem_abundance=abundance.name) as root:
         for key in _STAGED_KEYS:
             target = root / getattr(cfg, key)
+            # Replacing a file the clone ships is declared in tests/oracle.py, never done on the side.
+            declared = getattr(cfg, key) in ORACLE_DATA_DELTAS + ORACLE_NETWORK_TRANSPLANTS
+            assert declared or not target.exists(), f"{getattr(cfg, key)} replaces a clone file and is not declared"
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(PACKAGE_ROOT / getattr(cfg, key), target)
         write_master_cfg(

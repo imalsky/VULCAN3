@@ -711,10 +711,11 @@ were not obtained).
   SIGINT reaches Python only when XLA returns.
 
 - Refusals for a setting the run would ignore or a solve that did not finish: `ini_mix: const_lowT` raises when its
-  Newton solve ends above `fastchem_newton_tol` (no shipped config uses that start); `use_vm_mol` or `use_settling`
-  with `use_moldiff` off, and `use_hybrid_vm_mol` without `use_vm_mol`, are refused by `validate_runtime_config`
-  (VULCAN 2 ignores them silently; no result changes). `dump_config` writes the solver and the RHS form as a first-line
-  comment, since both are process settings and not config keys.
+  Newton loop exits above `fastchem_newton_tol` (the loop's own exit norm is tested; no shipped config uses that
+  start); `use_vm_mol` or `use_settling` with `use_moldiff` off, and `use_hybrid_vm_mol` without `use_vm_mol`, are
+  refused by `validate_runtime_config` (in VULCAN 2 these leave the evolved column unchanged, though it still builds
+  the settling velocity). `dump_config` writes the loaded solver and RHS form as a first-line comment: both are
+  process settings, not config keys, and a reader sets them itself.
 
 ### Code contracts not obvious from the modules
 

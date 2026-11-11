@@ -15,6 +15,7 @@ from __future__ import annotations
 import copy
 import functools
 import re
+import sys
 import types
 import warnings
 from importlib import resources
@@ -333,9 +334,10 @@ def dump_config(cfg: Config, path: str | os.PathLike) -> None:
     """Write a resolved Config back to YAML so a run can be reproduced exactly.
 
     Dumps the full attribute set (including the derived values), so re-loading
-    the file with ``load_config`` reconstructs the same run inputs verbatim. The
-    first line is a comment naming the solver and the right-hand-side form of
-    the writing process.
+    the file with ``load_config`` reconstructs the same config values. The first
+    line is a comment naming the solver and the right-hand-side form of the
+    writing process; a reader sets both in its own environment, and the input
+    files a path names are not recorded.
 
     Parameters
     ----------
@@ -346,8 +348,11 @@ def dump_config(cfg: Config, path: str | os.PathLike) -> None:
     """
     d = {k: v for k, v in vars(cfg).items() if not k.startswith("_") and not callable(v)}
     # The solver and the right-hand-side form are process settings, not config keys: recorded as a comment, so the file
-    # still loads.
-    header = f"# written with VULCAN3_SOLVER={_settings.solver()} VULCAN3_CHEM_RHS={_settings.chem_rhs()}\n"
+    # still loads. Both freeze when their module loads, so the loaded choice is named where there is one.
+    step, rhs = sys.modules.get("vulcan3.jax_step"), sys.modules.get("vulcan3.make_chem_funs")
+    solver = step._SOLVER if step is not None else _settings.solver()
+    chem_rhs = rhs.CHEM_RHS_IMPL if rhs is not None else _settings.chem_rhs()
+    header = f"# written with VULCAN3_SOLVER={solver} VULCAN3_CHEM_RHS={chem_rhs}\n"
     Path(path).write_text(header + yaml.safe_dump(d, sort_keys=False, default_flow_style=False, width=100))
 
 

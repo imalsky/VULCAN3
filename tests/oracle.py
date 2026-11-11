@@ -337,6 +337,11 @@ ORACLE_DATA_DELTAS: tuple[str, ...] = (
     "thermo/NASA9/HNO3.txt",
 )
 
+# Rule 4c. A network this tree vendors in a newer state than the pinned clone holds: a transplant, not a correction of
+# pinned data. A test that runs VULCAN 2 on it checks VULCAN 2's solver on the adopted network, not the network
+# VULCAN 2 ships (`test_step_count_gates.py`, the WASP-39b case).
+ORACLE_NETWORK_TRANSPLANTS: tuple[str, ...] = ("thermo/SNCHO_photo_network_2025.txt",)
+
 
 def apply_data_deltas(root: Path) -> list[str]:
     """Copy `ORACLE_DATA_DELTAS` from this tree into the COPY at `root`."""
