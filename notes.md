@@ -17,7 +17,7 @@ name in parentheses is the entry of that name here or in vulcan-retrieval's note
 - Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209 1206, W39b 1084 on x86-64 and
   on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test: on x86-64 it certifies at
   7801 steps on one CPU, 7802 on three, with the nega_cut of -1e4 [M].
-- `oracle.yml` is `workflow_dispatch` only; last green dispatch at `1ab5f37`. On daw (x86-64, CPU) the full tier
+- `oracle.yml` is `workflow_dispatch` only; last green dispatch at `ff73d93` (job 72 min, its full tier 59; step counts on the runner HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084). On daw (x86-64, CPU) the full tier
   with the pinned clone gives 441 passed, 38 skipped [M]; every skip is a GPU or arm64 case.
 - Oracle clones (revisions in `tests/science_sources.yaml`, path in the header above) are clean on daw with `core.fileMode false`.
 - Fixtures: the tracked `FIXTURES.json` is the arm64 manifest of a laptop rebuild at the C30 code (each record
