@@ -133,6 +133,10 @@ jobs:
           git clone --quiet https://github.com/exoclime/VULCAN "$RUNNER_TEMP/oracle-vulcan2_ncho"
           git -C "$RUNNER_TEMP/oracle-vulcan2_ncho" checkout --quiet 80f75b9bf243a5a8db55eb04a5806269f56125e7
           test -z "$(git -C "$RUNNER_TEMP/oracle-vulcan2_ncho" status --porcelain)"
+      # The test reads no fixture, but the suite refuses to start without them (about 4 minutes here).
+      - name: Build the numerical-regression fixtures
+        timeout-minutes: 30
+        run: python tests/gen_fixtures.py --all
       - name: Step count against VULCAN 2
         timeout-minutes: 60
         env:
