@@ -40,9 +40,8 @@ mypy is a pre-commit hook and a CI step, at zero: the config names the five unan
 
 ## Efficiency program
 
-GH200 rows are the v2 production shape (W39b SNCHO, nz 62, ni 89); other rows name
-their host. Batched runs are not bitwise equal to solo runs (maintainer decision); the
-parity gates are solo runs and every change kept them.
+GH200 rows are the v2 production shape (W39b SNCHO, nz 62, ni 89); other rows name their host. Batched runs are not
+bitwise equal to solo runs (maintainer decision); the parity gates are solo runs and every change kept them.
 
 | Mechanism | Default | Results | Measured gain |
 |---|---|---|---|
@@ -72,14 +71,12 @@ parity gates are solo runs and every change kept them.
 | Two-stream sweeps as `lax.associative_scan` | on | 1.9e-16 vs the sequential sweep | not recorded |
 | ExoGibbs EQ seed per lane (`custom_vmap` + `lax.map`) | on | lane bitwise independent of batch width | CPU batched seeding 1.0-1.5x slower (accepted) |
 
-Kernel limit [M]: the factor is latency-bound on the serial pivot chain (89 steps per
-layer x 62 layers): ~7% of FP64 peak (2.4 of 33.5 TFLOP/s), occupancy 25%, barrier
-stalls 42%; a pivot step ~1500 cycles before `a5b1215`, 838 after, against a
-column-chain floor of 623. Blocked, panel and tensor-core variants were not faster
-(bgj8sf 29.3 ms, bgj8s 33.7, bgjl8 76.5; DMMA alone reaches 64 TFLOP/s). ~60% of the
-remaining factor time is the pivot chain [E]: further gains need fewer serial steps. At
-nz 100 (`a420570`, GH200, nsys of a vulcan-retrieval job) the factor runs 3.0
-TFLOP/s at 528 and 264 lanes, 2.5 at 396 (2 blocks/SM: a half-empty 2nd wave), 1.8 at 132 [E].
+Kernel limit [M]: the factor is latency-bound on the serial pivot chain (89 steps per layer x 62 layers): ~7% of FP64
+peak (2.4 of 33.5 TFLOP/s), occupancy 25%, barrier stalls 42%; a pivot step ~1500 cycles before `a5b1215`, 838 after,
+against a column-chain floor of 623. Blocked, panel and tensor-core variants were not faster (bgj8sf 29.3 ms, bgj8s
+33.7, bgjl8 76.5; DMMA alone reaches 64 TFLOP/s). ~60% of the remaining factor time is the pivot chain [E]: further
+gains need fewer serial steps. At nz 100 (`a420570`, GH200, nsys of a vulcan-retrieval job) the factor runs 3.0 TFLOP/s
+at 528 and 264 lanes, 2.5 at 396 (2 blocks/SM: a half-empty 2nd wave), 1.8 at 132 [E].
 
 Steps to certification (HD189) [M]: 1054 of 1495 steps are model time at the 3.775e4 s
 plateau, ~441 the ramp from dttry 1e-10 plus five dt collapses on photolysis refreshes.
@@ -87,27 +84,21 @@ The live levers are the photolysis cadence and the certificate window (a science
 
 Batch sweep [M] (one GH200, `05db2db`, the default `fast` path, HD189 with photochemistry off, nz 150, one
 `run_batch` call with its compile): 77.6 s at batch 1 and 144.7 s at 256, so 0.013 -> 1.77 profiles/s (137x); every
-lane certifies in 611 steps; peak device memory 26.6 GB at 256. It replaces the 0.6.0 sweep behind the paper's
-throughput figure (76x).
+lane certifies in 611 steps; peak device memory 26.6 GB at 256.
 
 ## Grid resolution
 
 A real VULCAN discretization effect, not a port bug.
 
-- At 62 layers (6.2/decade over 1e-9..7.6 bar) the grid smears a narrow SO2
-  depletion below a sharp OH front (~2e-4 bar) and over-produces SO2 by up to ~1
-  dex at 1e-4..3e-3 bar. Only SO2 and SO change; convergence order p = 2.09 [M].
-- Unmodified numpy VULCAN master (exoclime c870b1a) reproduces it on three
-  posterior draws: SO2 column (1e-4..1e-1 bar) master minus vulcan3 <= 0.002-0.005
-  dex at every nz; 62 -> 300 layers moves draw 117 by -1.713 dex in both codes,
-  draw 301 by -0.072 in both, draw 345 -0.878 (master) vs -0.914 (vulcan3).
-  Master's own shipped W39b example is already converged (75 vs 600 layers: <=
-  0.03 dex). (vulcan2_xcheck)
+- At 62 layers (6.2/decade over 1e-9..7.6 bar) the grid smears a narrow SO2 depletion below a sharp OH front (~2e-4 bar)
+  and over-produces SO2 by up to ~1 dex at 1e-4..3e-3 bar. Only SO2 and SO change; convergence order p = 2.09 [M].
+- Unmodified numpy VULCAN master (exoclime c870b1a) reproduces it on three posterior draws: SO2 column (1e-4..1e-1 bar)
+  master minus vulcan3 <= 0.002-0.005 dex at every nz; 62 -> 300 layers moves draw 117 by -1.713 dex in both codes, draw
+  301 by -0.072 in both, draw 345 -0.878 (master) vs -0.914 (vulcan3). Master's own shipped W39b example is already
+  converged (75 vs 600 layers: <= 0.03 dex). (vulcan2_xcheck)
 - Low-Kzz "bistability" is a 62-layer grid artifact: vulcan-retrieval notes "Low-Kzz hole" (bistable_policy).
-- At nz 150 the vertical scheme is sound [M]: a manufactured tracer on a
-  15x-stretched grid gives eddy order 1.95-1.99, central moldiff 2.00 (upwind
-  1.00); HD189 nz 150 vs 597: CH4 5.5e-2, NH3 1.7e-2, ~1% at p95 at observable
-  pressures.
+- At nz 150 the vertical scheme is sound [M]: a manufactured tracer on a 15x-stretched grid gives eddy order 1.95-1.99,
+  central moldiff 2.00 (upwind 1.00); HD189 nz 150 vs 597: CH4 5.5e-2, NH3 1.7e-2, ~1% at p95 at observable pressures.
 
 ## Differences from VULCAN master
 
@@ -406,62 +397,49 @@ ledger" or the named repo's notes.
 
 ## Operational
 
-- The JAX persistent compile cache key ignores `XLA_PYTHON_CLIENT_MEM_FRACTION`.
-  Job 93577 loaded entries compiled at fraction 0.04 and produced wrong pass-1
-  results (6114 ticks / 1679 unconverged vs 7658 / 237). Any process at a
+- The JAX persistent compile cache key ignores `XLA_PYTHON_CLIENT_MEM_FRACTION`. Job 93577 loaded entries compiled at
+  fraction 0.04 and produced wrong pass-1 results (6114 ticks / 1679 unconverged vs 7658 / 237). Any process at a
   fraction other than 0.90 needs a private cache dir.
-- The cache was write-only while `photo_sp` was a set (the hash seed permuted
-  `cross_J` rows); `sorted(photo_sp)` / `sorted(ion_sp)` fixed it (`2fdc66b`; HD189
-  `count_max=3` 30.0 -> 1.6 s warm). Localize a miss with
-  `JAX_DEBUG_LOG_MODULES=jax._src.cache_key` and `PYTHONHASHSEED=0`. `dt_max` is
-  not in the model cache key: compare two values in two processes.
+- The cache was write-only while `photo_sp` was a set (the hash seed permuted `cross_J` rows); `sorted(photo_sp)` /
+  `sorted(ion_sp)` fixed it (`2fdc66b`; HD189 `count_max=3` 30.0 -> 1.6 s warm). Localize a miss with
+  `JAX_DEBUG_LOG_MODULES=jax._src.cache_key` and `PYTHONHASHSEED=0`. `dt_max` is not in the model cache key: compare two
+  values in two processes.
 - daw's RTX 6000 Ada (FP64 at 1/64) is a development device: bitwise
   reproducible, W39b 207-213 s against 101 s on one CPU core.
-- The `use_print_prog` progress block (`legacy_io.Output.print_prog`) goes through
-  `logging` at INFO. The CLI configures logging to stdout, so it still prints there;
-  a Python-API caller sees it only with a handler at INFO.
+- The `use_print_prog` progress block (`legacy_io.Output.print_prog`) goes through `logging` at INFO. The CLI configures
+  logging to stdout, so it still prints there; a Python-API caller sees it only with a handler at INFO.
 
 ## Evidence behind the numerical rules
 
 Rules whose evidence has no section of its own.
 
 - float64: "Do not retry", float32 in the step.
-- Analytical Jacobian vs jitted `jacrev`: agrees to 2.8e-15 (NCHO), 15.7x (NCHO
-  ni 69) / 18.4x (SNCHO ni 89) faster with the old chunked scatter, more with the
-  gather form. Jit both sides (un-jitted `jacrev` inflates NCHO to ~35x).
-- Where-zeroed numerator, denominator 1: a NaN batched tangent on TOI-7169 b
-  (jwst-transit-authority 0.51.0) was `0 * inf` from sub-atol cells (S8 at
-  6e-150 cm^-3) under `jnp.max`'s JVP, a rewrite XLA does only unbatched. Repro
-  `max(stack([x[0], sqrt(x[1]) * 0]))` at [1, 0]: plain tangent 1.0, vmap NaN.
-  Guard in `test_nonfinite_never_converges.py`.
-- Fixture arrays as jit arguments: closed over, the HD189 tangent of
-  `chem_jac_analytical(y) @ x` read 1e42 against 1e23 eager; as arguments it
-  agrees to 1e-15.
+- Analytical Jacobian vs jitted `jacrev`: agrees to 2.8e-15 (NCHO), 15.7x (NCHO ni 69) / 18.4x (SNCHO ni 89) faster with
+  the old chunked scatter, more with the gather form. Jit both sides (un-jitted `jacrev` inflates NCHO to ~35x).
+- Where-zeroed numerator, denominator 1: a NaN batched tangent on TOI-7169 b (jwst-transit-authority 0.51.0) was `0 *
+  inf` from sub-atol cells (S8 at 6e-150 cm^-3) under `jnp.max`'s JVP, a rewrite XLA does only unbatched. Repro
+  `max(stack([x[0], sqrt(x[1]) * 0]))` at [1, 0]: plain tangent 1.0, vmap NaN. Guard in
+  `test_nonfinite_never_converges.py`.
+- Fixture arrays as jit arguments: closed over, the HD189 tangent of `chem_jac_analytical(y) @ x` read 1e42 against 1e23
+  eager; as arguments it agrees to 1e-15.
 - Clip on the post-solve `ymix`: fed the pre-step `ymix`, 267 / 204 / 204
   negatives survived at dt 1e4 / 1e8 / 1e12 and steps master accepts were rejected.
-- `conver_ignore`: before C20, HD189 `[]` and `['HC3N']` both took 1495 steps
-  (atomic C controls); a 13-hydrocarbon list from a hand-patched master copy gave
-  1296 by shrinking the metric. Every shipped run converges on the loose branch
+- `conver_ignore`: before C20, HD189 `[]` and `['HC3N']` both took 1495 steps (atomic C controls); a 13-hydrocarbon list
+  from a hand-patched master copy gave 1296 by shrinking the metric. Every shipped run converges on the loose branch
   (`longdy < yconv_min` 0.1 with `longdydt < slope_min`, `op.py:1056`; `slope_min_*` keys).
-- `vm` in-loop: freezing it at setup put He 0.43 dex and CH4 1.7 dex off at
-  `const_Kzz=1e7`, photo off (<= 0.16 dex after). The scheme matters only at low
-  Kzz: HD189 (Kzz 1e10) central vs hybrid <= 0.008 dex, at `const_Kzz=1e7` up to
-  2.7 dex in CO/H2O. Steps, central / upwind-then-central: HD189 vm_branch 1590 /
-  2201, vulcan3 1495 / 2102; W39b both codes 1202 / 1301.
+- `vm` in-loop: freezing it at setup put He 0.43 dex and CH4 1.7 dex off at `const_Kzz=1e7`, photo off (<= 0.16 dex
+  after). The scheme matters only at low Kzz: HD189 (Kzz 1e10) central vs hybrid <= 0.008 dex, at `const_Kzz=1e7` up to
+  2.7 dex in CO/H2O. Steps, central / upwind-then-central: HD189 vm_branch 1590 / 2201, vulcan3 1495 / 2102; W39b both
+  codes 1202 / 1301.
 - Gravity from `Mp`/`Rp`: `default.yaml` once shipped a different `Mp` from
   `HD189.yaml` (gs 2139.7705 vs 2140, per-layer J up to 7%).
-- Condensation not differentiable: the pinned S8 tangent vs FD has relative error
-  ~0.91.
-- Abundance file before a cross-code number: HD189, both converged, floor 1e-12:
-  upstream defaults 2.0e-1 median / 8.8e1 max; network AND composition matched
-  3.8e-6 / 4.5e-2.
-- Batched vs solo: at one step they differ only in `mu` (1 ulp; the einsum in
-  `update_mu_dz_jax` sums in another order under vmap); the dt controller
-  amplifies that to 1e-2 in y within 150 steps on a marginal column. The EQ seed,
+- Condensation not differentiable: the pinned S8 tangent vs FD has relative error ~0.91.
+- Abundance file before a cross-code number: HD189, both converged, floor 1e-12: upstream defaults 2.0e-1 median / 8.8e1
+  max; network AND composition matched 3.8e-6 / 4.5e-2.
+- Batched vs solo: at one step they differ only in `mu` (1 ulp; the einsum in `update_mu_dz_jax` sums in another order
+  under vmap); the dt controller amplifies that to 1e-2 in y within 150 steps on a marginal column. The EQ seed,
   vmapped, summed in another order (4.1e-15), hence `custom_vmap` + `lax.map`.
-- Wall-time ratios need `user+sys ~ real`: cpu/wall 0.29 and 0.085 came from a
-  closed laptop lid and the 16.8x speedup derived from it was retracted.
-  `tools/bench_table1.sh` enforces it, HD189 only. Its VULCAN 2 runs the clone's root `vulcan_cfg.py`
+- Wall-time ratios need `user+sys ~ real`: `tools/bench_table1.sh` enforces it, HD189 only. Its VULCAN 2 runs the clone's root `vulcan_cfg.py`
   (HD189's inputs, but nz 120 and adaptive rtol 0.25), so its step count is not the shipped case's.
 - Step counts against VULCAN 2 (oracle.md "Step counts") [M], free convergence, daw x86-64 CPU, vulcan3 at
   `9ee5df8`, exoclime@80f75b9 with the declared code and data deltas, `PYTHONHASHSEED=0`: VULCAN 2 / vulcan3
@@ -472,23 +450,20 @@ Rules whose evidence has no section of its own.
   HD189 example under the shipped config, except `INTENTIONAL_JAX_DELTAS` (`dt_max`, `dt_min`, `nega_cut`, BC files)
   at upstream's values; the config's network (W39b: the vendored 2025 file over the clone's older one), atmosphere
   and flux are copied in. The seeds differ: FastChem lacks H2CS, CH3CCH, CH2CCH2.
-- CI: unpinned, it resolved jax 0.11.0 with 3 failures of 258;
-  `test_vmap_photo_batch`'s bit identity breaks from jax 0.10. The 16 GB runner
-  was killed in two of six runs at four workers (~15.8 GB); conftest clears JAX
-  caches per module and CI runs three workers (two if it is killed again). jax
-  floor 0.5.3: older versions lack `optimization_barrier` batching or AD rules.
+- CI: unpinned, it resolved jax 0.11.0 with 3 failures of 258; `test_vmap_photo_batch`'s bit identity breaks from jax
+  0.10. The 16 GB runner was killed in two of six runs at four workers (~15.8 GB); conftest clears JAX caches per module
+  and CI runs three workers (two if it is killed again). jax floor 0.5.3: older versions lack `optimization_barrier`
+  batching or AD rules.
 - `oracle.yml` runs one process per slow test: in one process the runner was shut down
   during the W39b tangent certificate (12.6 GB of a 16 GB runner) twice. It rebuilds the
   fixtures at HEAD: the tracked arm64 fixtures passed both tests that failed there.
 
 ## Solver conditioning
 
-The factorized matrix is `I/(gamma*dt) - J`; on a converged HD189 state its blocks
-reach cond ~1.4e18 at the run's dt (3.8e4 s) and ~6.7e23 at dt 1e11. Synthetic
-diagonally dominant blocks (cond ~4e2) pass anything. Block-Thomas pivots only
-within a block, so on imposed large dt its relative residual blows up where
-banded LU does not (dt 1e11: 2.8e3 W39b / 8.5 HD189 vs 9.5e-13 / 7.4e-15). No run
-reaches those dt (every solve instrumented):
+The factorized matrix is `I/(gamma*dt) - J`; on a converged HD189 state its blocks reach cond ~1.4e18 at the run's dt
+(3.8e4 s) and ~6.7e23 at dt 1e11. Synthetic diagonally dominant blocks (cond ~4e2) pass anything. Block-Thomas pivots
+only within a block, so on imposed large dt its relative residual blows up where banded LU does not (dt 1e11: 2.8e3 W39b
+/ 8.5 HD189 vs 9.5e-13 / 7.4e-15). No run reaches those dt (every solve instrumented):
 
 | run | steps | max dt | max residual | solves > 1e-6 |
 |---|---|---|---|---|
@@ -499,136 +474,104 @@ reaches those dt (every solve instrumented):
 - Block-local pivoting can fail where banded LU does not: the outside review's
   generic 2x2 counterexample ([[0,1],[1,1]]) gives NaN. No physical W39b matrix has
   been shown to fail; `check_real_blocks` holds real stage blocks at the run's dt, 1e6 and dt_max to LAPACK `gbsv`'s residual, on HD189 and W39b fixture states only.
-- Reverse mode through the block solve is componentwise backward stable
-  (Oettli-Prager 3.8e-14..2.4e-12 at dt 1e11) although a normwise residual against
-  a random rhs reaches 1e23. The cotangent is the transpose of the primal sweep on
-  the same factors; a fresh factorisation of A^T for `ffi` failed the W39b
-  sensitivity regression (top pair 876/875 instead of 1/2), so reverse mode
-  through `ffi` is refused (`test_ffi_refuses_reverse_mode`).
-- `test_solver_fast.py` bars: `cand <= max(2 x cur, 10 x gbsv)` against LAPACK
-  `gbsv`; GPU batched cuSOLVER LU differs from unbatched by up to 1.3e-3, so the
-  vmapped `fast` solve is judged by residual; `ffi` tangent bar 5e-2 (`fast` 1e-5;
-  a wrong tangent reads ~0.66). A direction scaling every operand by one factor
-  has an exact tangent of zero: test along a dt-shift-plus-noise direction.
-- These numbers are 0.6.0-anchored; `tests/data/adj_state_*.npz` are conditioning
-  inputs, not chemistry validation.
+- Reverse mode through the block solve is componentwise backward stable (Oettli-Prager 3.8e-14..2.4e-12 at dt 1e11)
+  although a normwise residual against a random rhs reaches 1e23. The cotangent is the transpose of the primal sweep on
+  the same factors; a fresh factorisation of A^T for `ffi` failed the W39b sensitivity regression (top pair 876/875
+  instead of 1/2), so reverse mode through `ffi` is refused (`test_ffi_refuses_reverse_mode`).
+- `test_solver_fast.py` bars: `cand <= max(2 x cur, 10 x gbsv)` against LAPACK `gbsv`; GPU batched cuSOLVER LU differs
+  from unbatched by up to 1.3e-3, so the vmapped `fast` solve is judged by residual; `ffi` tangent bar 5e-2 (`fast`
+  1e-5; a wrong tangent reads ~0.66). A direction scaling every operand by one factor has an exact tangent of zero: test
+  along a dt-shift-plus-noise direction.
+- These numbers are 0.6.0-anchored; `tests/data/adj_state_*.npz` are conditioning inputs, not chemistry validation.
 
 ## The dt controller has no headroom
 
-- `_step_size` is an I-controller with `h_factor = 1` at `delta = safety^2 *
-  rtol`; measured median `delta/rtol` 0.81 on HD189 and HD209; the largest
-  acceptable step is 1.23x the one taken. Upstream's is identical
-  (`op.py:3105-3124`): any change breaks bit-parity with both oracles.
+- `_step_size` is an I-controller with `h_factor = 1` at `delta = safety^2 * rtol`; measured median `delta/rtol` 0.81 on
+  HD189 and HD209; the largest acceptable step is 1.23x the one taken. Upstream's is identical (`op.py:3105-3124`): any
+  change breaks bit-parity with both oracles.
 - One trace cell sets the step (C3H2 at layer 133, just above `atol`); masking to
   cells above 1e-6 VMR still gives delta 0.27-0.30: the ceiling is physics.
-- dt -> inf IS Newton (k1 identical to 10 digits at dt 1e15 / 1e30). At the
-  converged state `max|f(y*)| = 1.4e21` against production/loss ~1e28: a fixed
-  point of the step map, not a zero of f.
-- The convergence window is not a step window: `lookback_index` takes the ring
-  slot closest in time to `t * st_factor` (0.5); `conv_step` 500 is only a floor.
-  An uncapped dt band certifies cleanly and is 43% wrong on H2O.
-- The one clean step-count lever is the photolysis cadence: 100/5 -> 1/1 takes
-  HD189 1495 -> 940 steps, within 9.6e-5 of a long reference. Not a measured wall
-  win; the parity configs keep 100/5 and 5/5.
+- dt -> inf IS Newton (k1 identical to 10 digits at dt 1e15 / 1e30). At the converged state `max|f(y*)| = 1.4e21`
+  against production/loss ~1e28: a fixed point of the step map, not a zero of f.
+- The convergence window is not a step window: `lookback_index` takes the ring slot closest in time to `t * st_factor`
+  (0.5); `conv_step` 500 is only a floor. An uncapped dt band certifies cleanly and is 43% wrong on H2O.
+- The one clean step-count lever is the photolysis cadence: 100/5 -> 1/1 takes HD189 1495 -> 940 steps, within 9.6e-5 of
+  a long reference. Not a measured wall win; the parity configs keep 100/5 and 5/5.
 
 ## Stage repair and element budget
 
-- The leak: on the JWST tool's WASP-39 b photo-off column (nz 100) at
-  `dt_max=1e11` the operator-weighted O/H ratio runs 0.769 -> 0.543 and S/H 0.872
-  -> 0.022 by the certified exit (5040 steps), no step rejected. With transport
-  off the worst-layer |dS/S| per step is 5.6e-6 at dt 1e8, 5.8e-4 at 1e11, 0.44 at
-  1e15: the conserved directions of `I/(gamma*dt) - J` are its near-null ones.
-  Photo-on columns step at 1e5-1e7 s and conserve to 0.01%.
-- The repair restores `c0 a^T k - a^T T k = a^T b_tr` per layer after each stage
-  solve by adding the defect to a FIXED reservoir (a switching one would couple
-  two rows); layers with a pinned cell are skipped. Per-step O change at dt 1e11 /
-  1e13 / 1e15: +6.1e-5 / -1.3e-3 / -1.7e-3 unrepaired, +5.5e-7 / +5.5e-5 / +5.5e-3
-  repaired; cost 26.4 -> 26.9 ms per step. At dt 1e17 the correction is as
-  singular as the system, hence `DT_MAX_S` 1e15. The float64 step itself is
-  unusable well below that (HD189 median species error 5.2e-4 at 1e11, 53 at
-  1e15); consumers cap their own `dt_max` (largest shipped step 1.3e6 s).
-- `_tridiagonal_solve` is LAPACK dgtsv's partial pivoting as two rolled scans:
-  `c0 - T_rho` is not diagonally dominant (-0.37 by column on HD189) and 0.7% of
-  its sub-diagonal entries have the wrong sign, so an unpivoted sweep can hit a
+- The leak: on the JWST tool's WASP-39 b photo-off column (nz 100) at `dt_max=1e11` the operator-weighted O/H ratio runs
+  0.769 -> 0.543 and S/H 0.872 -> 0.022 by the certified exit (5040 steps), no step rejected. With transport off the
+  worst-layer |dS/S| per step is 5.6e-6 at dt 1e8, 5.8e-4 at 1e11, 0.44 at 1e15: the conserved directions of
+  `I/(gamma*dt) - J` are its near-null ones. Photo-on columns step at 1e5-1e7 s and conserve to 0.01%.
+- The repair restores `c0 a^T k - a^T T k = a^T b_tr` per layer after each stage solve by adding the defect to a FIXED
+  reservoir (a switching one would couple two rows); layers with a pinned cell are skipped. Per-step O change at dt 1e11
+  / 1e13 / 1e15: +6.1e-5 / -1.3e-3 / -1.7e-3 unrepaired, +5.5e-7 / +5.5e-5 / +5.5e-3 repaired; cost 26.4 -> 26.9 ms per
+  step. At dt 1e17 the correction is as singular as the system, hence `DT_MAX_S` 1e15. The float64 step itself is
+  unusable well below that (HD189 median species error 5.2e-4 at 1e11, 53 at 1e15); consumers cap their own `dt_max`
+  (largest shipped step 1.3e6 s).
+- `_tridiagonal_solve` is LAPACK dgtsv's partial pivoting as two rolled scans: `c0 - T_rho` is not diagonally dominant
+  (-0.37 by column on HD189) and 0.7% of its sub-diagonal entries have the wrong sign, so an unpivoted sweep can hit a
   zero pivot (3x3 counterexample: rows (2,-2,0), (-1,1,-3), (0,2,4)).
-- Floors and guard, re-baseline knobs: `_DEFECT_FLOOR` 1e-13 of the identity's
-  own terms (without it the repair moved roundoff onto reservoirs and broke
-  20-step parity); `config.REPAIR_ABS_FLOOR` 1e-11 of the layer density, absolute
-  because a relative floor never fires near steady state (it stalled the JWST
-  tool's HD 189733 b Guillot preset at 30000 steps against 1506 unrepaired);
-  `_REPAIR_MAX_CELL_FRAC` 1.0 drops a correction larger than its carrier cell (W39b
-  negative H2S band 12 -> 0 at dt 1e11 on the 2021 network, 49 -> 0 at 1e8 on the 2025
-  one; inert on the gates). Real leaks sit
-  at >= 1e-7 of the layer, roundoff at <= 1e-10. Stage identity after the repair:
-  1e-13 at dt <= 1e11, up to 1e-11 at the cap, so its bar is 1e-10.
+- Floors and guard, re-baseline knobs: `_DEFECT_FLOOR` 1e-13 of the identity's own terms (without it the repair moved
+  roundoff onto reservoirs and broke 20-step parity); `config.REPAIR_ABS_FLOOR` 1e-11 of the layer density, absolute
+  because a relative floor never fires near steady state (it stalled the JWST tool's HD 189733 b Guillot preset at 30000
+  steps against 1506 unrepaired); `_REPAIR_MAX_CELL_FRAC` 1.0 drops a correction larger than its carrier cell (W39b
+  negative H2S band 12 -> 0 at dt 1e11 on the 2021 network, 49 -> 0 at 1e8 on the 2025 one; inert on the gates). Real
+  leaks sit at >= 1e-7 of the layer, roundoff at <= 1e-10. Stage identity after the repair: 1e-13 at dt <= 1e11, up to
+  1e-11 at the cap, so its bar is 1e-10.
 - Not fixed by the repair: the moldiff boundary rows (P9, +6.6e-19 to +7.9e-18 /s
   of column gain); they set C23's tolerance floor.
-- C23 accumulates each accepted step's operator-weighted column change
-  (`ini_abun.column_atoms`; `operator_column_weights`: `w_0 = dzi[0]`, `w_j =
-  0.5*(dzi[j-1]+dzi[j])`, `w_last = dzi[-1]`, so a zero-flux update telescopes)
-  on that step's own grid over the fixed t=0 column, RELATIVE TO H. The absolute
-  column carries the renormalisation's common mode (-1.04e-2 on every element on
-  the planner's WASP-107 b column; as X/H 2.1e-6). Tolerance 1e-2: 370x headroom on
-  the worst photo-on gate, 4.6x on a photo-off column. Five knobs open the budget,
-  none on in a shipped config (`use_topflux`, `use_botflux`/`v_dep`,
-  `use_fix_sp_bot`, `use_fix_H2He`, the `fix_species` pin);
-  a `loss_ex` containing H fails the runner build (H is the reference atom).
-  An open column can fail to certify on exchange it is meant to have (measured on
-  Earth, "Withdrawn configs"; [I] for the external user's K2-18b; the JWST S8 pin
-  certified); its step-cap exit names the term and `.inf`. Precedent: KPP's
-  invariant-preserving Rosenbrock, CVODE projection, Sandu 2001 (doi:10.1006/jcph.2001.6750).
-- The "strong-Kzz top boundary collapse" of W39b domain extensions was this leak
-  in a 3000-3500 K bottom: since 0.6.0 the 50 bar -> 5e-9 bar column converges in
-  885 steps, every element within 5.4e-5; pinned upstream hits its 3000-step cap
-  with S +32%, and its Kzz-capped twin "converges" at 5965 steps with S -21.5%
-  (C23 rejects it 21x over). No shipped config has a >= 3000 K bottom cell.
-- HD189_vulcan3 is a marginal count: its top moves with any bit-level change
-  (2607 / 2702 / 2803 / 2603 / 3242 across such changes). With
-  `photo_switch_longdy_thresh` pinned at 1.0 (it is derived as `yconv_min * 10`,
-  so pin it in any photo-on convergence study) a tolerance ladder runs 2776 ->
-  8715 steps and the shipped column sits 5.3e-3 (top-decile median |d ln VMR|)
-  from the 8715-step reference. The end message names `count_max`, not the
-  `count_max_dyn` it hit (cosmetic).
+- C23 accumulates each accepted step's operator-weighted column change (`ini_abun.column_atoms`;
+  `operator_column_weights`: `w_0 = dzi[0]`, `w_j = 0.5*(dzi[j-1]+dzi[j])`, `w_last = dzi[-1]`, so a zero-flux update
+  telescopes) on that step's own grid over the fixed t=0 column, RELATIVE TO H. The absolute column carries the
+  renormalisation's common mode (-1.04e-2 on every element on the planner's WASP-107 b column; as X/H 2.1e-6). Tolerance
+  1e-2: 370x headroom on the worst photo-on gate, 4.6x on a photo-off column. Five knobs open the budget, none on in a
+  shipped config (`use_topflux`, `use_botflux`/`v_dep`, `use_fix_sp_bot`, `use_fix_H2He`, the `fix_species` pin); a
+  `loss_ex` containing H fails the runner build (H is the reference atom). An open column can fail to certify on
+  exchange it is meant to have (measured on Earth, "Withdrawn configs"; [I] for the external user's K2-18b; the JWST S8
+  pin certified); its step-cap exit names the term and `.inf`. Precedent: KPP's invariant-preserving Rosenbrock, CVODE
+  projection, Sandu 2001 (doi:10.1006/jcph.2001.6750).
+- The "strong-Kzz top boundary collapse" of W39b domain extensions was this leak in a 3000-3500 K bottom: since 0.6.0
+  the 50 bar -> 5e-9 bar column converges in 885 steps, every element within 5.4e-5; pinned upstream hits its 3000-step
+  cap with S +32%, and its Kzz-capped twin "converges" at 5965 steps with S -21.5% (C23 rejects it 21x over). No shipped
+  config has a >= 3000 K bottom cell.
+- HD189_vulcan3 is a marginal count: its top moves with any bit-level change (2607 / 2702 / 2803 / 2603 / 3242 across
+  such changes). With `photo_switch_longdy_thresh` pinned at 1.0 (it is derived as `yconv_min * 10`, so pin it in any
+  photo-on convergence study) a tolerance ladder runs 2776 -> 8715 steps and the shipped column sits 5.3e-3 (top-decile
+  median |d ln VMR|) from the 8715-step reference. The end message names `count_max`, not the `count_max_dyn` it hit
+  (cosmetic).
 
 ## Certificates
 
 C21 (geometry) and C22 (tangent); C23 is in "Stage repair and element budget".
 
-- C21: HD209 photo-off certifies at 192 steps with mu 26.30% off what its ymix
-  implies; tightening the chemistry alone leaves 6.6%. With the term: tol 1e-4 303
-  steps / 5.0e-5 from a cadence-1 reference, 1e-3 297 / 3.1e-3, 1e-2 252 / 2.0e-2.
-  On HD189_vulcan3 1e-4 never certifies. The norm is mu/g/Hp/dzi/Hpi only. Never
-  below `count_min`, so matched-step parity is bit-identical.
-- C22: `run_jvp` applies the primal's reduction to the tangent
-  (`_longdy_reduce(..., diff=dy - dy_lookback)`), per cell and absolute, so the
-  direction is read in FD-step units. HD209 photo-off d/d ln Kzz certifies at 297
-  steps, 6.1e-4 from central FD; W39b photo-on at 1536 accepted steps (primal
-  1202), 6.7e-3 from FD above 1e-4 VMR (corr 0.99982). `run_jvp`'s tangent is
-  bit-identical to `jax.jvp(runner)`'s at equal step counts.
-- The AD-build `dt_max` 1e5 s cap lives in jwst-transit-authority's
-  `AD_BUILD_OVERRIDES`: on the planner's WASP-39 b eclipse column caps 1e4..3e6
-  certify at corr 0.9976 against FD and agree to >= 0.999995; uncapped it does not
-  certify. A cap on the cold solve (W39b 1363 -> 2487 steps, spectrum up to 6.23
-  ppm) was decided against.
+- C21: HD209 photo-off certifies at 192 steps with mu 26.30% off what its ymix implies; tightening the chemistry alone
+  leaves 6.6%. With the term: tol 1e-4 303 steps / 5.0e-5 from a cadence-1 reference, 1e-3 297 / 3.1e-3, 1e-2 252 /
+  2.0e-2. On HD189_vulcan3 1e-4 never certifies. The norm is mu/g/Hp/dzi/Hpi only. Never below `count_min`, so
+  matched-step parity is bit-identical.
+- C22: `run_jvp` applies the primal's reduction to the tangent (`_longdy_reduce(..., diff=dy - dy_lookback)`), per cell
+  and absolute, so the direction is read in FD-step units. HD209 photo-off d/d ln Kzz certifies at 297 steps, 6.1e-4
+  from central FD; W39b photo-on at 1536 accepted steps (primal 1202), 6.7e-3 from FD above 1e-4 VMR (corr 0.99982).
+  `run_jvp`'s tangent is bit-identical to `jax.jvp(runner)`'s at equal step counts.
+- The AD-build `dt_max` 1e5 s cap lives in jwst-transit-authority's `AD_BUILD_OVERRIDES`: on the planner's WASP-39 b
+  eclipse column caps 1e4..3e6 certify at corr 0.9976 against FD and agree to >= 0.999995; uncapped it does not certify.
+  A cap on the cold solve (W39b 1363 -> 2487 steps, spectrum up to 6.23 ppm) was decided against.
 
 ## Adjoint record
 
-- Every route that linearizes `df/dy` or iterates the bare body map fails on
-  conditioning (`||f(y*)|| = 1.56e21` against production/loss ~1e28; >= 8
-  eigenvalues outside the unit circle). The shipped route needs log-abundance
-  coordinates, QR deflation of the atom-count left-null vectors and LGMRES on the
-  renormalised Ros2 solver map (`steady_state_grad.SOLVER_MAP = "renorm"`, the
-  only map: HD189 CH4 6.6% -> 0.7%, HD209 r121 35% -> 1.1%).
+- Every route that linearizes `df/dy` or iterates the bare body map fails on conditioning (`||f(y*)|| = 1.56e21` against
+  production/loss ~1e28; >= 8 eigenvalues outside the unit circle). The shipped route needs log-abundance coordinates,
+  QR deflation of the atom-count left-null vectors and LGMRES on the renormalised Ros2 solver map
+  (`steady_state_grad.SOLVER_MAP = "renorm"`, the only map: HD189 CH4 6.6% -> 0.7%, HD209 r121 35% -> 1.1%).
 - `body_dt` (HD189 CH4 r13 vs FD -0.565): 1e6 diverges; 3e6 has a 27.6%
   slow-mode bias; 1e7 (default) 0.3-6.0%, mean 3.5%; 1e8 0.5-20.6%; >= 3e8 garbage.
-- `photo_recompute_k`: W39b `OH + H2 -> H2O + H` frozen-J error 11.2-13.0% ->
-  0.2%. `"auto"` and `None` mean no feedback and raise on active photolysis rows
-  (`None` is accepted photo-off for the JWST tool's `adjoint_diag.py`).
-- HD189 calibration (n_solves 3, inner_m 250, cycles 8): mean r13 5.0% from FD,
-  top-6 exact, `null_quality` 2.2e-5, ~27 min warm. On the x86-64 fixture rebuilt
-  at `2fef3c1` `null_quality` reads 7.2e-2 (r13 1.23% from FD), hence the slow
-  regression's bar 0.2. `pair_antisym` ~1 does not mean wrong. W39b needs the
-  exact-zero mask `where(y_star > 0, 1/y_star, 0)`.
+- `photo_recompute_k`: W39b `OH + H2 -> H2O + H` frozen-J error 11.2-13.0% -> 0.2%. `"auto"` and `None` mean no feedback
+  and raise on active photolysis rows (`None` is accepted photo-off for the JWST tool's `adjoint_diag.py`).
+- HD189 calibration (n_solves 3, inner_m 250, cycles 8): mean r13 5.0% from FD, top-6 exact, `null_quality` 2.2e-5, ~27
+  min warm. On the x86-64 fixture rebuilt at `2fef3c1` `null_quality` reads 7.2e-2 (r13 1.23% from FD), hence the slow
+  regression's bar 0.2. `pair_antisym` ~1 does not mean wrong. W39b needs the exact-zero mask `where(y_star > 0,
+  1/y_star, 0)`.
 - The JWST tool's tabulated W39b state is refused by `audit_adjoint_scope`
   (atomic N at layer 93 in the clamped top); the forward path is the route.
 
