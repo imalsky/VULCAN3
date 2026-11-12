@@ -71,23 +71,22 @@ jobs:
 
       # The full tier: the `slow` tests only (the normal tier is tests.yml),
       # among them the CLI step-count gates HD189 1495 / HD209 1206 / W39b
-      # 1084 and, against the clone, oracle.md's 10 % step-count rule.
-      # HD189_vulcan3's count is arm64-only and is not run here.
+      # 1084. oracle.md's 10 % step-count rule against the clone runs in the
+      # step-counts job below, beside this one: inside this step it took the
+      # tier past its 90 minutes. HD189_vulcan3's count is arm64-only and is
+      # not run here.
       # One process per test, run in sequence: the W39b tangent certificate
       # peaks at 12.6 GB on this 16 GB runner, so memory one test leaves
       # behind must not carry into the next. Each failure prints at once
-      # instead of being lost when the runner is killed. About 82 test-minutes on daw, one test at a time; the longest
-      # is 12.
+      # instead of being lost when the runner is killed. 59 test-minutes on daw, one test at a time; the longest is 12.
       - name: Full tier
         if: matrix.family == 'vulcan2_ncho'
         timeout-minutes: 90
         env:
           VULCAN3_RUN_SLOW: "1"
-          VULCAN_MASTER_DIR: ${{ runner.temp }}/oracle-${{ matrix.family }}
-          VULCAN3_REQUIRE_ORACLE: "1"
         run: |
           collected="$(python -m pytest tests -m slow --collect-only -q)" || { echo "$collected"; echo "slow-test collection failed"; exit 1; }
-          mapfile -t slow < <(grep '::' <<< "$collected")
+          mapfile -t slow < <(grep '::' <<< "$collected" | grep -v 'test_step_count_within_10_percent_of_vulcan2')
           if [ ${#slow[@]} -eq 0 ]; then echo "$collected"; echo "no slow tests collected"; exit 1; fi
           failed=()
           for t in "${slow[@]}"; do
@@ -108,3 +107,39 @@ jobs:
             git status --porcelain
             exit 1
           fi
+
+  # oracle.md's rule that a converged run takes within 10 % of VULCAN 2's steps, one planet per job: each runs
+  # upstream to convergence and then vulcan3 (about 8 minutes a planet on daw).
+  step-counts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        planet: [HD189, HD209, W39b]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --no-deps "exogibbs==0.6.0"
+          python -m pip install pandas
+          python -m pip install -e ".[dev,plot]" "jax==0.6.2"
+      - name: Clone the pinned upstream oracle
+        run: |
+          git clone --quiet https://github.com/exoclime/VULCAN "$RUNNER_TEMP/oracle-vulcan2_ncho"
+          git -C "$RUNNER_TEMP/oracle-vulcan2_ncho" checkout --quiet 80f75b9bf243a5a8db55eb04a5806269f56125e7
+          test -z "$(git -C "$RUNNER_TEMP/oracle-vulcan2_ncho" status --porcelain)"
+      - name: Step count against VULCAN 2
+        timeout-minutes: 60
+        env:
+          VULCAN3_RUN_SLOW: "1"
+          VULCAN_MASTER_DIR: ${{ runner.temp }}/oracle-vulcan2_ncho
+          VULCAN3_REQUIRE_ORACLE: "1"
+        run: >-
+          python -m pytest
+          "tests/test_step_count_gates.py::test_step_count_within_10_percent_of_vulcan2[${{ matrix.planet }}]"
+          -q --tb=short -ra -s

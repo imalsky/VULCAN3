@@ -441,15 +441,15 @@ Rules whose evidence has no section of its own.
   vmapped, summed in another order (4.1e-15), hence `custom_vmap` + `lax.map`.
 - Wall-time ratios need `user+sys ~ real`: `tools/bench_table1.sh` enforces it, HD189 only. Its VULCAN 2 runs the clone's root `vulcan_cfg.py`
   (HD189's inputs, but nz 120 and adaptive rtol 0.25), so its step count is not the shipped case's.
-- Step counts against VULCAN 2 (oracle.md "Step counts") [M], free convergence, daw x86-64 CPU, vulcan3 at
-  `9ee5df8`, exoclime@80f75b9 with the declared code and data deltas, `PYTHONHASHSEED=0`: VULCAN 2 / vulcan3
-  HD189 1590 / 1495 (0.940; VULCAN 2 repeated 1590), HD209 1211 / 1206 (0.996), W39b 1082 / 1084 (1.002).
-  `test_step_count_within_10_percent_of_vulcan2` holds it, 6-9 min a planet on two cores. The maintainer decided it
-  runs in the release gate: `oracle.yml`'s full tier sets the clone and `VULCAN3_REQUIRE_ORACLE`, about 82 of its 90
-  minutes on daw [E, from 23 test-minutes measured for the three planets]. VULCAN 2's cfg: upstream's
-  HD189 example under the shipped config, except `INTENTIONAL_JAX_DELTAS` (`dt_max`, `dt_min`, `nega_cut`, BC files)
-  at upstream's values; the config's network (W39b: the vendored 2025 file over the clone's older one), atmosphere
-  and flux are copied in. The seeds differ: FastChem lacks H2CS, CH3CCH, CH2CCH2.
+- Step counts against VULCAN 2 (oracle.md "Step counts") [M], free convergence, daw x86-64 CPU, vulcan3 at `9ee5df8`,
+  exoclime@80f75b9 with the declared code and data deltas, `PYTHONHASHSEED=0`: VULCAN 2 / vulcan3 HD189 1590 / 1495
+  (0.940; VULCAN 2 repeated 1590), HD209 1211 / 1206 (0.996), W39b 1082 / 1084 (1.002).
+  `test_step_count_within_10_percent_of_vulcan2` holds it, 6-9 min a planet on two cores. The maintainer decided it runs
+  in the release gate, in `oracle.yml`'s `step-counts` job, one planet per job beside the full tier: inside the
+  full-tier step it took the tier past its 90 minutes on the runner [M, one dispatch at `ae21fef`]. VULCAN 2's cfg:
+  upstream's HD189 example under the shipped config, except `INTENTIONAL_JAX_DELTAS` (`dt_max`, `dt_min`, `nega_cut`, BC
+  files) at upstream's values; the config's network (W39b: the vendored 2025 file over the clone's older one),
+  atmosphere and flux are copied in. The seeds differ: FastChem lacks H2CS, CH3CCH, CH2CCH2.
 - CI: unpinned, it resolved jax 0.11.0 with 3 failures of 258; `test_vmap_photo_batch`'s bit identity breaks from jax
   0.10. The 16 GB runner was killed in two of six runs at four workers (~15.8 GB); conftest clears JAX caches per module
   and CI runs three workers (two if it is killed again). jax floor 0.5.3: older versions lack `optimization_barrier`
