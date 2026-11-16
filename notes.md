@@ -635,26 +635,26 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   NO2`, and it omitted `batch_max_retries`.
 - The external user's YAMLs on main [M] (`caf7c29`, laptop CPU): neither loads as sent (11-12 removed keys), and
   both pin old defaults: `nega_cut: -1` (it rejects steps since C29) and `fastchem_newton_max_iter: 50` (the K2-18b
-  seed fails at 7 of 130 layers; 450 passes). With the keys removed and `element_budget_tol: .inf`: Earth (nz 100)
-  ends at the cap, longdy 0.78, the clock stalled at 1.12e13 s from about step 4000; K2-18b without its two `C2H5SH`
-  rows ends at the cap, longdy 0.155, dt held at 0.34 s, never past `stop_conden_time` 1e5. K2-18b cause not found.
+  seed fails at 7 of 130 layers; 450 passes). With the keys removed and `element_budget_tol: .inf`: Earth ends at the
+  cap, longdy 0.78; K2-18b without its two `C2H5SH` rows ends at the cap, longdy 0.155, dt held at 0.34 s. Not found why.
 - Earth cause [M, `7856663`, laptop CPU]: the column has no O2 source, so the bottom fluxes burn O2 at a steady
   4.0e11 cm^-2 s^-1 (5.1e11 would oxidise the CH4 and CO fluxes of `BC_bot_Earth.txt` in full) and it is gone at
   1.115e13 s; O3 then falls 7 orders, and the stall is that collapse. The VULCAN 2 example drains at 3.6e11 and
   certifies at 1.42e11 s with O2 down 1%. Cure: O2 in `use_fix_sp_bot` at 0.2. The user's file then certifies with no
   step cap, central moldiff at 2657 steps and upwind hybrid at 3790, both at O3 199 DU. Unpinned, `dt_max: 1e8`
-  certifies it and `dt_max: 3e8` does not; central moldiff, `rtol` 1.0, `stop_conden_time` 5e8 and `post_conden_rtol`
-  0.05 do not, one at a time.
+  certifies it and `dt_max: 3e8`, central moldiff, `rtol` 1.0 and `post_conden_rtol` 0.05 do not, one at a time.
 - Upstream on master's 2025 Earth example (pinned vm_branch code) [M]: the upwind phase certifies at step 17875
   (longdy 0.067, t about 2.1e11 s), then 2000 central steps end at longdy 0.94. vulcan3 agrees to 1% in t up to the
-  `fix_species` pin (step 1740; equal pin levels), then takes larger steps: at step 2700 t is 6.9e11 s and dt 5e9 s,
-  against 2.0e9 and 4e6 upstream, and it reaches the O2 collapse by step 7000. With the collision limit applied to
-  the upstream copy (`ORACLE_CODE_DELTAS`) upstream is at 1.25e10 s: a factor 6 of the 340. The rest: cause not found.
+  `fix_species` pin (step 1740; equal pin levels and thermal rates), then its dt grows to 5e9 s where upstream holds
+  4e6 s, and it reaches the O2 collapse by step 7000. Upstream's step is held by noise: after the pin its C3H3 and
+  C2H2 at layer 1 flip between 0 and 1e-3..4e-2 cm^-3 from step to step, the clipped negative total grows from 7 to
+  49 cm^-3 in 400 steps, and benzene builds to 6-9 cm^-3 there (mixing ratio 3e-19, above `mtol`), where it and
+  top-layer C set the error estimate. vulcan3's same species stay smooth and below `mtol` (benzene 1e-17 cm^-3 at
+  9e9 s). Not the cause: upstream's thermo, the collision limit, the state. Why vulcan3 stays smooth: not found.
 - Upwind and the escape Jacobian entry [M]: the VULCAN 2 example with `use_vm_mol` and hybrid ends at the cap,
   longdy 1.00 from top-layer H from step 6000 on; the pinned vm_branch clone as pure upwind has longdy 488 from
   top-layer H at step 4500 (vulcan3 1090). The entry (`jax_ros2_step`, kept for parity) is -10.9 s^-1 for H against
-  a true -8.5e-5 s^-1, with no RHS term while `use_topflux` is off. Upstream master prints "completed the final
-  central difference scheme integration" for a hybrid run that hits the cap (`op.py:3263`, `c870b1a`).
+  -8.5e-5 true, with no RHS term while `use_topflux` is off. Upstream master calls a hybrid run at the cap "completed".
 - K2-18b re-add: the `C2H5SH` NASA-9 sets are in the pinned clones' `thermo/NASA9/new_nasa9.TXT` (Burcat G3B3; cut
   as `CH3SCH3.txt` is, byte for byte [M]). Its cross sections are in no clone, branch or repository of the upstream
   author; upstream's threshold is 270 nm. Then check `remove_list` by equation (C14), hash-pin inputs, run to end_case 1.
