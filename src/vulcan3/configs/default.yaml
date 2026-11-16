@@ -201,7 +201,9 @@ photo_switch_longdydt_thresh: 1.0e-06
 rtol: 0.2
 post_conden_rtol: 0.1
 use_adapt_rtol: false
-rtol_min: 0.0
+# Floor of the adapted rtol, VULCAN 2's value (vulcan_cfg.py:159). Without one, an open column halves rtol
+# every adapt_rtol_dec_period steps until loss_criteria passes its atom loss. Read only under use_adapt_rtol.
+rtol_min: 0.02
 rtol_max: 1.0
 loss_criteria: 0.0005
 adapt_rtol_dec_period: 10

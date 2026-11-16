@@ -155,8 +155,9 @@ Integrator
 - `default.yaml` rtol 0.2, use_adapt_rtol false, count_max 1e4 (from 3938cf9): [M] rtol and
   count_max equal upstream's HD189 example (`vulcan_cfg_HD189.py:151`, `:136`), not its root
   `vulcan_cfg.py` (0.25, adaptive, `['HC3N']`, 3e4); that example has no `use_adapt_rtol` line
-  and `op.py:836` reads it unconditionally. `rtol_min`/`rtol_max` (0 / 1; upstream root
-  0.02 / 2.5) are dormant while `use_adapt_rtol` is false.
+  and `op.py:836` reads it unconditionally. `rtol_min` is upstream's root 0.02 and `rtol_max` 1 (root 2.5); both
+  are read only under `use_adapt_rtol`. With no floor, 200 adaptive steps of a default column with H2O pinned at
+  3x its seed left rtol 3.9e-4 and t 0.056 s, against 0.02 and 10.9 s at the floor [M, laptop]; HD189 bitwise.
 
 Inputs and data
 - `thermo/solar_element_abundances.dat` replaced in ccc40f7, still the default:

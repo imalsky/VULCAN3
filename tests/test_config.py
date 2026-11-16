@@ -199,6 +199,16 @@ def test_dt_max_is_capped_where_the_stage_repair_is_resolvable():
         OuterLoop(None, None, cfg=load_config("default", dt_max=1e17))
 
 
+@pytest.mark.parametrize("name", sorted(_EXPECTED_GS))
+def test_adaptive_rtol_has_a_floor_in_every_shipped_config(name):
+    """`use_adapt_rtol` alone must not leave rtol free to halve without bound: every shipped config carries a floor.
+
+    The floor is at most the starting rtol, so the controller can still tighten.
+    """
+    cfg = load_config(name, use_adapt_rtol=True)
+    assert 0.0 < cfg.rtol_min <= cfg.rtol
+
+
 def test_dump_config_names_the_solver_and_still_loads(tmp_path, monkeypatch):
     """The dumped file records the process's solver and RHS form in a comment, and loads back to the same values."""
     from vulcan3 import _settings
