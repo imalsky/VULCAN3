@@ -426,6 +426,7 @@ def classify_end_case(state: JaxIntegState) -> int:
     run stopped without meeting the convergence criterion and without
     hitting either cap -- a run stopped on a non-finite state
     (termination_reason 5) or a "converged" state that is not finite.
+    Any other reason also returns this value.
     """
     reason = int(state.termination_reason)
     if reason in (TERM_RUNTIME, TERM_STEP_COUNT):

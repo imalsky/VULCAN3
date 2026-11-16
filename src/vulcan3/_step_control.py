@@ -29,8 +29,8 @@ def _step_size(
 
     I-control (master-faithful, the only dt control):
     `h_factor = clip(safety * (rtol/delta)^0.5, dt_var_min, dt_var_max)`,
-    `h_new = clip(dt * h_factor, dt_min, dt_max)`; `delta == 0` substitutes
-    `zero_delta_frac * rtol` (cfg.step_size_safety /
+    `h_new = clip(dt * h_factor, dt_min, dt_max)`; `delta < UNDERFLOW_DENOM`
+    substitutes `zero_delta_frac * rtol` (cfg.step_size_safety /
     cfg.step_size_zero_delta_frac).
     """
     delta_eff = jnp.where(delta < UNDERFLOW_DENOM, zero_delta_frac * rtol, delta)

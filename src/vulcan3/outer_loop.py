@@ -191,25 +191,48 @@ class OuterLoop:
     ) -> tuple[JaxIntegState, PyTree, jnp.ndarray, jnp.ndarray]:
         """Forward-mode integration certified on the tangent.
 
-        `dstate` / `datm` mirror `state` / `atm_static` leaf for leaf, as
-        `jax.jvp` hands them back: a leaf with a float tangent is
-        differentiated, a non-float leaf (ints, flags; float0 tangent) is
-        held constant, and a float leaf without a float tangent raises
-        TypeError. Returns `(final, dfinal, tangent_longdy, tangent_ok)`:
-        `dfinal` mirrors `final` the same way (float0 on constant leaves),
-        so downstream maps continue with `jax.jvp(g, (final.y,), (dfinal.y,))`.
+        Parameters
+        ----------
+        state : JaxIntegState
+            Primal initial state.
+        atm_static : AtmStatic
+            Primal atmosphere statics.
+        dstate : PyTree
+            Tangent of `state`, leaf for leaf, as `jax.jvp` hands it back. A leaf with a float tangent is
+            differentiated; a non-float leaf (ints, flags; float0 tangent) is held constant. The direction is read in
+            the units of a finite-difference step. For several directions at once, give every tangent leaf a leading
+            axis of length D (the primal keeps its own shape).
+        datm : PyTree
+            Tangent of `atm_static`, with the same rules.
 
-        The run stops when the state certifies AND the tangent's change over
-        the same lookback, per cell over `y`, passes the same two-branch
-        test (`_tangent_conv`); the tangent direction is therefore read in
-        the units of a finite-difference step. `termination_reason` 1 means
-        both certified; 3 means the count cap hit before they did.
+        Returns
+        -------
+        final : JaxIntegState
+            The final primal state.
+        dfinal : PyTree
+            Mirrors `final` the same way (float0 on constant leaves), so downstream maps continue with
+            `jax.jvp(g, (final.y,), (dfinal.y,))`. Carries the D axis when several directions are given.
+        tangent_longdy : jnp.ndarray
+            The tangent's convergence measure: a scalar for one direction, (D,) for several.
+        tangent_ok : jnp.ndarray
+            A scalar; with several directions, true when every direction settled.
 
-        Several directions at once: give every tangent leaf a leading axis of
-        length D (the primal keeps its own shape). The primal is then
-        integrated once for all D, `tangent_longdy` comes back as (D,),
-        `tangent_ok` stays a scalar (every direction settled) and `dfinal`
-        carries the D axis. Do not vmap this call over directions: that
+        Raises
+        ------
+        RuntimeError
+            If called before the runner was built.
+
+        Notes
+        -----
+        The checks this call runs also raise: `TypeError` if a float leaf has no float tangent, `ValueError` if a
+        tangent tree has a different number of leaves than its primal, `MissingAtomError` if the column holds none of
+        a conserved atom, and `DtMinFrozenError`, after the loop, if the column froze at `dt_min`.
+
+        The run stops when the state certifies AND the tangent's change over the same lookback, per cell over `y`,
+        passes the same two-branch test (`_tangent_conv`). `termination_reason` 1 means both certified; 3 means the
+        count cap hit before they did.
+
+        With several directions the primal is integrated once for all D. Do not vmap this call over directions: that
         integrates the primal D times.
         """
 
@@ -414,14 +437,32 @@ class OuterLoop:
     def __call__(self, rs: RunState, chunk: int | None = None) -> RunState:
         """Integrate a fresh `RunState` to convergence or a cap and return a new `RunState`.
 
-        Raise `ValueError` if `rs` has already run (`params.count > 0`), and `DtMinFrozenError`, with no result, if the
-        column's trial keeps failing at `dt_min`. The caps are runtime and step count.
+        The caps are runtime and step count.
 
-        `chunk=None` runs one compiled loop. `chunk=N` runs the same loop in
-        pieces of N accepted steps, prints a progress block after each (when
-        `use_print_prog`), and on Ctrl+C stores the last finished piece as
-        `self.interrupted_runstate` before re-raising. One loop cannot be
-        interrupted: Ctrl+C reaches Python only when it returns.
+        Parameters
+        ----------
+        rs : RunState
+            A fresh state (`params.count == 0`).
+        chunk : int, optional
+            None runs one compiled loop. N runs the same loop in pieces of N accepted steps, prints a progress block
+            after each (when `use_print_prog`), and on Ctrl+C stores the last finished piece as
+            `self.interrupted_runstate` before re-raising. One loop cannot be interrupted: Ctrl+C reaches Python only
+            when it returns.
+
+        Returns
+        -------
+        RunState
+            The final state.
+
+        Raises
+        ------
+        ValueError
+            If `rs` has already run (`params.count > 0`).
+
+        Notes
+        -----
+        The checks this call runs also raise `MissingAtomError` if the column holds none of a conserved atom, and
+        `DtMinFrozenError`, with no result, if the column's trial keeps failing at `dt_min`.
         """
         count = int(rs.params.count)
         if count > 0:
@@ -486,6 +527,27 @@ class OuterLoop:
 
         Builds the runner closure on the first call (later calls reuse it; nz is not checked).
 
+        Parameters
+        ----------
+        rs : RunState
+            One profile's state.
+
+        Returns
+        -------
+        init_state : JaxIntegState
+            The packed initial state.
+        atm_static : AtmStatic
+            The atmosphere statics for this profile.
+
+        Raises
+        ------
+        ValueError
+            If the profile's star, wavelength grid or network differ from the first profile's, or its `pref_indx`
+            differs from the one the runner was built with. The validation this call runs raises
+            `RuntimeConfigError`, a `ValueError`, if the config is unsupported.
+
+        Notes
+        -----
         The batched GPU driver calls this per profile, then stacks the results along a leading axis into one batch for
         `run_batch`. All profiles in a single `run_batch` call must share the same nz / toggle-combo / `pref_indx` so
         the closure and array shapes match; bucket profiles accordingly. `__call__` runs the same setup, then the
@@ -536,17 +598,36 @@ class OuterLoop:
     def run_batch(self, states_batched: JaxIntegState, atm_static_batched: AtmStatic) -> JaxIntegState:
         """Integrate a whole batch of profiles in one vmapped device call.
 
-        `states_batched` / `atm_static_batched` are the stacked outputs of `prepare_runstate` (leading batch axis on
-        every array leaf; the four AtmStatic toggle flags broadcast). Returns the batched final `JaxIntegState`; read
-        per-lane `termination_reason` / `ymix` by indexing the lane axis. Requires `ensure_runner` to have run (via
-        `prepare_runstate`) for this batch's (nz, toggle-combo).
+        Requires `ensure_runner` to have run (via `prepare_runstate`) for this batch's (nz, toggle-combo).
 
-        Lanes run with freeze-on-done: each profile's converged result matches running it alone at the convergence scale
-        (the photo / geometry cadences follow the loop's iteration tick here, not the lane's accept count), and the call
-        returns once the slowest lane finishes. Lanes are never compacted or refilled here; feed a queue of profiles
-        through `run_queue` for that. A lane frozen at `dt_min` stops with `termination_reason` 4, and
-        `DtMinFrozenError` follows the loop. Under an outer jit the caller checks the returned carry
-        (`raise_if_frozen`).
+        Parameters
+        ----------
+        states_batched : JaxIntegState
+            The stacked states from `prepare_runstate`, with a leading batch axis on every array leaf.
+        atm_static_batched : AtmStatic
+            The stacked statics from `prepare_runstate`, with a leading batch axis on every array leaf; the four
+            toggle flags broadcast.
+
+        Returns
+        -------
+        JaxIntegState
+            The batched final state. Read per-lane `termination_reason` / `ymix` by indexing the lane axis.
+
+        Raises
+        ------
+        RuntimeError
+            If called before the runner was built.
+
+        Notes
+        -----
+        The checks this call runs also raise `MissingAtomError` if a lane holds none of a conserved atom, and
+        `DtMinFrozenError`, after the loop, if a lane froze at `dt_min` (it stops with `termination_reason` 4). Under
+        an outer jit the caller checks the returned carry (`raise_if_frozen`).
+
+        Lanes run with freeze-on-done: each profile's converged result matches running it alone at the convergence
+        scale (the photo / geometry cadences follow the loop's iteration tick here, not the lane's accept count), and
+        the call returns once the slowest lane finishes. Lanes are never compacted or refilled here; feed a queue of
+        profiles through `run_queue` for that.
         """
         if self._runner_batch is None:
             raise RuntimeError(
@@ -571,28 +652,57 @@ class OuterLoop:
     ) -> tuple[PyTree, jnp.ndarray]:
         """Integrate `n_jobs` independent profiles on `n_lanes` lanes with refill.
 
-        `init_fn(job) -> (JaxIntegState, AtmStatic)` builds one job's initial state (traceable); `jobs` is a pytree with
-        a leading job axis on every array leaf; `out_fn(final_lane_state) -> pytree` is what is kept per job. Returns
-        `(out, n_iter)`: `out_fn`'s pytree stacked in job order and the loop's iteration count. A job whose lane went
-        non-finite comes back with `termination_reason` 5. A job frozen at `dt_min` gives up its lane like a finished
-        one, and `DtMinFrozenError` follows the loop, naming its index. Under an outer jit, `out_fn` keeps
-        `termination_reason` and the caller checks it (`raise_if_frozen`).
+        Requires `prepare_runstate` to have built the runner for this nz / toggle-combo, like `run_batch`.
+
+        Parameters
+        ----------
+        init_fn : Callable
+            `init_fn(job) -> (JaxIntegState, AtmStatic)` builds one job's initial state (traceable).
+        jobs : PyTree
+            A pytree with a leading job axis on every array leaf.
+        n_lanes : int
+            Number of lanes.
+        out_fn : Callable
+            `out_fn(final_lane_state) -> pytree` is what is kept per job. Under an outer jit it keeps
+            `termination_reason` and the caller checks it (`raise_if_frozen`).
+        chunk : int, optional
+            Refill threshold: the number of free lanes that triggers a refill.
+        compact : sequence of int, optional
+            A ladder of narrower lane counts for tail compaction, e.g. `(264, 132)` on 792 lanes. Default: the
+            config's `queue_compact`; off when empty. Rungs at or above `n_lanes` are dropped.
+
+        Returns
+        -------
+        out : PyTree
+            `out_fn`'s pytree stacked in job order. A job whose lane went non-finite comes back with
+            `termination_reason` 5.
+        n_iter : jnp.ndarray
+            The loop's iteration count.
+
+        Raises
+        ------
+        RuntimeError
+            If called before the runner was built.
+
+        Notes
+        -----
+        The checks this call runs also raise, after the loop: `MissingAtomError`, naming the job, if a job's column
+        holds none of a conserved atom, and `DtMinFrozenError`, naming its index, if a job froze at `dt_min`. That job
+        gives up its lane like a finished one.
 
         A finished lane is written out and refilled with the next pending job once `chunk` lanes are free, when every
-        lane still holding a job is free, or every `_QUEUE_REFILL_EVERY` iterations; with `n_lanes >= n_jobs` nothing is
-        refilled and the result is bitwise `run_batch`'s. A fresh lane starts as a plain-batch lane does at tick 0 (its
-        own photolysis fields), so a refilled job matches the plain batch at the convergence scale, not bitwise: it
-        enters the loop at a tick that moves the photo and geometry cadences. A job stopped by `count_max` is `is_done`
-        like a converged one and is refilled. Requires `prepare_runstate` to have built the runner for this nz /
-        toggle-combo, like `run_batch`.
+        lane still holding a job is free, or every `_QUEUE_REFILL_EVERY` iterations. With `n_lanes >= n_jobs` nothing
+        is refilled and the result is bitwise `run_batch`'s. A fresh lane starts as a plain-batch lane does at tick 0
+        (its own photolysis fields), so a refilled job matches the plain batch at the convergence scale, not bitwise:
+        it enters the loop at a tick that moves the photo and geometry cadences. A job stopped by `count_max` is
+        `is_done` like a converged one and is refilled.
 
-        Tail compaction: `compact` (default: the config's `queue_compact`, off when empty) is a ladder of narrower lane
-        counts, e.g. `(264, 132)` on 792 lanes. Once no job is pending and the live lanes fit a rung, they continue in a
-        program of that width from the same tick (no refill), so the tail of a few slow jobs stops paying for the full
-        width. Freeze-on-done keeps a done lane out of every lane-uniform photolysis / refresh predicate, so dropping
-        it changes no live lane's step: each job's result is the uncompacted one, bitwise wherever the compiled step's
-        per-lane arithmetic does not depend on the width (the GPU validation checks it). Rungs at or above `n_lanes` are
-        dropped; each rung used adds one compiled loop to the program.
+        Tail compaction: once no job is pending and the live lanes fit a rung, they continue in a program of that
+        width from the same tick (no refill), so the tail of a few slow jobs stops paying for the full width.
+        Freeze-on-done keeps a done lane out of every lane-uniform photolysis / refresh predicate, so dropping it
+        changes no live lane's step: each job's result is the uncompacted one, bitwise wherever the compiled step's
+        per-lane arithmetic does not depend on the width (the GPU validation checks it). Each rung used adds one
+        compiled loop to the program.
         """
         if self._runner_queue is None:
             raise RuntimeError(

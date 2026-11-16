@@ -176,16 +176,6 @@ def chem_jac_entries(
 
     `chem_jac_analytical` gathers them into the dense blocks.
 
-    The layer axis trails every intermediate. Under the batched runner's
-    lane vmap that keeps (reaction, slot) major and (lane, layer)
-    contiguous, so each per-entry gather reads whole rows; a per-layer form
-    (the same operations with the layer axis leading, vmapped over layers)
-    has a (lane, layer, reaction, slot) layout that puts every gathered
-    element in its own memory sector (~4.6 ms a step at 396 lanes on a
-    GH200). Against that per-layer form on CPU: bitwise equal
-    on HD189; on W39b 39 of 1.19M entries one ulp apart, all <= 7e-19 of
-    their layer's peak.
-
     Parameters
     ----------
     y : jnp.ndarray [nz, ni]
@@ -203,6 +193,15 @@ def chem_jac_entries(
         Jacobian entries, s^-1, in `net.jac_place` row order; the last row is zero (the structural-zero slot).
     """
     nz = y.shape[0]
+    # The layer axis trails every intermediate. Under the batched runner's
+    # lane vmap that keeps (reaction, slot) major and (lane, layer)
+    # contiguous, so each per-entry gather reads whole rows; a per-layer form
+    # (the same operations with the layer axis leading, vmapped over layers)
+    # has a (lane, layer, reaction, slot) layout that puts every gathered
+    # element in its own memory sector (~4.6 ms a step at 396 lanes on a
+    # GH200). Against that per-layer form on CPU: bitwise equal
+    # on HD189; on W39b 39 of 1.19M entries one ulp apart, all <= 7e-19 of
+    # their layer's peak.
     yp = jnp.concatenate([y.T, jnp.ones((1, nz), dtype=y.dtype)], axis=0)  # [ni+1, nz]
     st = net.reactant_stoich[:, :, None]  # [nr+1, max_terms, 1]
 

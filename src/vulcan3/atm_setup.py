@@ -136,14 +136,14 @@ class Atm:
         return data_atm
 
     def mol_mass(self, sp: str) -> float:
-        """Molecular mass (amu) for species `sp` from the composition table."""
+        """Molar mass (g/mol) for species `sp` from the composition table."""
         from .composition import compo, compo_row
 
         mass: float = compo["mass"][compo_row.index(sp)]
         return mass
 
     def mean_mass(self, var: types.SimpleNamespace, atm: types.SimpleNamespace, ni: int) -> types.SimpleNamespace:
-        """Compute per-layer mean molecular mass (amu, (nz,)) and write `atm.mu`.
+        """Compute per-layer mean molar mass (g/mol, (nz,)) and write `atm.mu`.
 
         Master's `op.Integration.update_mu_dz` (op.py:951) calls this on our `Atm` in the parity test
         (tests/test_outer_loop_atm_refresh.py).
