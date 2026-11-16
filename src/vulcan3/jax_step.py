@@ -801,8 +801,8 @@ def make_atm_static(atm: types.SimpleNamespace, ni: int, nz: int, cfg: Config | 
     use_botflux = bool(cfg.use_botflux)
     gas_mask = jnp.zeros((ni,), dtype=jnp.bool_)
     gas_mask = gas_mask.at[jnp.asarray(atm.gas_indx, dtype=jnp.int32)].set(True)
-    # Independent of the toggles above (see the diff_esc note at the Jacobian assembly). Nothing checks these names
-    # against the network first, so a species not in the network raises ValueError here.
+    # Independent of the toggles above (see the diff_esc note at the Jacobian assembly). `runtime_validation` refuses a
+    # name the network lacks.
     diff_esc_np = np.zeros((ni,), dtype=bool)
     for _sp in cfg.diff_esc:
         diff_esc_np[_spec_list.index(_sp)] = True

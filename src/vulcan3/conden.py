@@ -24,6 +24,7 @@ __all__ = [
     "GAS_MASS_G_PER_MOL",
     "GAS_TO_CONDENSATE",
     "SUPPORTED_CONDEN_KINETICS",
+    "WHOLE_COLUMN_CONDENSATES",
     "CondenProfile",
     "CondenSpec",
     "CondenStatic",
@@ -55,6 +56,8 @@ GAS_TO_CONDENSATE: dict[str, str] = {
     "S8": "S8_l_s",
     "C": "C_s",
 }
+# Condensates pinned over the whole column once fix_species fires: master's list (exoclime@80f75b9 op.py:878).
+WHOLE_COLUMN_CONDENSATES = frozenset({"H2O_l_s", "H2SO4_l", "NH3_l_s", "S8_l_s"})
 # Gas-phase condensates with a full runtime kinetics path (master's op.conden
 # branch set). H2S has saturation data only (atm_setup), no kinetics;
 # make_conden_spec raises on any other active condensate, where master leaves

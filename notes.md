@@ -190,10 +190,10 @@ Refused or not ported (no physics change)
   `photo_setup._build_photo_static_dense`), non-Ros2 solvers, byte-identical
   pickles, gradients through raw readers, FastChem internals, in-process network
   hot-swap, `use_print_delta`, `fix_species_time`, `gs`, `wall_clock_max`.
-- Refused where upstream is silent or fails late: an unknown condensate (a silent
-  no-op upstream), `dbin_12trans` outside the bin range (C15b), duplicate
-  reactions, unparsable or radiative network rows, an `atom_list` element no
-  species carries (C13), a non-network `const_mix` key.
+- Refused where upstream is silent or fails late: an unknown condensate (a silent no-op upstream), `dbin_12trans`
+  outside the bin range (C15b), duplicate reactions, unparsable or radiative network rows, an `atom_list` element no
+  species carries (C13), a non-network `const_mix` key, a `conver_ignore` or `diff_esc` name the network lacks, and a
+  `fix_species` entry with no saturation curve under a cold-trap pin (it pinned no layer; upstream raises on all three).
 
 Retrieval per-run settings (vulcan-retrieval's W39b runs vs master's W39b
 example): fixed rtol 0.05 (master 0.05 adaptive), cap-and-reject at 5000 accepted
@@ -614,9 +614,9 @@ C21 (geometry) and C22 (tangent); C23 is in "Stage repair and element budget".
 
 ## Withdrawn configs
 
-Earth and K2-18b; an external user reports both converge upstream. Their two YAMLs and
-the K2-18b network and atm file are in hand; the Earth network, atm file and six NASA-9
-files were not sent and come from a public VULCAN fork at `c870b1a`, so may not be their copies.
+Earth and K2-18b; an external user reports both converge upstream. Their two YAMLs and the K2-18b network and atm
+file are in hand. The Earth network was not sent: the runs use upstream master's own (`c870b1a`; the pinned vm_branch
+clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and six NASA-9 files are in the pinned clones.
 - Earth on main [M] (`c61fd34`, CPU): vulcan3 hits the 20000-step cap at longdy
   0.040 (below `yconv_min` 0.1); with `element_budget_tol: 1e9` it certifies at
   11411 (longdy 0.0999): the budget term is the only blocker. Upstream (clone copy,
@@ -646,7 +646,7 @@ files were not sent and come from a public VULCAN fork at `c870b1a`, so may not 
   unpinned certificates: 195-199 DU, 1.02-1.04e-6). Unpinned, `dt_max: 1e8` certifies it (central 6290 steps,
   upwind 7012 with longdy 5.8 twelve steps earlier) and `dt_max: 3e8` does not. Not cures, one at a time: central
   moldiff, `rtol` 1.0, `stop_conden_time` 5e8 (each the same stall), `post_conden_rtol` 0.05 (cap at 1.2e11 s,
-  longdy 0.20), the fork example's condensation block or that example in full.
+  longdy 0.20), upstream master's Earth example condensation block or that example in full.
 - Upwind and the escape Jacobian entry [M]: the VULCAN 2 example with `use_vm_mol` and hybrid ends at the cap,
   longdy 1.00 from top-layer H from step 6000 on (H and H2 there 1e3 below central and falling 8% a step at step
   9000). Upstream does the same: the pinned vm_branch clone as pure upwind on these inputs has longdy 488 from

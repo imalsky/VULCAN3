@@ -16,9 +16,6 @@ if TYPE_CHECKING:
 
     from .outer_loop import OuterLoop
 
-# Condensates pinned over the whole column once fix_species fires: master's list (exoclime@80f75b9 op.py:878).
-_WHOLE_COLUMN_CONDENSATES = {"H2O_l_s", "H2SO4_l", "NH3_l_s", "S8_l_s"}
-
 
 # size-limit-ok: packs one long NamedTuple, one field per line
 def build_statics(integ: OuterLoop, var: types.SimpleNamespace, atm: types.SimpleNamespace) -> _Statics:
@@ -36,8 +33,7 @@ def build_statics(integ: OuterLoop, var: types.SimpleNamespace, atm: types.Simpl
     # conver_ignore species are zeroed in the longdy reduction (op.py:1045-1046).
     conver_ignore_np = np.zeros(ni, dtype=bool)
     for sp in integ._cfg.conver_ignore:
-        if sp in NETWORK.species_idx:
-            conver_ignore_np[NETWORK.species_idx[sp]] = True
+        conver_ignore_np[NETWORK.species_idx[sp]] = True
 
     # condense_zero_conv (op.py:1048-1049): when use_condense, the
     # non_gas_sp columns are zeroed in longdy.
@@ -98,7 +94,7 @@ def build_statics(integ: OuterLoop, var: types.SimpleNamespace, atm: types.Simpl
             dtype=np.int32,
         )
         fix_species_wholecol = np.asarray(
-            [sp in _WHOLE_COLUMN_CONDENSATES for sp in fix_species_cfg],
+            [sp in _conden_mod.WHOLE_COLUMN_CONDENSATES for sp in fix_species_cfg],
             dtype=bool,
         )
         fix_species_sat_mix = np.zeros((len(fix_species_cfg), nz), dtype=np.float64)

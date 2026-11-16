@@ -408,9 +408,30 @@ def validate_runtime_config(cfg: Config) -> None:  # noqa: C901 (one refusal per
     if bool(cfg.use_ion) and not bool(cfg.use_photo):
         errors.append("use_ion=True requires use_photo=True in VULCAN3.")
 
+    # Master indexes these lists into the species list and fails on a name it lacks (op.py:999, :1045-1046).
+    for key in ("conver_ignore", "diff_esc"):
+        unknown = [sp for sp in getattr(cfg, key) if sp not in species]
+        if unknown:
+            errors.append(
+                f"{key} entries {unknown} are not in the network {cfg.network!r}; remove them or use a network that "
+                "has them."
+            )
+
     fix_sp = list(cfg.fix_species)
     if fix_sp and not bool(cfg.use_condense):
         errors.append("fix_species is set but use_condense=False; this configuration is inconsistent.")
+    if fix_sp and bool(cfg.use_condense) and bool(cfg.fix_species_from_coldtrap_lev):
+        # A cold-trap pin reads the entry's saturation curve, built for condense_sp only. Without one the pin fires and
+        # holds no layer; master raises a KeyError there (op.py:881).
+        from .conden import WHOLE_COLUMN_CONDENSATES
+
+        no_curve = [sp for sp in fix_sp if sp not in cfg.condense_sp and sp not in WHOLE_COLUMN_CONDENSATES]
+        if no_curve:
+            errors.append(
+                f"fix_species entries {no_curve} have no saturation curve, so with "
+                "fix_species_from_coldtrap_lev=True they would pin no layer. Add them to condense_sp, or set "
+                "fix_species_from_coldtrap_lev=False to pin their whole column."
+            )
     if fix_sp:
         # Otherwise an entry absent from the import-locked network dies later
         # on a bare `.index()` ValueError naming neither species nor remedy.
