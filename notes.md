@@ -621,7 +621,8 @@ files were not sent and come from a public VULCAN fork at `c870b1a`, so may not 
   C13 fix, four missing keys to start) certifies at 13331; the two columns agree to
   median 3.3e-4 dex, bulk species <= 2e-3 dex (worst CH3NH2 0.056). Inputs: the
   clone's network, atm file and four NASA-9 files. `atom_loss[H] = 2.98e3` is not
-  a leak (`use_fix_sp_bot` pins H2O).
+  a leak (`use_fix_sp_bot` pins H2O). At `7856663` (laptop CPU, `.inf`, current `nega_cut`
+  and `dt_min`) it certifies at 11405 steps, longdy 0.09999, t 1.42e11 s [M].
 - K2-18b (nz 130, ni 93, condensation on): hybrid 31002 steps at longdy 25.8,
   central 30001 at 0.459, upstream 1.00 at 3000; the clock froze at 6.18e4 s
   from step 3001. Its `remove_list` resolved by position to `NH3 + CH` and `SH +
@@ -633,7 +634,12 @@ files were not sent and come from a public VULCAN fork at `c870b1a`, so may not 
   1e-15: Earth (nz 100) ends at the cap, 31002 steps, longdy 0.78 / 16.2, the clock stalled at
   1.12e13 s from about step 4000; K2-18b without its two `C2H5SH` rows ends at the cap, 21002
   steps, longdy 0.155 / 1.14, dt held at 0.34 s / 3.2-6.4 s, t 3.7e3 / 5.5e4 s, never past
-  `stop_conden_time` 1e5. Cause not found.
+  `stop_conden_time` 1e5. Cause not found. Earth with the same fork commit's example laid over
+  it [M, `7856663`]: its condensation block (H2SO4, S8) ends at the cap, 31002 steps, longdy
+  0.85; the example in full (nz 120, adaptive rtol) at 21002 steps, longdy 1.19. Each stalls at
+  1.10-1.12e13 s on S4 and other sulfur species at layers 7 to 9, with S8 gas at 1.6-2.5e-8
+  and no S8 condensate. The fork's atm file is the clone's, and the VULCAN 2 example above
+  certifies at 1.42e11 s, so the failure belongs to the 2025 Ar network and its example.
 - K2-18b re-add (needs NASA-9 and cross sections for `C2H5SH` from the external user; no
   clone or public branch has them): check `remove_list` by equation (C14), hash-pin inputs,
   run to end_case 1.
@@ -976,4 +982,4 @@ Process and environment
 - `vulture` or grep as a dead-code proof on master-facing facades (`op.py:951` calls `.mean_mass()`; vulcan-forward calls `naming_solver`).
 - `k_arr = 1e-15` as "near-zero chemistry" in a synthetic test: three-body rates carry M = 1e15; use 1e-30.
 - Quoting a wall time without cpu/wall.
-- Earth and K2-18b cures already falsified: `use_lowT_limit_rates`, `P_t: 1.0`, conden/settling off, `high_temp_cut`, the stall fallback; the Gibbs T-range warning is a red herring.
+- Earth and K2-18b cures already falsified: `use_lowT_limit_rates`, `P_t: 1.0`, conden/settling off, `high_temp_cut`, the stall fallback, and for Earth the upstream example's condensation block and its settings in full; the Gibbs T-range warning is a red herring.
