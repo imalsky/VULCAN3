@@ -635,16 +635,16 @@ files were not sent and come from a public VULCAN fork at `c870b1a`, so may not 
   1.12e13 s from about step 4000; K2-18b without its two `C2H5SH` rows ends at the cap, 21002
   steps, longdy 0.155 / 1.14, dt held at 0.34 s / 3.2-6.4 s, t 3.7e3 / 5.5e4 s, never past
   `stop_conden_time` 1e5. K2-18b cause not found.
-- Earth cause [M, `7856663`, laptop CPU]: the column has no O2 source, so the bottom fluxes burn O2 at a
-  constant rate (column fraction 0.2014 at 1e6 s, 0.184 at 1e12 s, 0.042 at 9e12 s) and it is gone at 1.115e13
-  s; O3 then falls 7 orders, and the stall is that collapse. A run certifies only while the drift stays under
-  `yconv_min` in the 500-step window. The external user's file reaches dt 5e9 s by 1e11 s, so the window spans
-  40-50% of the elapsed time and 12 to 62 species sit over 0.1 (S8 0.2-0.5 from linear growth, later O2 and CH4
-  themselves); the VULCAN 2 example holds dt at 1.9e7 s and certifies. `dt_max: 1e8` on the user's file:
-  central moldiff certifies at 6290 steps, longdy 0.09999 reached smoothly, t 5.66e11 s; upwind hybrid at 7012,
-  longdy 0.097 (5.8 twelve steps earlier, from top-layer C), O2 column 0.192. Not cures: `dt_max: 3e8` (cap, t
-  7.95e12 s, longdy 0.41), central alone (cap, same 1.11e13 s stall), the fork example's condensation block or
-  that example in full (cap; with central moldiff it crawls at dt ~20 s to 7.9e5 s).
+- Earth cause [M, `7856663`, laptop CPU]: the column has no O2 source, so the bottom fluxes burn O2 at a steady
+  4.0e11 cm^-2 s^-1 (5.1e11 would oxidise the CH4 and CO fluxes of `BC_bot_Earth.txt` in full) and it is gone at
+  1.115e13 s; O3 then falls 7 orders, and the stall is that collapse. The VULCAN 2 example drains at 3.6e11 and
+  certifies at 1.42e11 s with O2 down 1%: every Earth certificate is on a draining column, fired while the drift
+  stays under `yconv_min` in the 500-step window. The external user's file reaches dt 5e9 s by 1e11 s, so the
+  window spans 40-50% of the elapsed time and 12 to 62 species sit over 0.1; the example holds dt at 1.9e7 s.
+  `dt_max: 1e8` on the user's file: central moldiff certifies at 6290 steps, longdy 0.09999 reached smoothly, t
+  5.66e11 s; upwind hybrid at 7012, longdy 0.097 (5.8 twelve steps earlier, from top-layer C). Not cures:
+  `dt_max: 3e8` (cap, t 7.95e12 s, longdy 0.41), central alone (cap, same stall), the fork example's condensation
+  block or that example in full (cap; with central moldiff it crawls at dt ~20 s to 7.9e5 s).
 - Upwind and the escape Jacobian entry [M]: the VULCAN 2 example with `use_vm_mol` and hybrid ends at the cap,
   longdy 1.00 from top-layer H from step 6000 on (H and H2 there 1e3 below central and falling 8% a step at step
   9000). Upstream does the same: the pinned vm_branch clone as pure upwind on these inputs has longdy 488 from
