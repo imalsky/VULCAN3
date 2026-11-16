@@ -55,7 +55,7 @@ def sat_p_jax(sp: str, T: jnp.ndarray) -> jnp.ndarray:
 
     Raises
     ------
-    OSError
+    ValueError
         If `sp` has no saturation fit.
     """
     T = jnp.asarray(T, dtype=jnp.float64)
@@ -98,7 +98,7 @@ def sat_p_jax(sp: str, T: jnp.ndarray) -> jnp.ndarray:
         sat_p = 10 ** jnp.where(T <= _H2S_ICE_LIQUID_K, ice_log10, l_log10)
         # Check: the H2S boiling point, 212.8 K -> 76.1 cmHg = 1.015 bar.
         return sat_p * _CMHG_TO_BAR * BAR_CGS
-    raise OSError(f"No saturation vapor data for {sp}. Check `sat_p_jax` in atm_setup.py")
+    raise ValueError(f"No saturation vapor data for {sp}. Check `sat_p_jax` in _saturation.py")
 
 
 def compute_sat_p(condense_sp: list[str], Tco: np.ndarray) -> dict[str, np.ndarray]:

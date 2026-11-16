@@ -626,7 +626,7 @@ def _load_table_y(data_atm: types.SimpleNamespace) -> tuple[np.ndarray, list[str
     """Load `y` from a per-layer mixing-ratio text table."""
     table = np.genfromtxt(resolve_data_path(_CFG.vul_ini), names=True, dtype=None, skip_header=1)
     if not len(data_atm.pco) == len(table["Pressure"]):
-        raise OSError(f"{_CFG.vul_ini} has {len(table['Pressure'])} layers, the config's nz is {len(data_atm.pco)}.")
+        raise ValueError(f"{_CFG.vul_ini} has {len(table['Pressure'])} layers, the config's nz is {len(data_atm.pco)}.")
     nz_ = len(data_atm.pco)
     y = np.zeros((nz_, chem_funs.ni), dtype=np.float64)
     n_0 = np.asarray(data_atm.n_0)
@@ -775,19 +775,19 @@ def compute_initial_abundance(data_atm: types.SimpleNamespace) -> IniAbunOutputs
 
     Raises
     ------
-    OSError
+    ValueError
         If `ini_mix` is not a mode, or `use_ion` is on and the network has no ions.
     """
     mix = _CFG.ini_mix
     if mix not in _MODE_DISPATCH:
-        raise OSError(f"ini_mix={mix!r} is not a mode; choose one of {sorted(_MODE_DISPATCH)}.")
+        raise ValueError(f"ini_mix={mix!r} is not a mode; choose one of {sorted(_MODE_DISPATCH)}.")
     y, charge_list = _MODE_DISPATCH[mix](data_atm)
     y = _apply_condense(y, data_atm)
     ymix = _compute_ymix(y)
 
     if _CFG.use_ion is True:
         if not charge_list:
-            raise OSError("use_ion = True but the network with ions is not supplied.\n")
+            raise ValueError("use_ion = True but the network with ions is not supplied.\n")
         if "e" in charge_list:
             charge_list = [c for c in charge_list if c != "e"]
 

@@ -366,7 +366,7 @@ def _build_photo_static_dense(var: types.SimpleNamespace, atm: types.SimpleNames
             cross_T_sp_list_local[sp].append(_ROOM_T_SAMPLE_K)
 
         if cross_raw[sp]["cross"][0] == 0 or cross_raw[sp]["cross"][-1] == 0:
-            raise OSError("\n Please remove the zeros in the cross file of " + sp)
+            raise ValueError("\n Please remove the zeros in the cross file of " + sp)
 
         if sp not in threshold:
             raise KeyError(f"{sp} not in {folder}thresholds.txt")

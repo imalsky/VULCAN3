@@ -219,7 +219,7 @@ def kzz_profile_jax(
 
     Raises
     ------
-    OSError
+    ValueError
         If `kzz_prof` is not one of the three.
     """
     # jnp.asarray (not float()) keeps the parameters tracer-safe for AD;
@@ -237,7 +237,7 @@ def kzz_profile_jax(
     if kzz_prof == "Pfunc":
         # Tsai+2020 fit, build_atm.py:417.
         return jnp.maximum(K_max, K_max * (K_p_lev * BAR_CGS / pico_int) ** 0.4)
-    raise OSError(
+    raise ValueError(
         f'\n"Kzz_prof"={kzz_prof!r} cannot be recognized.\n'
         f'Assign it as "file", "const", "JM16" or "Pfunc" in the config.'
     )
@@ -326,7 +326,7 @@ def load_TPK(cfg: Config, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, np.
 
     Raises
     ------
-    OSError
+    ValueError
         If a mode is unknown, a ``file`` profile lacks its column, or a ``table`` file has the wrong layer count.
     """
     nz = int(pco.shape[0])
@@ -388,11 +388,11 @@ def load_TPK(cfg: Config, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, np.
         logger.info("Initializing PT from the previous run %s", cfg.vul_ini)
         prev = np.genfromtxt(resolve_data_path(cfg.vul_ini), names=True, dtype=None, skip_header=1)
         if not nz == len(prev["Pressure"]):
-            raise OSError(f"{cfg.vul_ini} has {len(prev['Pressure'])} layers, the config's nz is {nz}.")
+            raise ValueError(f"{cfg.vul_ini} has {len(prev['Pressure'])} layers, the config's nz is {nz}.")
         out["pco"] = np.asarray(prev["Pressure"], dtype=np.float64)
         Tco = np.asarray(prev["Temp"], dtype=np.float64)
     else:
-        raise OSError(f'\n"atm_type"={atm_type!r} cannot be recognized.\nPlease reassign it in the config.')
+        raise ValueError(f'\n"atm_type"={atm_type!r} cannot be recognized.\nPlease reassign it in the config.')
     out["Tco"] = Tco
 
     # Read each profile's knob directly so a missing one raises, as in master.
@@ -413,9 +413,9 @@ def load_TPK(cfg: Config, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, np.
         )
     elif Kzz_prof == "file":
         if "Kzz" not in out:
-            raise OSError('Kzz_prof="file" requires atm_type="file" with a Kzz column.')
+            raise ValueError('Kzz_prof="file" requires atm_type="file" with a Kzz column.')
     else:
-        raise OSError(
+        raise ValueError(
             f'\n"Kzz_prof"={Kzz_prof!r} cannot be recognized.\n'
             f'Assign it as "file", "const", "JM16" or "Pfunc" in the config.'
         )
@@ -424,7 +424,7 @@ def load_TPK(cfg: Config, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, np.
         out["vz"] = np.full(nz - 1, float(cfg.const_vz), dtype=np.float64)
     elif vz_prof == "file":
         if table_for_vz is None or "vz" not in table_for_vz:
-            raise OSError('vz_prof="file" requires atm_type="file" with a vz column.')
+            raise ValueError('vz_prof="file" requires atm_type="file" with a vz column.')
         p_file = table_for_vz["Pressure"]
         vz_file = table_for_vz["vz"]
         out["vz"] = _interp_descending_or_ascending(
@@ -435,7 +435,9 @@ def load_TPK(cfg: Config, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, np.
             fill_right=0.0,
         )
     else:
-        raise OSError(f'\n"vz_prof"={vz_prof!r} cannot be recognized.\nAssign it as "file" or "const" in the config.')
+        raise ValueError(
+            f'\n"vz_prof"={vz_prof!r} cannot be recognized.\nAssign it as "file" or "const" in the config.'
+        )
 
     # Force-zero when the corresponding `use_*` switch is off, regardless of cfg.
     if not use_Kzz:

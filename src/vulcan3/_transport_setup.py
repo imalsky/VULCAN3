@@ -357,7 +357,7 @@ def compute_settling_velocity(
 
     Raises
     ------
-    OSError
+    ValueError
         If `atm_base` has no viscosity polynomial.
     """
     nz = int(Tco.shape[0])
@@ -368,7 +368,7 @@ def compute_settling_velocity(
     if atm_base == "CO2":
         warnings.warn("NO CO2 viscosity yet! (using N2 instead)", stacklevel=2)
     if atm_base not in VISCOSITY_TABLE:
-        raise OSError(f"No viscosity polynomial for atm_base={atm_base!r}")
+        raise ValueError(f"No viscosity polynomial for atm_base={atm_base!r}")
     na, a, b = VISCOSITY_TABLE[atm_base]
     settle_coeff = settling_coeff_array(cfg, species_list, rho_p, r_p)
     vs = settling_velocity_jax(na, a, b, jnp.asarray(Tco), jnp.asarray(g), jnp.asarray(settle_coeff))
@@ -406,7 +406,7 @@ def settling_coeff_array(
 
     Raises
     ------
-    OSError
+    ValueError
         If a network species in `non_gas_sp` lacks a size or density.
     """
     ni = len(species_list)
@@ -415,7 +415,7 @@ def settling_coeff_array(
         if sp not in species_list:
             continue
         if sp not in rho_p or sp not in r_p:
-            raise OSError(f"{sp} has not been prescribed size and density!")
+            raise ValueError(f"{sp} has not been prescribed size and density!")
         settle_coeff[species_list.index(sp)] = float(rho_p[sp]) * float(r_p[sp]) ** 2
     return settle_coeff
 
@@ -435,7 +435,7 @@ def _Dzz_gen_for_base(atm_base: str) -> Callable[[jnp.ndarray, jnp.ndarray, jnp.
         return lambda T, n_tot, mi: 7.51e16 * T**0.759 / n_tot * (16.04 / mi * (mi + 32.0) / 48.04) ** 0.5
     if atm_base == "CO2":
         return lambda T, n_tot, mi: 2.15e17 * T**0.750 / n_tot * (2.016 / mi * (mi + 44.001) / 46.017) ** 0.5
-    raise OSError(f"\n Unknown atm_base={atm_base!r}!")
+    raise ValueError(f"\n Unknown atm_base={atm_base!r}!")
 
 
 def _alpha_array_for_base(atm_base: str, species_list: list[str], mol_mass: Callable[[str], float]) -> np.ndarray:
@@ -466,7 +466,7 @@ def _alpha_array_for_base(atm_base: str, species_list: list[str], mol_mass: Call
         if "Ar" in species_list:
             alpha[species_list.index("Ar")] = 0.17
     else:
-        raise OSError(f"\n Unknown atm_base={atm_base!r}!")
+        raise ValueError(f"\n Unknown atm_base={atm_base!r}!")
     return alpha
 
 
