@@ -196,6 +196,7 @@ Refused or not ported (no physics change)
   `fix_species` entry with no saturation curve under a cold-trap pin (it pinned no layer; upstream raises on all three).
   Condensation settings upstream accepts and ignores: a condensate outside `non_gas_sp` (it diffuses as a gas), a
   `remove_list` id on a live condensation row (the rate update rewrites it), a `condense_sp` entry nothing acts on.
+  A `use_relax` gas whose condensate the network lacks is refused too: it was a bare `KeyError` at setup.
 - The command exits 1 when a run ends without converging, after saving it (upstream ends normally). The resolved
   config it writes omits a derived key that follows from the others, so an edit to `runtime` or `para_warm` takes effect.
 

@@ -8,6 +8,7 @@
 4. A fix_species entry with no saturation curve under a cold-trap pin: master raises a KeyError (op.py:881).
 5. Condensation settings master accepts and then ignores: a condensate left out of non_gas_sp, a remove_list
    entry on a condensation row that the rate update rewrites, and a condense_sp entry nothing acts on.
+6. use_relax on a gas whose condensate the network lacks: a bare KeyError at setup.
 
 H2S alone (saturation capping, no kinetics) is master-legal and must pass.
 """
@@ -84,6 +85,11 @@ _S8_CONDENSATION = {"use_condense": True, "condense_sp": ["S8"], "non_gas_sp": [
             "condense_sp entries ['NH3'] would do nothing",
         ),
         ({"condense_sp": ["NH3"], "non_gas_sp": [], "use_ini_cold_trap": True}, None),
+        # The cold trap acts on NH3, so only the missing NH3_l_s stands in the way of relaxing it.
+        (
+            {"condense_sp": ["NH3"], "non_gas_sp": [], "use_ini_cold_trap": True, "use_relax": ["NH3"]},
+            "use_relax entries ['NH3'] need their condensates ['NH3_l_s']",
+        ),
         ({"condense_sp": ["NH3"], "non_gas_sp": [], "fix_species": ["NH3"]}, None),
         ({"condense_sp": ["H2S"], "non_gas_sp": []}, None),  # saturation-only tier, as in master
     ],
@@ -93,6 +99,7 @@ _S8_CONDENSATION = {"use_condense": True, "condense_sp": ["S8"], "non_gas_sp": [
         "inert_condensate",
         "relax_without_its_condensate",
         "cold_trap_acts",
+        "relax_needs_its_condensate",
         "pin_acts",
         "h2s_sat_only",
     ],

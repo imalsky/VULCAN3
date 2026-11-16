@@ -408,6 +408,17 @@ def _validate_condensation_network(cfg: Config, net: Network) -> list[str]:
             f"condensation update switches back on at each step. Take {sorted(undone)} out of condense_sp."
         )
 
+    # Relaxation writes to the condensate's column, so it needs that species (a bare KeyError otherwise).
+    no_condensate = sorted(
+        sp for sp in relaxed if sp in net.species_idx and GAS_TO_CONDENSATE[sp] not in net.species_idx
+    )
+    if no_condensate:
+        errors.append(
+            f"use_relax entries {no_condensate} need their condensates "
+            f"{[GAS_TO_CONDENSATE[sp] for sp in no_condensate]} in the network {cfg.network!r}. Use a network that "
+            "has them, or take the entries out of use_relax."
+        )
+
     # A kinetics condensate with no network row can still act through relaxation, the initial cold trap, a fix_species
     # pin or the surface-saturation pin. With none of them it only leaves the step error estimate (op.py:2957-2958).
     cold_trap = bool(cfg.use_ini_cold_trap) and cfg.ini_mix != "table"
