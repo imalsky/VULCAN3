@@ -27,6 +27,7 @@ from . import chem_funs, photo as _photo_mod
 from .chem_funs import ni, nr
 from .config import default_config
 from .op_jax import Ros2JAX
+from .phy_const import BAR_CGS
 from .state import TERM_NONFINITE, TERM_RUNTIME, TERM_STEP_COUNT, legacy_view
 
 if TYPE_CHECKING:
@@ -346,7 +347,7 @@ class Output:
 
     def plot_end(self, rs: RunState) -> None:
         """Plot final mixing ratios of `cfg.plot_spec` against pressure, saved to `plot_dir/mix.png`."""
-        p_bar = np.asarray(rs.atm.pco) / 1.0e6
+        p_bar = np.asarray(rs.atm.pco) / BAR_CGS
         ymix = np.asarray(rs.step.ymix)
         self._plot_species(
             lambda i: (ymix[:, i], p_bar),
@@ -367,7 +368,7 @@ class Output:
             raise ValueError(
                 "plot_evo needs the evolution snapshots; set save_evolution or use_plot_evo before the run."
             )
-        p_bar = np.asarray(rs.atm.pco) / 1.0e6
+        p_bar = np.asarray(rs.atm.pco) / BAR_CGS
         j = int(np.argmin(np.abs(np.log(p_bar / _EVO_P_BAR))))
         ymix = np.asarray(rs.step.y_evo)[:, j, :] / float(np.asarray(rs.atm.n_0)[j])
         self._plot_species(

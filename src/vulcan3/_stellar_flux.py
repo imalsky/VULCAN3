@@ -124,15 +124,15 @@ def read_sflux_binned(
     # Energy-conservation diagnostic: raw trapezoidal integral vs. binned sum.
     raw_left_indx = int(np.searchsorted(raw_lambda, bins_np[0], side="right"))
     raw_right_indx = int(np.searchsorted(raw_lambda, bins_np[-1], side="right")) - 1
-    sum_orgin = 0.0
+    sum_origin = 0.0
     for n in range(raw_left_indx, raw_right_indx):
-        sum_orgin += 0.5 * (raw_flux[n] + raw_flux[n + 1]) * (raw_lambda[n + 1] - raw_lambda[n])
-    sum_orgin += (
+        sum_origin += 0.5 * (raw_flux[n] + raw_flux[n + 1]) * (raw_lambda[n + 1] - raw_lambda[n])
+    sum_origin += (
         0.5
         * (float(np.interp(bins_np[0], raw_lambda, raw_flux)) + raw_flux[raw_left_indx])
         * (raw_lambda[raw_left_indx] - bins_np[0])
     )
-    sum_orgin += (
+    sum_origin += (
         0.5
         * (float(np.interp(bins_np[-1], raw_lambda, raw_flux)) + raw_flux[raw_right_indx])
         * (bins_np[-1] - raw_lambda[raw_right_indx])
@@ -150,7 +150,7 @@ def read_sflux_binned(
         dbin_12,
         dbin2,
         dbin_12,
-        100 * sum_bin / sum_orgin,
+        100 * sum_bin / sum_origin,
     )
     return {
         "sflux_top": sflux_top,
