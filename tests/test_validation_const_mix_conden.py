@@ -6,7 +6,8 @@
    leaves its rate at zero.
 3. A conver_ignore or diff_esc name the network lacks: master's species.index(sp) fails (op.py:1045-1046, :999).
 4. A fix_species entry with no saturation curve under a cold-trap pin: master raises a KeyError (op.py:881).
-5. Condensation settings master accepts and then ignores: a condensate left out of non_gas_sp.
+5. Condensation settings master accepts and then ignores: a condensate left out of non_gas_sp, and a remove_list
+   entry on a condensation row that the rate update rewrites.
 
 H2S alone (saturation capping, no kinetics) is master-legal and must pass.
 """
@@ -85,6 +86,22 @@ def test_condensation_settings_the_network_contradicts(sulfur_net, overrides, er
 
     errors = _validate_condensation_network(make_config(**{**_S8_CONDENSATION, **overrides}), sulfur_net)
     assert errors == [] if error is None else any(error in e for e in errors), errors
+
+
+def test_remove_list_on_a_live_condensation_row_is_refused(sulfur_net):
+    """Removing a row the condensation update rewrites is refused; a relaxed gas's row, held at zero, is not."""
+    from vulcan3 import make_config
+    from vulcan3.runtime_validation import _validate_condensation_network
+
+    row = {rf.split(" -> ")[0].strip(): i for i, rf in sulfur_net.Rf.items() if sulfur_net.is_conden[i]}
+    s8 = make_config(**_S8_CONDENSATION, remove_list=[row["S8"], row["S8"] + 1])
+    assert any(
+        "remove_list names the condensation reactions" in e for e in _validate_condensation_network(s8, sulfur_net)
+    )
+
+    h2o = {"use_condense": True, "condense_sp": ["H2O"], "non_gas_sp": ["H2O_l_s"], "use_relax": ["H2O"]}
+    relaxed = make_config(**h2o, remove_list=[row["H2O"], row["H2O"] + 1])
+    assert _validate_condensation_network(relaxed, sulfur_net) == []
 
 
 def test_kinetics_set_matches_sat_set():

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 __all__ = [
     "GAS_MASS_G_PER_MOL",
     "GAS_TO_CONDENSATE",
+    "RELAX_SPECIES",
     "SUPPORTED_CONDEN_KINETICS",
     "WHOLE_COLUMN_CONDENSATES",
     "CondenProfile",
@@ -56,6 +57,8 @@ GAS_TO_CONDENSATE: dict[str, str] = {
     "S8": "S8_l_s",
     "C": "C_s",
 }
+# Gases master can relax to saturation in place of the kinetic rate (op.py:1121-1123, 1153-1155).
+RELAX_SPECIES = frozenset({"H2O", "NH3"})
 # Condensates pinned over the whole column once fix_species fires: master's list (exoclime@80f75b9 op.py:878).
 WHOLE_COLUMN_CONDENSATES = frozenset({"H2O_l_s", "H2SO4_l", "NH3_l_s", "S8_l_s"})
 # Gas-phase condensates with a full runtime kinetics path (master's op.conden
@@ -173,7 +176,7 @@ def make_conden_spec(
         # use_relax short-circuit exists only on upstream H2O/NH3
         # branches (op.py:1121-1123, 1153-1155). Other condensates,
         # including H2SO4, still use their condensation-rate rows.
-        if gas_sp in {"H2O", "NH3"} and gas_sp in relax_set:
+        if gas_sp in RELAX_SPECIES and gas_sp in relax_set:
             coeff = 0.0
         gas_names.append(gas_sp)
         re_idx.append(int(re))

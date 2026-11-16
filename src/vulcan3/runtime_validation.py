@@ -375,11 +375,11 @@ def _validate_condensation(cfg: Config) -> list[str]:
 def _validate_condensation_network(cfg: Config, net: Network) -> list[str]:
     """Return errors for condensation settings that the network `net` makes inert or contradictory.
 
-    Master accepts each of them and runs on (build_atm.py:267, :603, :734).
+    Master accepts each of them and runs on (build_atm.py:267, :603, :734; op.py:314-316 against :1141-1142).
     """
     if not bool(cfg.use_condense):
         return []
-    from .conden import GAS_TO_CONDENSATE
+    from .conden import GAS_TO_CONDENSATE, RELAX_SPECIES
 
     errors: list[str] = []
     # A condensate outside non_gas_sp is diffused as a gas, left unsettled and counted in the mixing-ratio sum.
@@ -392,6 +392,20 @@ def _validate_condensation_network(cfg: Config, net: Network) -> list[str]:
         errors.append(
             f"condensates {as_gas} are not in non_gas_sp, so they would diffuse as gases and not settle. Add them to "
             "non_gas_sp."
+        )
+
+    # The condensation update rewrites the rate of every live row at each step, so removing one has no effect. A
+    # relaxed gas has no live row: its rate is held at zero.
+    rows = {net.Rf[int(i)].split(" -> ")[0].strip(): int(i) for i in np.flatnonzero(net.is_conden & net.is_forward)}
+    relaxed = RELAX_SPECIES & set(cfg.use_relax)
+    removed = {int(i) for i in cfg.remove_list}
+    undone = {
+        sp: row for sp, row in rows.items() if sp in cfg.condense_sp and sp not in relaxed and removed & {row, row + 1}
+    }
+    if undone:
+        errors.append(
+            f"remove_list names the condensation reactions {[net.Rf[row] for row in undone.values()]}, which the "
+            f"condensation update switches back on at each step. Take {sorted(undone)} out of condense_sp."
         )
     return errors
 
