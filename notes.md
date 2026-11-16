@@ -158,6 +158,7 @@ Integrator
   and `op.py:836` reads it unconditionally. `rtol_min` is upstream's root 0.02 and `rtol_max` 1 (root 2.5); both
   are read only under `use_adapt_rtol`. With no floor, 200 adaptive steps of a default column with H2O pinned at
   3x its seed left rtol 3.9e-4 and t 0.056 s, against 0.02 and 10.9 s at the floor [M, laptop]; HD189 bitwise.
+  `use_ini_cold_trap` and `use_sat_surfaceH2O` default false (root true): read only under `use_condense`, untested.
 
 Inputs and data
 - `thermo/solar_element_abundances.dat` replaced in ccc40f7, still the default:
