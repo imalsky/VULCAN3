@@ -15,7 +15,7 @@ import jax
 
 from . import _settings, legacy_io, op_jax, outer_loop
 from .config import _FROZEN_ENV, dump_config, load_config
-from .state import RunState, _frozen_mismatch
+from .state import TERM_CONVERGED, TERM_NONFINITE, TERM_RUNTIME, TERM_STEP_COUNT, RunState, _frozen_mismatch
 
 if TYPE_CHECKING:
     from .config import Config
@@ -23,6 +23,12 @@ if TYPE_CHECKING:
 __all__ = ["cli_main"]
 
 _RELAUNCH_GUARD = _settings.RELAUNCH_GUARD
+# Why a run ended short of the convergence certificate, by `end_case`.
+_STOPPED_SHORT = {
+    TERM_RUNTIME: "it reached `runtime`",
+    TERM_STEP_COUNT: "it reached `count_max`",
+    TERM_NONFINITE: "its state is not finite, or it stopped with no cap reached",
+}
 
 
 def _frozen_knob_mismatch(cfg: Config) -> dict[str, str]:
@@ -96,6 +102,7 @@ def cli_main(argv: list[str] | None = None) -> None:
     A config selecting a non-default network re-execs once with the matching
     ``$VULCAN3_*`` variables set (see `_relaunch_for_frozen_knobs`). Ctrl+C
     drops into a REPL holding the last finished chunk, then exits with status 130.
+    A run that ends without converging is saved, then exits with status 1.
 
     Parameters
     ----------
@@ -156,7 +163,9 @@ def cli_main(argv: list[str] | None = None) -> None:
         # stdin is not a terminal (the shell then exits on EOF at once).
         sys.exit(130)
 
-    print(f"VULCAN3 done. Saving output to {cfg.output_dir}{cfg.out_name}")
+    end_case = int(runstate.params.end_case)
+    converged = end_case == TERM_CONVERGED
+    print(f"{'VULCAN3 done. ' if converged else ''}Saving output to {cfg.output_dir}{cfg.out_name}")
     output.save_out(runstate, dname)
     if cfg.use_plot_end:
         output.plot_end(runstate)
@@ -164,6 +173,13 @@ def cli_main(argv: list[str] | None = None) -> None:
         output.plot_evo(runstate)
 
     print(f"Total wall time: {time.time() - runstate.metadata.start_time:.1f}s")
+    if not converged:
+        # The state is saved for inspection, but a job wrapper must not read it as a result.
+        print(
+            f"VULCAN3 did not converge: {_STOPPED_SHORT.get(end_case, f'end_case {end_case}')}. "
+            "The saved state is not a steady state."
+        )
+        sys.exit(1)
 
 
 def _drop_into_repl(namespace: dict[str, object]) -> None:

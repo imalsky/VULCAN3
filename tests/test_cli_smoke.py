@@ -1,7 +1,7 @@
 """Smoke-test the production console entry point `cli.cli_main`.
 
 The console entry point, run end to end on HD189 with a tiny step cap,
-writes a schema-correct `.vul`.
+writes a schema-correct `.vul` and exits with status 1, because the run stopped on the cap.
 
 The CLI loads its config by name/path (`load_config`), so the tiny-cap overrides
 are delivered through a real resolved YAML written to the temp dir, and
@@ -20,7 +20,7 @@ import pytest
 
 
 @pytest.mark.strict_isolation
-def test_cli_main_produces_vul():
+def test_cli_main_produces_vul(capsys):
     from vulcan3 import cli
     from vulcan3.config import dump_config, load_config
 
@@ -45,7 +45,10 @@ def test_cli_main_produces_vul():
             cfg_path = Path(tmp) / "cli_smoke.yaml"
             dump_config(cfg, cfg_path)
 
-            cli.cli_main(["--config", str(cfg_path)])
+            with pytest.raises(SystemExit) as stopped:
+                cli.cli_main(["--config", str(cfg_path)])
+            assert stopped.value.code == 1  # capped, not converged
+            assert "did not converge: it reached `count_max`" in capsys.readouterr().out
 
             out = Path(tmp) / cfg.output_dir / cfg.out_name
             assert out.is_file(), f"CLI did not write {out}"
