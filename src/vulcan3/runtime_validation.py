@@ -372,6 +372,30 @@ def _validate_condensation(cfg: Config) -> list[str]:
     return errors
 
 
+def _validate_condensation_network(cfg: Config, net: Network) -> list[str]:
+    """Return errors for condensation settings that the network `net` makes inert or contradictory.
+
+    Master accepts each of them and runs on (build_atm.py:267, :603, :734).
+    """
+    if not bool(cfg.use_condense):
+        return []
+    from .conden import GAS_TO_CONDENSATE
+
+    errors: list[str] = []
+    # A condensate outside non_gas_sp is diffused as a gas, left unsettled and counted in the mixing-ratio sum.
+    as_gas = [
+        cond
+        for cond in (GAS_TO_CONDENSATE.get(sp) for sp in cfg.condense_sp)
+        if cond in net.species_idx and cond not in cfg.non_gas_sp
+    ]
+    if as_gas:
+        errors.append(
+            f"condensates {as_gas} are not in non_gas_sp, so they would diffuse as gases and not settle. Add them to "
+            "non_gas_sp."
+        )
+    return errors
+
+
 def validate_runtime_config(cfg: Config) -> None:  # noqa: C901 (one refusal per knob, in order)
     """Raise `RuntimeConfigError` if cfg is unsupported or required files are missing.
 
@@ -464,6 +488,7 @@ def validate_runtime_config(cfg: Config) -> None:  # noqa: C901 (one refusal per
                 )
 
     errors.extend(_validate_condensation(cfg))
+    errors.extend(_validate_condensation_network(cfg, chem_funs.NETWORK))
     errors.extend(_validate_diffusion_flags(cfg))
 
     required_paths = [

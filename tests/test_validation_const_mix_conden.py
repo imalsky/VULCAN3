@@ -6,6 +6,7 @@
    leaves its rate at zero.
 3. A conver_ignore or diff_esc name the network lacks: master's species.index(sp) fails (op.py:1045-1046, :999).
 4. A fix_species entry with no saturation curve under a cold-trap pin: master raises a KeyError (op.py:881).
+5. Condensation settings master accepts and then ignores: a condensate left out of non_gas_sp.
 
 H2S alone (saturation capping, no kinetics) is master-legal and must pass.
 """
@@ -56,6 +57,34 @@ def test_up_front_validation(overrides, error):
     else:
         with pytest.raises(RuntimeError, match=error):
             validate_runtime_config(cfg)
+
+
+@pytest.fixture(scope="module")
+def sulfur_net():
+    """Return a packaged network with condensation rows (H2O and S8); the import-locked default has none."""
+    from vulcan3 import network
+    from vulcan3._paths import resolve_data_path
+
+    return network.parse_network(str(resolve_data_path("thermo/SNCHO_photo_network_2025.txt")))
+
+
+_S8_CONDENSATION = {"use_condense": True, "condense_sp": ["S8"], "non_gas_sp": ["S8_l_s"]}
+
+
+@pytest.mark.parametrize(
+    ("overrides", "error"),
+    [
+        ({}, None),
+        ({"non_gas_sp": []}, "condensates ['S8_l_s'] are not in non_gas_sp"),
+    ],
+    ids=["valid", "condensate_as_gas"],
+)
+def test_condensation_settings_the_network_contradicts(sulfur_net, overrides, error):
+    from vulcan3 import make_config
+    from vulcan3.runtime_validation import _validate_condensation_network
+
+    errors = _validate_condensation_network(make_config(**{**_S8_CONDENSATION, **overrides}), sulfur_net)
+    assert errors == [] if error is None else any(error in e for e in errors), errors
 
 
 def test_kinetics_set_matches_sat_set():
