@@ -7,3 +7,48 @@ authors:
     given-names: "Isaac"
 repository-code: "https://github.com/imalsky/VULCAN3"
 license: GPL-3.0-only
+references:
+  - type: article
+    title: "VULCAN: An Open-source, Validated Chemical Kinetics Python Code for Exoplanetary Atmospheres"
+    authors:
+      - family-names: "Tsai"
+        given-names: "Shang-Min"
+      - family-names: "Lyons"
+        given-names: "James R."
+      - family-names: "Grosheintz"
+        given-names: "Luc"
+      - family-names: "Rimmer"
+        given-names: "Paul B."
+      - family-names: "Kitzmann"
+        given-names: "Daniel"
+      - family-names: "Heng"
+        given-names: "Kevin"
+    journal: "The Astrophysical Journal Supplement Series"
+    volume: 228
+    issue: 2
+    start: 20
+    year: 2017
+    doi: "10.3847/1538-4365/228/2/20"
+  - type: article
+    title: "A Comparative Study of Atmospheric Chemistry with VULCAN"
+    authors:
+      - family-names: "Tsai"
+        given-names: "Shang-Min"
+      - family-names: "Malik"
+        given-names: "Matej"
+      - family-names: "Kitzmann"
+        given-names: "Daniel"
+      - family-names: "Lyons"
+        given-names: "James R."
+      - family-names: "Fateev"
+        given-names: "Alexander"
+      - family-names: "Lee"
+        given-names: "Elspeth"
+      - family-names: "Heng"
+        given-names: "Kevin"
+    journal: "The Astrophysical Journal"
+    volume: 923
+    issue: 2
+    start: 264
+    year: 2021
+    doi: "10.3847/1538-4357/ac29bc"
