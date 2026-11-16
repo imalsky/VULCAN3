@@ -634,12 +634,24 @@ files were not sent and come from a public VULCAN fork at `c870b1a`, so may not 
   1e-15: Earth (nz 100) ends at the cap, 31002 steps, longdy 0.78 / 16.2, the clock stalled at
   1.12e13 s from about step 4000; K2-18b without its two `C2H5SH` rows ends at the cap, 21002
   steps, longdy 0.155 / 1.14, dt held at 0.34 s / 3.2-6.4 s, t 3.7e3 / 5.5e4 s, never past
-  `stop_conden_time` 1e5. Cause not found. Earth with the same fork commit's example laid over
-  it [M, `7856663`]: its condensation block (H2SO4, S8) ends at the cap, 31002 steps, longdy
-  0.85; the example in full (nz 120, adaptive rtol) at 21002 steps, longdy 1.19. Each stalls at
-  1.10-1.12e13 s on S4 and other sulfur species at layers 7 to 9, with S8 gas at 1.6-2.5e-8
-  and no S8 condensate. The fork's atm file is the clone's, and the VULCAN 2 example above
-  certifies at 1.42e11 s: no regression there. Whether upstream certifies the 2025 example is unmeasured.
+  `stop_conden_time` 1e5. K2-18b cause not found.
+- Earth cause [M, `7856663`, laptop CPU]: the column has no O2 source, so the bottom fluxes burn O2 at a
+  constant rate (column fraction 0.2014 at 1e6 s, 0.184 at 1e12 s, 0.042 at 9e12 s) and it is gone at 1.115e13
+  s; O3 then falls 7 orders, and the stall is that collapse. A run certifies only while the drift stays under
+  `yconv_min` in the 500-step window. The external user's file reaches dt 5e9 s by 1e11 s, so the window spans
+  40-50% of the elapsed time and 12 to 62 species sit over 0.1 (S8 0.2-0.5 from linear growth, later O2 and CH4
+  themselves); the VULCAN 2 example holds dt at 1.9e7 s (window 7%) and certifies. With `dt_max: 1e8` alone the
+  user's file certifies: 7012 steps, longdy 0.097, t 5.68e11 s, O2 column 0.192 (longdy was 5.8 from top-layer
+  C twelve steps earlier). Not cures: the fork example's condensation block (cap, longdy 0.85), that example
+  in full (cap 21002, longdy 1.19; with central moldiff it crawls at dt ~20 s to the cap at 7.9e5 s).
+- Upwind and the escape Jacobian entry [M]: the VULCAN 2 example with `use_vm_mol` and hybrid ends at the cap,
+  longdy 1.00 from top-layer H from step 6000 on (H and H2 there 1e3 below central and falling 8% a step at step
+  9000). Upstream does the same: the pinned vm_branch clone as pure upwind on these inputs has longdy 488 from
+  top-layer H at step 4500 (vulcan3 1090) and H there at 5.5e5 cm^-3 (vulcan3 2.9e5, central 3.3e8). The entry (`jax_ros2_step`, kept for parity) is -10.9 s^-1 for H against a true -8.5e-5 s^-1, with no
+  RHS term while `use_topflux` is off. With `diff_esc: []` the upwind phase certifies near step 12830 and the
+  2000 central steps end at longdy 0.19. The user's file ignores H and H2. Upstream master prints "completed
+  the final central difference scheme integration" for a hybrid run that hits the cap (`op.py:3263`,
+  `c870b1a`); whether upstream certifies the 2025 example is unmeasured.
 - K2-18b re-add (needs NASA-9 and cross sections for `C2H5SH` from the external user; no
   clone or public branch has them): check `remove_list` by equation (C14), hash-pin inputs,
   run to end_case 1.
@@ -982,4 +994,4 @@ Process and environment
 - `vulture` or grep as a dead-code proof on master-facing facades (`op.py:951` calls `.mean_mass()`; vulcan-forward calls `naming_solver`).
 - `k_arr = 1e-15` as "near-zero chemistry" in a synthetic test: three-body rates carry M = 1e15; use 1e-30.
 - Quoting a wall time without cpu/wall.
-- Earth and K2-18b cures already falsified: `use_lowT_limit_rates`, `P_t: 1.0`, conden/settling off, `high_temp_cut`, the stall fallback, and for Earth the upstream example's condensation block and its settings in full; the Gibbs T-range warning is a red herring.
+- Earth and K2-18b cures already falsified: `use_lowT_limit_rates`, `P_t: 1.0`, conden/settling off, `high_temp_cut`, the stall fallback, and for Earth the upstream example's condensation block, its settings in full and `diff_esc: []`; the Gibbs T-range warning is a red herring.
