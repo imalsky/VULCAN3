@@ -351,11 +351,11 @@ def load_config(name_or_path: str | os.PathLike = "default", /, **overrides: Any
 def dump_config(cfg: Config, path: str | os.PathLike) -> None:
     """Write a resolved Config back to YAML so a run can be reproduced exactly.
 
-    Dumps the full attribute set (including the derived values), so re-loading
-    the file with ``load_config`` reconstructs the same config values. The first
-    line is a comment naming the solver and the right-hand-side form of the
-    writing process; a reader sets both in its own environment, and the input
-    files a path names are not recorded.
+    Re-loading the file with ``load_config`` reconstructs the same config values. A derived key (``_DERIVED``) is
+    written only when its value was set by hand; one that follows from the other keys is left out and named in a
+    comment, so an edit to the key it follows from takes effect on the next load. The first line is a comment naming
+    the solver and the right-hand-side form of the writing process; a reader sets both in its own environment, and
+    the input files a path names are not recorded.
 
     Parameters
     ----------
@@ -371,6 +371,10 @@ def dump_config(cfg: Config, path: str | os.PathLike) -> None:
     solver = step._SOLVER if step is not None else _settings.solver()
     chem_rhs = rhs.CHEM_RHS_IMPL if rhs is not None else _settings.chem_rhs()
     header = f"# written with VULCAN3_SOLVER={solver} VULCAN3_CHEM_RHS={chem_rhs}\n"
+    followed = {key: d.pop(key) for key, derive in _DERIVED if key in d and d[key] == derive(d)}
+    if followed:
+        header += "# derived from the keys below on load, so not stored: "
+        header += "; ".join(f"{key} = {value!r}" for key, value in followed.items()) + "\n"
     Path(path).write_text(header + yaml.safe_dump(d, sort_keys=False, default_flow_style=False, width=100))
 
 

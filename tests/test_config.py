@@ -230,3 +230,24 @@ def test_dump_config_names_the_solver_and_still_loads(tmp_path, monkeypatch):
     again = load_config("dumped")
     assert again.nz == 37
     assert vars(again) == vars(cfg)
+
+
+@pytest.mark.parametrize("name", sorted(_EXPECTED_GS))
+def test_a_dumped_config_reloads_the_same_and_follows_an_edit(name, tmp_path):
+    """Every shipped config survives dump and load, and an edit to `runtime` in the dump moves the derived `dt_max`."""
+    from vulcan3.config import dump_config
+
+    cfg = load_config(name)
+    path = tmp_path / "dumped.yaml"
+    dump_config(cfg, path)
+    assert vars(load_config(path)) == vars(cfg)
+
+    edited = yaml.safe_load(path.read_text())
+    edited["runtime"] = 1.0e18
+    path.write_text(yaml.safe_dump(edited))
+    assert load_config(path).dt_max == 1.0e18 * _DT_MAX_RUNTIME_FRAC
+
+    # A derived key set by hand is kept.
+    by_hand = load_config(name, dt_max=1.0e9)
+    dump_config(by_hand, path)
+    assert load_config(path).dt_max == 1.0e9
