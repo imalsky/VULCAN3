@@ -640,10 +640,11 @@ files were not sent and come from a public VULCAN fork at `c870b1a`, so may not 
   s; O3 then falls 7 orders, and the stall is that collapse. A run certifies only while the drift stays under
   `yconv_min` in the 500-step window. The external user's file reaches dt 5e9 s by 1e11 s, so the window spans
   40-50% of the elapsed time and 12 to 62 species sit over 0.1 (S8 0.2-0.5 from linear growth, later O2 and CH4
-  themselves); the VULCAN 2 example holds dt at 1.9e7 s (window 7%) and certifies. With `dt_max: 1e8` alone the
-  user's file certifies: 7012 steps, longdy 0.097, t 5.68e11 s, O2 column 0.192 (longdy was 5.8 from top-layer
-  C twelve steps earlier). Not cures: the fork example's condensation block (cap, longdy 0.85), that example
-  in full (cap 21002, longdy 1.19; with central moldiff it crawls at dt ~20 s to the cap at 7.9e5 s).
+  themselves); the VULCAN 2 example holds dt at 1.9e7 s and certifies. `dt_max: 1e8` on the user's file:
+  central moldiff certifies at 6290 steps, longdy 0.09999 reached smoothly, t 5.66e11 s; upwind hybrid at 7012,
+  longdy 0.097 (5.8 twelve steps earlier, from top-layer C), O2 column 0.192. Not cures: `dt_max: 3e8` (cap, t
+  7.95e12 s, longdy 0.41), central alone (cap, same 1.11e13 s stall), the fork example's condensation block or
+  that example in full (cap; with central moldiff it crawls at dt ~20 s to 7.9e5 s).
 - Upwind and the escape Jacobian entry [M]: the VULCAN 2 example with `use_vm_mol` and hybrid ends at the cap,
   longdy 1.00 from top-layer H from step 6000 on (H and H2 there 1e3 below central and falling 8% a step at step
   9000). Upstream does the same: the pinned vm_branch clone as pure upwind on these inputs has longdy 488 from
