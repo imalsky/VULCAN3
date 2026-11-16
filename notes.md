@@ -658,7 +658,11 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   -8.5e-5 true, with no RHS term while `use_topflux` is off. Upstream master calls a hybrid run at the cap "completed".
 - K2-18b re-add: the `C2H5SH` NASA-9 sets are in the pinned clones' `thermo/NASA9/new_nasa9.TXT` (Burcat G3B3; cut
   as `CH3SCH3.txt` is, byte for byte [M]). Its cross sections are in no clone, branch or repository of the upstream
-  author; upstream's threshold is 270 nm. Then check `remove_list` by equation (C14), hash-pin inputs, run to end_case 1.
+  author; upstream's threshold is 270 nm. The MPI-Mainz atlas (Keller-Rudek et al. 2013) holds Bridges et al. 1972
+  (185-270 nm) and Clark & Simpson 1965 (162-249 nm); in their overlap they agree within 32% from 200 nm up and
+  differ by a factor 4 at 190 nm [M]. With a file built from the two in the layout of `CH3SCH3_cross.csv` (quantum
+  yield 1 and no ionisation: assumptions, upstream's file is unseen) the user's full 101-species network sets up
+  [M]; no run was made. Then check `remove_list` by equation (C14), hash-pin inputs, run to end_case 1.
 
 ## Design records
 
