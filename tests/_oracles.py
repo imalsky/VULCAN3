@@ -76,20 +76,8 @@ chem_jac = jax.vmap(
 )
 
 
-def chem_rhs_numpy(y, M, k, net):
-    """NumPy reference RHS, master-faithful term order. `net` a `network.Network`.
-
-    Mirrors `make_chem_funs.emit_chem_rhs_source`'s emission rules:
-      - per-reaction rate uses stoich-replicated `*` (not `**stoich`),
-        terminal `*M` when three-body
-      - per-reaction `v_pair = v[i] - v[i+1]` (k[i+1]==0 zeros out the
-        second term for unpaired photo/conden/radiative/ion reactions)
-      - per-species accumulator walks i=1, 3, 5, ..., products-then-
-        reactants per reaction, repeated by stoich (one `+= v_pair` per
-        stoich count, not `+= st * v_pair`)
-    The NumPy `*` is left-associative and float64 throughout; this gives
-    bit-identical emission order to master's chemdf body.
-    """
+def _reaction_rates_numpy(y, M, k, net):
+    """Rate of every reaction, [nr + 1, nz] in cm^-3 s^-1: `k` times the stoich-replicated `*` chain, then `M`."""
     nz, ni = y.shape
     PAD = ni
     nr = net.nr
@@ -108,6 +96,26 @@ def chem_rhs_numpy(y, M, k, net):
         if bool(net.is_three_body[i]):
             rate = rate * M_arr
         v[i] = rate
+    return v
+
+
+def chem_rhs_numpy(y, M, k, net):
+    """NumPy reference RHS, master-faithful term order. `net` a `network.Network`.
+
+    Mirrors `make_chem_funs.emit_chem_rhs_source`'s emission rules:
+      - per-reaction rate uses stoich-replicated `*` (not `**stoich`),
+        terminal `*M` when three-body
+      - per-reaction `v_pair = v[i] - v[i+1]` (k[i+1]==0 zeros out the
+        second term for unpaired photo/conden/radiative/ion reactions)
+      - per-species accumulator walks i=1, 3, 5, ..., products-then-
+        reactants per reaction, repeated by stoich (one `+= v_pair` per
+        stoich count, not `+= st * v_pair`)
+    The NumPy `*` is left-associative and float64 throughout; this gives
+    bit-identical emission order to master's chemdf body.
+    """
+    PAD = y.shape[1]
+    nr = net.nr
+    v = _reaction_rates_numpy(y, M, k, net)
 
     dydt = np.zeros_like(y)
     for i in range(1, nr + 1, 2):
@@ -127,6 +135,24 @@ def chem_rhs_numpy(y, M, k, net):
             for _ in range(st):
                 dydt[:, sp] = dydt[:, sp] - v_pair
     return dydt
+
+
+def chem_gross_rate_numpy(y, M, k, net):
+    """Sum of the magnitudes of every production and loss term of each cell, [nz, ni] in cm^-3 s^-1.
+
+    The net RHS cancels to a small fraction of this near equilibrium, so roundoff in it scales with this sum and not
+    with the net value. Inputs as `chem_rhs_numpy`.
+    """
+    PAD = y.shape[1]
+    v = np.abs(_reaction_rates_numpy(y, M, k, net))
+    gross = np.zeros_like(y)
+    for i in range(1, net.nr + 1, 2):
+        pair = v[i] + v[i + 1]
+        for idx, stoich in ((net.product_idx, net.product_stoich), (net.reactant_idx, net.reactant_stoich)):
+            for sp, st in zip(idx[i], stoich[i], strict=True):
+                if st != 0 and sp != PAD:
+                    gross[:, int(sp)] += int(st) * pair
+    return gross
 
 
 def block_thomas_diag_offdiag(diag, sup_d, sub_d, rhs):

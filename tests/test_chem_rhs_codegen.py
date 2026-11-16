@@ -2,8 +2,8 @@
 
 The bar is rtol=1e-5 on significant cells. The threshold absorbs XLA FMA fusion vs
 NumPy `*`-chains; actual worst-cell agreement is ~2e-13. The comparison with master's `chemdf` is test_chem.py. The
-grouped RHS (`VULCAN3_CHEM_RHS=grouped`) must equal the codegen bitwise (an expected failure on Apple Silicon, where the
-two agree to roundoff only).
+grouped RHS (`VULCAN3_CHEM_RHS=grouped`) must equal the codegen bitwise; on Apple Silicon, where the compiler fuses
+multiply-adds differently in the two forms, it must equal it to roundoff of each cell's gross rate.
 
 The (y, M, k) state is captured fresh from `RunState.with_pre_loop_setup`.
 """
@@ -27,6 +27,11 @@ from _helpers import atom_count_matrix
 _ATOM_RESIDUAL_EPS = 1.0e-12
 CODEGEN_RTOL = 1e-5  # codegen vs NumPy RHS: absorbs XLA FMA fusion
 PEAK_FLOOR_FRAC = 1e-12  # per-species denominator floor, a fraction of the species' peak
+# Grouped vs codegen RHS where XLA:CPU contracts multiply-adds (Apple Silicon), in machine epsilons of the cell's gross
+# rate. Measured 1.5 on HD189, solo and on 8 perturbed lanes (notes "Efficiency program", grouped RHS row); 16 leaves a
+# decade, and a wrong gather or sign is an error of order 1.
+GROUPED_ROUNDOFF_EPS = 16.0
+_FMA_CONTRACTED = sys.platform == "darwin" and platform.machine() == "arm64"
 
 
 def _toy_network_for_codegen(tmp_path: Path):
@@ -296,15 +301,9 @@ def test_codegen_matches_numpy_oracle(hd189_state):
     )
 
 
-@pytest.mark.xfail(
-    sys.platform == "darwin" and platform.machine() == "arm64",
-    strict=True,
-    reason="XLA:CPU on Apple Silicon rounds the grouped and codegen operation orders "
-    'differently: roundoff only (notes "Efficiency program", grouped RHS row)',
-)
 @pytest.mark.parametrize("n_lanes", [0, 8], ids=["solo", "vmap8"])
 def test_grouped_rhs_is_bitwise_codegen(hd189_state, monkeypatch, n_lanes):
-    """`VULCAN3_CHEM_RHS=grouped` must equal the codegen RHS bit for bit.
+    """`VULCAN3_CHEM_RHS=grouped` must equal the codegen RHS: bit for bit, or to roundoff where FMA is contracted.
 
     It evaluates the codegen's operation trees as vectorised gathers. Checked solo and under a lane vmap of perturbed
     columns (the batched runner's shape).
@@ -329,4 +328,17 @@ def test_grouped_rhs_is_bitwise_codegen(hd189_state, monkeypatch, n_lanes):
         k = np.broadcast_to(k, (n_lanes, *k.shape))
         codegen, grouped = jax.vmap(codegen), jax.vmap(grouped)
     args = tuple(jnp.asarray(a) for a in (y, M, k))
-    assert np.array_equal(np.asarray(codegen(*args)), np.asarray(grouped(*args)))
+    out_codegen, out_grouped = np.asarray(codegen(*args)), np.asarray(grouped(*args))
+    if not _FMA_CONTRACTED:
+        assert np.array_equal(out_codegen, out_grouped)
+        return
+
+    from _oracles import chem_gross_rate_numpy
+
+    lanes = zip(y, M, k, strict=True) if n_lanes else [(y, M, k)]
+    gross = np.stack([chem_gross_rate_numpy(*lane, net) for lane in lanes]).reshape(y.shape)
+    excess = np.abs(out_grouped - out_codegen) - GROUPED_ROUNDOFF_EPS * np.finfo(np.float64).eps * gross
+    assert excess.max() <= 0.0, (
+        f"grouped vs codegen RHS: {int((excess > 0).sum())} of {excess.size} cells differ by more than "
+        f"{GROUPED_ROUNDOFF_EPS:g} eps of their gross rate; worst excess {excess.max():.3e} cm^-3 s^-1"
+    )
