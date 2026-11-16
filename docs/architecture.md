@@ -20,7 +20,18 @@ writes a `.vul` pickle from a `RunState` only.
 | `steady_state_grad`, `_adjoint_core`, `_adjoint_audit` | public sensitivities; the solve; the scope audit |
 | `atm_setup`, `_tp_kzz`, `_transport_setup`, `_stellar_flux`, `_saturation` | `Atm` facade and setup pieces |
 | `state`, `_legacy_containers` | pytrees and the pre-loop pipeline; the legacy views |
-| `_settings` | the one reader of `VULCAN3_*` |
+| `_settings` | the one Python reader of `VULCAN3_*` (the CUDA kernel also reads `VULCAN3_BT_BUFFERS`) |
+| `__init__`, `_version` | float64 switch and the public names; the version string |
+| `config`, `runtime_validation` | YAML-backed configuration; pre-run validation of it |
+| `_paths`, `paths` | package-root discovery and data-path resolution; the public `resolve_data_path` |
+| `network`, `chem_funs`, `composition` | network parser; the network parsed once at import with its tables; per-species composition and mass tables |
+| `chem`, `make_chem_funs`, `rates_jax`, `gibbs` | network arrays and the analytical Jacobian; codegen for the chemistry RHS; the rate-coefficient build on the AD graph; NASA-9 thermo table I/O and shared constants |
+| `jax_step`, `solver_fast`, `solver` | the vmap-compatible Ros2 step; the default block-Thomas path; the reference block-Thomas pair |
+| `photo`, `photo_setup`, `op_jax` | optical depth, two-stream RT and J rates; cross-section preprocessing; the photochemistry adapter and kernel dispatch |
+| `conden`, `ini_abun` | condensation kernels and profile builder; initial-abundance setup |
+| `atm_jax`, `atm_refresh` | on-graph molecular-diffusion inputs; atmosphere-refresh kernels (mu, dz, g, Hp, diffusion-limited escape) |
+| `cli`, `legacy_io` | the driver (`cli_main`): build `RunState`, integrate, write `.vul`; the legacy I/O surface |
+| `phy_const` | physical constants in CGS |
 
 ## Import order
 

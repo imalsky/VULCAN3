@@ -96,7 +96,7 @@ network is refused while the step is traced. The kernel's header gives the launc
 $$\mathrm{rate}_{r,z} = D_{g,r,z} \frac{m_r}{\rho_{p,r} r_{p,r}^2} (y_{z,\mathrm{sp}(r)} - n_{\mathrm{sat},r,z}).$$
 
 `apply_h2o_relax_jax` and `apply_nh3_relax_jax` run an implicit-Euler cold-trap relaxation toward saturation. NH3 also limits
-the condensation region to layers at or below `conden_top`.
+the condensation region to layers at or below `nh3_conden_top`.
 
 `make_conden_spec` (host, once per config) extracts the temperature-independent metadata. `build_conden_profile` (pure JAX)
 rebuilds every array that depends on temperature or structure, so a caller with a live T(P) can regenerate the `ProfileVars`

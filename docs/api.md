@@ -20,6 +20,26 @@ which would keep it out of JAX's persistent compile cache, so under an outer `ja
 `termination_reason` in what it returns and call `raise_if_frozen(termination_reason, delta, rtol=...)` right after it. A
 trace that skips the check logs a warning. `OuterLoop._runner` is the bare program, for a caller that wants the carry.
 
+## Entry points
+
+One row per name in `vulcan3.__all__`.
+
+| Name | Signature | Purpose |
+|---|---|---|
+| `Config` | `class Config(types.SimpleNamespace):` | Free-attribute config namespace (attribute access like master's `vulcan_cfg`). |
+| `DtMinFrozenError` | `class DtMinFrozenError(RuntimeError):` | A column's trial keeps failing at `dt_min`, so its state does not move and more steps repeat the failure. |
+| `MissingAtomError` | `class MissingAtomError(RuntimeConfigError):` | A column holds none of a conserved atom, so its relative loss is 0/0 and no trial could ever be accepted. |
+| `RunState` | `class RunState(NamedTuple):` | Umbrella pytree carrying every input the runner reads. |
+| `__version__` | `__version__ = "<version>"` in `_version.py`, a string | The package version. |
+| `conv_normal` | `def conv_normal(final: JaxIntegState, cfg: Config) -> tuple[jnp.ndarray, jnp.ndarray]:` | Return the runner's convergence certificate on a carry, e.g. its exit state. |
+| `default_config` | `def default_config() -> Config:` | Return the process-wide default Config (loaded once from `configs/default.yaml`). |
+| `load_config` | `def load_config(name_or_path: str \| os.PathLike = "default", /, **overrides: Any) -> Config:` | Load a YAML config, apply env + caller overrides, resolve derived values. |
+| `make_config` | `def make_config(**overrides: Any) -> Config:` | Load the default config with user overrides (alias for `load_config`). |
+| `raise_if_frozen` | `def raise_if_frozen(termination_reason: np.ndarray \| jnp.ndarray, error_ratio: np.ndarray \| jnp.ndarray \| None = None, *, rtol: float \| None = None) -> None:` | Raise `DtMinFrozenError` if any column stopped frozen at `dt_min`. |
+| `validate_overrides` | `def validate_overrides(overrides: dict[str, Any]) -> None:` | Refuse removed or unknown keys in an override dict, as `load_config(**overrides)` does. |
+
+`conv_normal` is defined in `_convergence.py` and `make_config` in `__init__.py`. The source splits the parameters of `raise_if_frozen` over several lines.
+
 ## Deprecated names
 
 The packages at their main branches use the public names. Released versions of vulcan-forward and jwst-transit-authority,

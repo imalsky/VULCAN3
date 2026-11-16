@@ -14,6 +14,9 @@ Master's `plot_py/` reads these names from a `.vul` file, and `pyproject.toml` l
 | `dz`, `dzi`, `zco` | layer thickness, interface spacing, height of interfaces | cm |
 | `Rp`, `Mp` | planet radius, planet mass | cm, g |
 | `M`, `n_0` | total number density, as third body and as column | cm^-3 |
+| `nz`, `ni`, `nr` | number of layers; number of species; number of reaction slots, forward and reverse counted apart | |
+| `y` | species number densities, shape `[nz, ni]` | cm^-3 |
+| `k` | rate constants, shape `[nr+1, nz]`, 1-based (row 0 unused) | |
 | `J`, `J_br`, `cross_J`, `Jion` | photolysis rate of a branch, its cross section, photoionisation | s^-1, cm^2 |
 | `A`, `B`, `C`, `A_eddy`, `B_mol` | diagonal, upper and lower block-tridiagonal coefficients, by process | s^-1 |
 | `G`, `K_eq` | Gibbs energy; equilibrium constant of a reversible row | |
@@ -26,6 +29,12 @@ Master's `plot_py/` reads these names from a `.vul` file, and `pyproject.toml` l
 | `eps_L`, `ka_CIA`, `T_irr`, `T_int` | T-P parameters, as in `analytical_TP_H14` | |
 | `Navo`, `kb`, `G_grav` | Avogadro's number, Boltzmann's constant, the gravitational constant | CGS |
 | `PAD` | the species index `ni`, padding a short term list in the RHS and Jacobian tables | |
+| `rtol` | relative tolerance of the step control: a trial is accepted when its error ratio `delta` is at most `rtol` as built, and the next step size scales with `(rtol/delta)^0.5` | |
+| `longdy` | largest relative change in the state against an earlier saved state: the maximum over cells of `abs(y - y_old) / n_0`, divided by `ymix`, with cells below `atol` or `mtol_conv` and ignored species counted as 0 | |
+| master | the pinned VULCAN 2 code that this package ports and is tested against | |
+| lane | one profile (column) of a batched run: one slice of the batch axis of the carry in `run_batch` and `run_queue` | |
+| carry | the state of the `lax.while_loop` that `OuterLoop` runs (`JaxIntegState`): `y`, step size, time, counters, termination reason | |
+| certificate | the test that a run has reached steady state (`conv_normal`): the tight or loose `longdy` branch, the photo-flux gate, the geometry and element-budget terms, and not frozen at `dt_min` | |
 
 Master-facing classes and methods keep their names: `Atm`, `Output`, `ReadRate`, `InitialAbun`, `Ros2JAX`, `naming_solver`,
 `load_TPK`, `f_mu_dz`, and the containers `var`, `atm`, `para`.
