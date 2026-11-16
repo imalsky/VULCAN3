@@ -194,6 +194,10 @@ Refused or not ported (no physics change)
   outside the bin range (C15b), duplicate reactions, unparsable or radiative network rows, an `atom_list` element no
   species carries (C13), a non-network `const_mix` key, a `conver_ignore` or `diff_esc` name the network lacks, and a
   `fix_species` entry with no saturation curve under a cold-trap pin (it pinned no layer; upstream raises on all three).
+  Condensation settings upstream accepts and ignores: a condensate outside `non_gas_sp` (it diffuses as a gas), a
+  `remove_list` id on a live condensation row (the rate update rewrites it), a `condense_sp` entry nothing acts on.
+- The command exits 1 when a run ends without converging, after saving it (upstream ends normally). The resolved
+  config it writes omits a derived key that follows from the others, so an edit to `runtime` or `para_warm` takes effect.
 
 Retrieval per-run settings (vulcan-retrieval's W39b runs vs master's W39b
 example): fixed rtol 0.05 (master 0.05 adaptive), cap-and-reject at 5000 accepted
@@ -640,21 +644,17 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
 - Earth cause [M, `7856663`, laptop CPU]: the column has no O2 source, so the bottom fluxes burn O2 at a steady
   4.0e11 cm^-2 s^-1 (5.1e11 would oxidise the CH4 and CO fluxes of `BC_bot_Earth.txt` in full) and it is gone at
   1.115e13 s; O3 then falls 7 orders, and the stall is that collapse. The VULCAN 2 example drains at 3.6e11 and
-  certifies at 1.42e11 s with O2 down 1%: an unpinned Earth certificate is on a draining column. Cure: O2 in
-  `use_fix_sp_bot` at 0.2. The user's file then certifies with no step cap, central moldiff at 2657 steps (longdy
-  0.0999, t 1.75e13 s) and upwind hybrid at 3790 (0.097), both at O2 0.199, O3 199 DU, surface CH4 1.03e-6 (the
-  unpinned certificates: 195-199 DU, 1.02-1.04e-6). Unpinned, `dt_max: 1e8` certifies it (central 6290 steps,
-  upwind 7012 with longdy 5.8 twelve steps earlier) and `dt_max: 3e8` does not. Not cures, one at a time: central
-  moldiff, `rtol` 1.0, `stop_conden_time` 5e8 (each the same stall), `post_conden_rtol` 0.05 (cap at 1.2e11 s,
-  longdy 0.20), upstream master's Earth example condensation block or that example in full.
+  certifies at 1.42e11 s with O2 down 1%. Cure: O2 in `use_fix_sp_bot` at 0.2. The user's file then certifies with no
+  step cap, central moldiff at 2657 steps (t 1.75e13 s) and upwind hybrid at 3790, both at O3 199 DU. Unpinned,
+  `dt_max: 1e8` certifies it (central 6290 steps) and `dt_max: 3e8` does not. Not cures, one at a time: central moldiff,
+  `rtol` 1.0, `stop_conden_time` 5e8, `post_conden_rtol` 0.05, upstream master's Earth condensation block or example.
 - Upwind and the escape Jacobian entry [M]: the VULCAN 2 example with `use_vm_mol` and hybrid ends at the cap,
-  longdy 1.00 from top-layer H from step 6000 on (H and H2 there 1e3 below central and falling 8% a step at step
-  9000). Upstream does the same: the pinned vm_branch clone as pure upwind on these inputs has longdy 488 from
-  top-layer H at step 4500 (vulcan3 1090) and H there at 5.5e5 cm^-3 (vulcan3 2.9e5, central 3.3e8). The entry (`jax_ros2_step`, kept for parity) is -10.9 s^-1 for H against a true -8.5e-5 s^-1, with no
-  RHS term while `use_topflux` is off. With `diff_esc: []` the upwind phase certifies near step 12830 and the
-  2000 central steps end at longdy 0.19. The user's file ignores H and H2. Upstream master prints "completed
-  the final central difference scheme integration" for a hybrid run that hits the cap (`op.py:3263`,
-  `c870b1a`); whether upstream certifies the 2025 example is unmeasured.
+  longdy 1.00 from top-layer H from step 6000 on. Upstream does the same: the pinned vm_branch clone as pure upwind
+  has longdy 488 from top-layer H at step 4500 (vulcan3 1090), H there 5.5e5 cm^-3 (vulcan3 2.9e5, central 3.3e8).
+  The entry (`jax_ros2_step`, kept for parity) is -10.9 s^-1 for H against a true -8.5e-5 s^-1, with no RHS term
+  while `use_topflux` is off. With `diff_esc: []` the upwind phase certifies near step 12830 and the 2000 central
+  steps end at longdy 0.19. Upstream master prints "completed the final central difference scheme integration" for
+  a hybrid run that hits the cap (`op.py:3263`, `c870b1a`); whether it certifies the 2025 example is unmeasured.
 - K2-18b re-add: the `C2H5SH` NASA-9 sets are in the pinned clones' `thermo/NASA9/new_nasa9.TXT` (Burcat G3B3; cut
   as `CH3SCH3.txt` is, byte for byte [M]). Its cross sections are in no clone, branch or repository of the upstream
   author; upstream's threshold is 270 nm. Then check `remove_list` by equation (C14), hash-pin inputs, run to end_case 1.

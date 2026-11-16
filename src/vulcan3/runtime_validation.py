@@ -379,7 +379,7 @@ def _validate_condensation_network(cfg: Config, net: Network) -> list[str]:
     """
     if not bool(cfg.use_condense):
         return []
-    from .conden import GAS_TO_CONDENSATE, RELAX_SPECIES
+    from .conden import GAS_TO_CONDENSATE, RELAX_SPECIES, SUPPORTED_CONDEN_KINETICS
 
     errors: list[str] = []
     # A condensate outside non_gas_sp is diffused as a gas, left unsettled and counted in the mixing-ratio sum.
@@ -406,6 +406,26 @@ def _validate_condensation_network(cfg: Config, net: Network) -> list[str]:
         errors.append(
             f"remove_list names the condensation reactions {[net.Rf[row] for row in undone.values()]}, which the "
             f"condensation update switches back on at each step. Take {sorted(undone)} out of condense_sp."
+        )
+
+    # A kinetics condensate with no network row can still act through relaxation, the initial cold trap, a fix_species
+    # pin or the surface-saturation pin. With none of them it only leaves the step error estimate (op.py:2957-2958).
+    cold_trap = bool(cfg.use_ini_cold_trap) and cfg.ini_mix != "table"
+    inert = [
+        sp
+        for sp in cfg.condense_sp
+        if sp in SUPPORTED_CONDEN_KINETICS
+        and sp not in rows
+        and not (sp in relaxed and GAS_TO_CONDENSATE[sp] in net.species_idx)
+        and not cold_trap
+        and sp not in cfg.fix_species
+        and not (sp == "H2O" and bool(cfg.use_sat_surfaceH2O))
+    ]
+    if inert:
+        errors.append(
+            f"condense_sp entries {inert} would do nothing: the network {cfg.network!r} has no condensation reaction "
+            "for them, and no use_relax, use_ini_cold_trap, fix_species or use_sat_surfaceH2O setting acts on them. "
+            "They would only leave the step error estimate. Use a network with the reactions, or remove the entries."
         )
     return errors
 

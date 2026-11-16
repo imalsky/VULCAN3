@@ -6,8 +6,8 @@
    leaves its rate at zero.
 3. A conver_ignore or diff_esc name the network lacks: master's species.index(sp) fails (op.py:1045-1046, :999).
 4. A fix_species entry with no saturation curve under a cold-trap pin: master raises a KeyError (op.py:881).
-5. Condensation settings master accepts and then ignores: a condensate left out of non_gas_sp, and a remove_list
-   entry on a condensation row that the rate update rewrites.
+5. Condensation settings master accepts and then ignores: a condensate left out of non_gas_sp, a remove_list
+   entry on a condensation row that the rate update rewrites, and a condense_sp entry nothing acts on.
 
 H2S alone (saturation capping, no kinetics) is master-legal and must pass.
 """
@@ -77,8 +77,25 @@ _S8_CONDENSATION = {"use_condense": True, "condense_sp": ["S8"], "non_gas_sp": [
     [
         ({}, None),
         ({"non_gas_sp": []}, "condensates ['S8_l_s'] are not in non_gas_sp"),
+        # The network has no NH3 condensation row and no NH3_l_s.
+        ({"condense_sp": ["NH3"], "non_gas_sp": []}, "condense_sp entries ['NH3'] would do nothing"),
+        (
+            {"condense_sp": ["NH3"], "non_gas_sp": [], "use_relax": ["NH3"]},
+            "condense_sp entries ['NH3'] would do nothing",
+        ),
+        ({"condense_sp": ["NH3"], "non_gas_sp": [], "use_ini_cold_trap": True}, None),
+        ({"condense_sp": ["NH3"], "non_gas_sp": [], "fix_species": ["NH3"]}, None),
+        ({"condense_sp": ["H2S"], "non_gas_sp": []}, None),  # saturation-only tier, as in master
     ],
-    ids=["valid", "condensate_as_gas"],
+    ids=[
+        "valid",
+        "condensate_as_gas",
+        "inert_condensate",
+        "relax_without_its_condensate",
+        "cold_trap_acts",
+        "pin_acts",
+        "h2s_sat_only",
+    ],
 )
 def test_condensation_settings_the_network_contradicts(sulfur_net, overrides, error):
     from vulcan3 import make_config
