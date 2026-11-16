@@ -158,7 +158,8 @@ Integrator
   and `op.py:836` reads it unconditionally. `rtol_min` is upstream's root 0.02 and `rtol_max` 1 (root 2.5); both
   are read only under `use_adapt_rtol`. With no floor, 200 adaptive steps of a default column with H2O pinned at
   3x its seed left rtol 3.9e-4 and t 0.056 s, against 0.02 and 10.9 s at the floor [M, laptop]; HD189 bitwise.
-  `use_ini_cold_trap` and `use_sat_surfaceH2O` default false (root true): read only under `use_condense`, untested.
+  `use_ini_cold_trap` and `use_sat_surfaceH2O` default false (root true), kept: upstream's Earth and Jupiter examples
+  set the second false and vulcan-forward refuses it under `use_condense`; the first would move the JWST tool's S8 runs.
 
 Inputs and data
 - `thermo/solar_element_abundances.dat` replaced in ccc40f7, still the default:
@@ -201,8 +202,7 @@ steps (master stops at 1e4-2e4 and saves the unconverged state), dt_max 1e11
 5e-9..50 bar).
 
 Referee verdicts. An outside review (at `93896f6`) and a second referee checked the
-departures above; their numbers are their own [M]. Their measurements are optional. A
-review pass made without notes.md and todo.md found 5 of 9 findings settled or wrong [M].
+departures above; their numbers are their own [M]. Their measurements are optional.
 - Atom-conservation projection: keep. On x86 the worst normalised defect went 8.7e-14 ->
   4.4e-16, but 126 of 360 individual residuals got worse.
 - Ros2 stage repair: keep. A 50%-of-carrier correction is inside the designed cap
@@ -655,9 +655,9 @@ files were not sent and come from a public VULCAN fork at `c870b1a`, so may not 
   2000 central steps end at longdy 0.19. The user's file ignores H and H2. Upstream master prints "completed
   the final central difference scheme integration" for a hybrid run that hits the cap (`op.py:3263`,
   `c870b1a`); whether upstream certifies the 2025 example is unmeasured.
-- K2-18b re-add (needs NASA-9 and cross sections for `C2H5SH` from the external user; no
-  clone or public branch has them): check `remove_list` by equation (C14), hash-pin inputs,
-  run to end_case 1.
+- K2-18b re-add: the `C2H5SH` NASA-9 sets are in the pinned clones' `thermo/NASA9/new_nasa9.TXT` (Burcat G3B3; cut
+  as `CH3SCH3.txt` is, byte for byte [M]). Its cross sections are in no clone, branch or repository of the upstream
+  author; upstream's threshold is 270 nm. Then check `remove_list` by equation (C14), hash-pin inputs, run to end_case 1.
 
 ## Design records
 
