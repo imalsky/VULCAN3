@@ -612,8 +612,9 @@ C21 (geometry) and C22 (tangent); C23 is in "Stage repair and element budget".
 
 ## Withdrawn configs
 
-Earth and K2-18b; an external user reports both converge upstream (their inputs
-were not obtained).
+Earth and K2-18b; an external user reports both converge upstream. Their two YAMLs and
+the K2-18b network and atm file are in hand; the Earth network, atm file and six NASA-9
+files were not sent and come from a public VULCAN fork at `c870b1a`, so may not be their copies.
 - Earth on main [M] (`c61fd34`, CPU): vulcan3 hits the 20000-step cap at longdy
   0.040 (below `yconv_min` 0.1); with `element_budget_tol: 1e9` it certifies at
   11411 (longdy 0.0999): the budget term is the only blocker. Upstream (clone copy,
@@ -625,8 +626,17 @@ were not obtained).
   central 30001 at 0.459, upstream 1.00 at 3000; the clock froze at 6.18e4 s
   from step 3001. Its `remove_list` resolved by position to `NH3 + CH` and `SH +
   NO2`, and it omitted `batch_max_retries`.
-- K2-18b re-add (needs the external user's DMS-2025 network and atm file): convert
-  their YAML, check `remove_list` by position (C14), hash-pin inputs, run to end_case 1.
+- The external user's YAMLs on main [M] (`caf7c29`, laptop CPU): neither loads as sent (11-12
+  removed keys), and both pin old defaults: `nega_cut: -1` (it rejects steps since C29) and
+  `fastchem_newton_max_iter: 50` (the K2-18b seed fails at 7 of 130 layers; 450 passes). With
+  the keys removed and `element_budget_tol: .inf`, as sent / with `nega_cut` -1e4 and `dt_min`
+  1e-15: Earth (nz 100) ends at the cap, 31002 steps, longdy 0.78 / 16.2, the clock stalled at
+  1.12e13 s from about step 4000; K2-18b without its two `C2H5SH` rows ends at the cap, 21002
+  steps, longdy 0.155 / 1.14, dt held at 0.34 s / 3.2-6.4 s, t 3.7e3 / 5.5e4 s, never past
+  `stop_conden_time` 1e5. Cause not found.
+- K2-18b re-add (needs NASA-9 and cross sections for `C2H5SH` from the external user; no
+  clone or public branch has them): check `remove_list` by equation (C14), hash-pin inputs,
+  run to end_case 1.
 
 ## Design records
 
