@@ -17,8 +17,9 @@ name in parentheses is the entry of that name here or in vulcan-retrieval's note
 - Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209 1206, W39b 1084 on x86-64 and
   on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test: on x86-64 it certifies at
   7801 steps on one CPU, 7802 on three, with the nega_cut of -1e4 [M].
-- `oracle.yml` is `workflow_dispatch` only; last green dispatch at `ff73d93` (job 72 min, its full tier 59; step counts on the runner HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084). On daw (x86-64, CPU) the full tier
-  with the pinned clone gives 441 passed, 38 skipped [M]; every skip is a GPU or arm64 case.
+- `oracle.yml` is `workflow_dispatch` only; last green dispatch at `ff73d93` (job 72 min, its full tier 59; step counts on the runner HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084). At `ae17ec8` the full tier
+  with the pinned clone gives 518 passed, 38 skipped on daw (x86-64, CPU) and 519 passed, 37 skipped on arm64 [M]; every
+  skip is a GPU or arm64 case on daw and a CUDA case on arm64.
 - Oracle clones (revisions in `tests/science_sources.yaml`, path in the header above) are clean on daw with `core.fileMode false`.
 - Fixtures: the tracked `FIXTURES.json` is the arm64 manifest of a laptop rebuild at the C30 code (each record
   names its commit). daw's `tests/data` is an x86-64 rebuild; `--all` and `--verify` use the
@@ -820,7 +821,8 @@ Both kept for parity.
   5e-12, 7.6 bar), SO2 1.3e-7, median 2.4e-9; the 0.1 nm grid shifted by 0.06 nm (2.06 against 2) max 1.5e-2 (O_1
   at VMR 9e-12, 1.1e-7 bar), SO2 6.7e-3 at 1.9e-5 bar, median 7.9e-6. Opening the edge moves `bin_min` and so
   realigns the whole grid below 240 nm: the bin phase, not the cut data, carries the change. Both are above W39b's
-  converged median against VULCAN 2 (1.1e-9, "Parity numbers"); HD209 is not measured (todo).
+  converged median against VULCAN 2 (1.1e-9, "Parity numbers"); HD209 is not measured. The 2 nm edge stays (the
+  maintainer's decision): it is VULCAN 2's value, and the data it cuts moves the column less than the realignment.
 
 ### Decided by the maintainer, not to be re-opened
 
