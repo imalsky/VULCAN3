@@ -17,7 +17,7 @@ name in parentheses is the entry of that name here or in vulcan-retrieval's note
 - Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209 1206, W39b 1084 on x86-64 and
   on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test: on x86-64 it certifies at
   7801 steps on one CPU, 7802 on three, with the nega_cut of -1e4 [M].
-- `oracle.yml` is `workflow_dispatch` only; last green dispatch at `ff73d93` (job 72 min, its full tier 59; step counts on the runner HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084). At `ae17ec8` the full tier
+- `oracle.yml` is `workflow_dispatch` only; last green dispatch at `ae17ec8` (the oracle job 85 min, each step-count job under 13; at `ff73d93` the runner's step counts were HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084). At `ae17ec8` the full tier
   with the pinned clone gives 518 passed, 38 skipped on daw (x86-64, CPU) and 519 passed, 37 skipped on arm64 [M]; every
   skip is a GPU or arm64 case on daw and a CUDA case on arm64.
 - Oracle clones (revisions in `tests/science_sources.yaml`, path in the header above) are clean on daw with `core.fileMode false`.
@@ -643,7 +643,10 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   4.0e11 cm^-2 s^-1 (5.1e11 would oxidise the CH4 and CO fluxes of `BC_bot_Earth.txt` in full) and it is gone at
   1.115e13 s; O3 then falls 7 orders, and the stall is that collapse. The VULCAN 2 example drains at 3.6e11 and
   certifies at 1.42e11 s with O2 down 1%. Cure: O2 in `use_fix_sp_bot` at 0.2. The user's file then certifies with no
-  step cap, central moldiff at 2657 steps and upwind hybrid at 3790, both at O3 199 DU. Unpinned, `dt_max: 1e8`
+  step cap, central moldiff at 2657 steps and upwind hybrid at 3790, both at O3 199 DU. The VULCAN 2 example with the
+  same pin certifies in both codes [M, daw CPU, `ae17ec8`; upstream is the pinned clone with the oracle deltas and no
+  Ar]: vulcan3 in 11216 steps (1.43e11 s), upstream in 12482 (3.81e10 s), 10.1% apart, both at longdy 0.09998-0.09999.
+  Unpinned, `dt_max: 1e8`
   certifies it and `dt_max: 3e8`, central moldiff, `rtol` 1.0 and `post_conden_rtol` 0.05 do not, one at a time.
 - Upstream on master's 2025 Earth example (pinned vm_branch code) [M]: the upwind phase certifies at step 17875
   (longdy 0.067, t about 2.1e11 s), then 2000 central steps end at longdy 0.94. vulcan3 agrees to 1% in t up to the
