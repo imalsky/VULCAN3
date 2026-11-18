@@ -111,7 +111,6 @@ def build_statics(integ: OuterLoop, var: types.SimpleNamespace, atm: types.Simpl
         atom_ini_arr=jnp.asarray(atom_ini_arr),
         loss_eps=float(integ._cfg.loss_eps),
         pos_cut=float(integ._cfg.pos_cut),
-        nega_cut=float(integ._cfg.nega_cut),
         mtol=float(integ._cfg.mtol),
         atol=float(integ._cfg.atol),
         dt_var_min=float(integ._cfg.dt_var_min),

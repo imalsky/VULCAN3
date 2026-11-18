@@ -24,7 +24,7 @@ from . import atm_refresh as _atm_refresh_mod
 from ._carry import _PHOTO_FIELDS, JaxIntegState, _Statics
 from ._convergence import _convergence_ok, conv_jax, ring_slot
 from ._loop_branches import _splice_step_atm
-from ._step_control import _adapt_rtol, _next_dt
+from ._step_control import _adapt_rtol, _next_dt, populated_negative
 from .ini_abun import column_atoms
 from .jax_step import jax_ros2_step
 from .phy_const import UNDERFLOW_DENOM
@@ -219,7 +219,7 @@ def _trial(env: RunnerEnv, s: JaxIntegState, atm_static_: AtmStatic, matrix_free
 def repeat_failed_trial(
     env: RunnerEnv, s: JaxIntegState, atm_static_: AtmStatic
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Repeat the trial a frozen exit carry keeps failing; return `(error ratio (nz, ni), sol_clip, atom loss change)`.
+    """Repeat the trial a frozen exit carry keeps failing; return `(error ratio, negative cells, atom loss change)`.
 
     Outside the loop, so nothing in the running program pays for the error message. No photolysis update comes first:
     the carry's `k_arr` is the last trial's, unless condensation just wrote it. Its `dt` is the next one, not the
@@ -227,7 +227,9 @@ def repeat_failed_trial(
     """
     t = _trial(env, s._replace(dt=jnp.float64(env.statics.dt_min)), atm_static_, matrix_free=False)
     ratio = env.delta_ratio_fn(t.sol, t.delta_arr, s.ymix, t.zero_bot_dyn, t.ymix_trial)
-    return ratio, t.sol_clip, jnp.abs(t.atom_loss_new - s.atom_loss_prev)
+    st = env.statics
+    rejected_neg = populated_negative(t.sol, s.ymix, s.y, env.gas_indx_mask, st.mtol, st.atol) | (t.sol_clip < 0)
+    return ratio, jnp.where(rejected_neg, t.sol, 0.0), jnp.abs(t.atom_loss_new - s.atom_loss_prev)
 
 
 class _StepDecision(NamedTuple):
@@ -254,6 +256,7 @@ def _decide_step(
     ymix_new: jnp.ndarray,
     atom_loss_new: jnp.ndarray,
     delta: jnp.ndarray,
+    gas_mask: jnp.ndarray,
 ) -> _StepDecision:
     """Accept, reject or force-accept the trial, and count why it failed."""
     # Acceptance uses the build-time rtol, never the carry's adapted one:
@@ -262,7 +265,12 @@ def _decide_step(
     # vm_branch@84d010d op.py:2568,2574), so the adaptive-rtol and
     # `post_conden_rtol` writes reach only `step_size`, which reads the
     # live value. `s.rtol` therefore feeds `_step_size` alone.
-    all_nonneg = jnp.all(sol_clip >= 0)
+    # The clip zeroes every finite negative (master's rule), so `sol_clip < 0` is a -inf; a populated gas driven
+    # negative is the one negativity that rejects (`populated_negative`).
+    any_neg = jnp.any(sol_clip < 0) | jnp.any(
+        populated_negative(sol, s.ymix, s.y, gas_mask, statics.mtol, statics.atol)
+    )
+    all_nonneg = ~any_neg & jnp.all(jnp.isfinite(sol_clip))
     loss_diff = jnp.max(jnp.abs(atom_loss_new - s.atom_loss_prev))
     accept = all_nonneg & (loss_diff < statics.loss_eps) & (delta <= jnp.float64(statics.rtol_accept))
 
@@ -279,7 +287,6 @@ def _decide_step(
     # counts -- master bumps its reject counter before the dt<dt_min
     # force-accept clamp (op.py:2495-2518).
     delta_too_big = delta > jnp.float64(statics.rtol_accept)
-    any_neg = jnp.any(sol_clip < 0)
     attempt_failed = ~accept
     delta_count_inc = (attempt_failed & delta_too_big).astype(jnp.int32)
     nega_count_inc = (attempt_failed & ~delta_too_big & any_neg).astype(jnp.int32)
@@ -442,7 +449,7 @@ def body_fn(
     atm_step, sol, sol_clip, atom_loss_new = trial.atm_step, trial.sol, trial.sol_clip, trial.atom_loss_new
     delta = env.agg_delta_fn(sol, trial.delta_arr, s.ymix, trial.zero_bot_dyn, trial.ymix_trial)
 
-    d = _decide_step(statics, s, sol, sol_clip, trial.ymix_new, atom_loss_new, delta)
+    d = _decide_step(statics, s, sol, sol_clip, trial.ymix_new, atom_loss_new, delta, gas_indx_mask)
     do_accept, t_next = d.do_accept, d.t_next
 
     # Condensation gates on the pre-step `s.t`, not `t_next`: master's save_step advances var.t after conden runs.

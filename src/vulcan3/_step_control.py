@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
-import numpy as np
 
 from .phy_const import UNDERFLOW_DENOM
 
@@ -40,34 +39,38 @@ def _step_size(
     return jnp.clip(dt * h_factor, dt_min, dt_max)
 
 
-# The condensates' cut: every finite negative is zeroed and counted, as master zeroes every negative (op.py:2459),
-# while -inf and NaN still fail `all_nonneg`. Ros2 undershoots a condensate at the edge of its cloud by an amount that
-# grows as dt^3 and with the layer density, so no absolute cut fits it (notes "Parity ledger", C29).
-_CONDENSATE_NEGA_CUT = -float(np.finfo(np.float64).max)
-
-
-def _clip_prologue(
-    y_in: jnp.ndarray, pos_cut: float, nega_cut: float | jnp.ndarray
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+def _clip_prologue(y_in: jnp.ndarray, pos_cut: float) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Return `(y_clip, small_y_inc, nega_y_inc)`: the per-step clip of both `_make_clip_fn` branches.
 
-    Values in [nega_cut, pos_cut) go to 0. A value below nega_cut stays
-    negative, so `all_nonneg` rejects the step (notes "Parity ledger"). Master's
-    second rule (op.py:2459 on the post-solve ymix, op.py:2991-2993) zeroes
-    every negative, so its negativity test can never fire. `nega_cut` is a
-    scalar or one cut per species, (ni,).
+    Master's rule (op.py:2457-2459): a value in [0, pos_cut) and every finite negative go to 0, each counted. A -inf or
+    NaN stays, so the step fails. The step is rejected when a populated gas goes negative (`populated_negative`), which
+    the error estimate cannot see.
     """
-    small_y_inc = jnp.sum(jnp.where((y_in < pos_cut) & (y_in >= 0), jnp.abs(y_in), 0.0))
-    nega_y_inc = jnp.sum(jnp.where((y_in > nega_cut) & (y_in <= 0), jnp.abs(y_in), 0.0))
-    y_clip = jnp.where((y_in < pos_cut) & (y_in >= nega_cut), 0.0, y_in)
+    small = (y_in < pos_cut) & (y_in >= 0)
+    neg = (y_in < 0) & jnp.isfinite(y_in)
+    small_y_inc = jnp.sum(jnp.where(small, jnp.abs(y_in), 0.0))
+    nega_y_inc = jnp.sum(jnp.where(neg, jnp.abs(y_in), 0.0))
+    y_clip = jnp.where(small | neg, 0.0, y_in)
     return y_clip, small_y_inc, nega_y_inc
+
+
+def populated_negative(
+    sol: jnp.ndarray, ymix_old: jnp.ndarray, y_old: jnp.ndarray, gas_mask: jnp.ndarray, mtol: float, atol: float
+) -> jnp.ndarray:
+    """Return the cells (nz, ni) where a gas the error estimate weighs before the step goes negative in the trial.
+
+    The estimate skips a negative cell (`_make_delta_ratio_fn`, `sol > 0`), so a populated gas driven through zero would
+    escape it; such a trial is rejected. A trace or empty cell's negative is Ros2 undershoot, zeroed by the clip as
+    master zeroes it, and it vanishes as dt goes to 0, so it cannot hold a step at the floor (notes "Parity ledger",
+    C29).
+    """
+    return (sol < 0) & (ymix_old >= mtol) & (y_old >= atol) & gas_mask[None, :]
 
 
 def _make_clip_fn(
     non_gas_present: bool,
     gas_indx_mask: jnp.ndarray,
     pos_cut: float,
-    nega_cut: float,
 ) -> Callable[[jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]]:
     """Build a `clip(y_in) -> (y_clip, ymix_new, small_inc, nega_inc)` closure.
 
@@ -77,11 +80,9 @@ def _make_clip_fn(
     """
     if non_gas_present:
         gas_mask_2d = gas_indx_mask  # (ni,) bool
-        # The gases keep the cut; a condensate's finite negatives are zeroed and counted (`_CONDENSATE_NEGA_CUT`).
-        cut = jnp.where(gas_mask_2d, nega_cut, _CONDENSATE_NEGA_CUT)
 
         def clip_fn(y_in: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-            y_clip, small_y_inc, nega_y_inc = _clip_prologue(y_in, pos_cut, cut)
+            y_clip, small_y_inc, nega_y_inc = _clip_prologue(y_in, pos_cut)
             ysum = jnp.sum(jnp.where(gas_mask_2d[None, :], y_clip, 0.0), axis=1, keepdims=True)
             # ysum==0 on an all-clipped gas layer (master divides unguarded):
             # return 0 there. `where`, since a condensate over a floored ysum
@@ -92,7 +93,7 @@ def _make_clip_fn(
     else:
 
         def clip_fn(y_in: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-            y_clip, small_y_inc, nega_y_inc = _clip_prologue(y_in, pos_cut, nega_cut)
+            y_clip, small_y_inc, nega_y_inc = _clip_prologue(y_in, pos_cut)
             # No condensate column exists here, so the numerator cannot
             # overflow a tiny denominator: flooring an all-zero layer's ysum
             # is enough (0/0 guard), and it is a no-op on the physical path

@@ -329,7 +329,9 @@ def test_the_count_is_kept_at_the_floor_only():
 
     from vulcan3._loop_body import _decide_step
 
-    statics = SimpleNamespace(loss_eps=1.0, rtol_accept=0.05, dt_var_min=0.5, dt_min=1e-14, batch_max_retries=3)
+    statics = SimpleNamespace(
+        loss_eps=1.0, rtol_accept=0.05, dt_var_min=0.5, dt_min=1e-14, batch_max_retries=3, mtol=1e-22, atol=0.1
+    )
 
     def run_after(run, *, dt=1e-14, retry=0, delta=0.08, sol=1.0):
         s = SimpleNamespace(
@@ -339,10 +341,12 @@ def test_the_count_is_kept_at_the_floor_only():
             keep_prev_run=jnp.int32(run),
             t=jnp.float64(0.0),
             y_prev=jnp.ones((1, 1)),
+            y=jnp.ones((1, 1)),
             ymix=jnp.ones((1, 1)),
         )
         y = jnp.full((1, 1), sol)
-        return int(_decide_step(statics, s, y, y, y, jnp.zeros(1), jnp.float64(delta)).keep_prev_run)
+        gas = jnp.ones(1, bool)
+        return int(_decide_step(statics, s, y, y, y, jnp.zeros(1), jnp.float64(delta), gas).keep_prev_run)
 
     assert run_after(0) == 1  # a kept force-accept at dt_min
     assert run_after(1) == 2  # and its repeat

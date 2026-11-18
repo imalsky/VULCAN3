@@ -321,7 +321,7 @@ def audit_adjoint_scope(  # noqa: C901 (four checks in order)
 
     # Exclude cells the zero-clip owns: they have no fixed point, and
     # _AUDIT_MIN_YMIX (a mixing ratio) cannot catch the absolute cm^-3 clip window.
-    clip_dead = _clip_dead_mask(G_np, cfg, None if body_terms is None else body_terms.gas_mask)
+    clip_dead = _clip_dead_mask(G_np, cfg)
     scanned = (y_np > 0.0) & (ymix >= _AUDIT_MIN_YMIX)
     rel_full = np.where(scanned, defect / np.maximum(y_np, _UNDERFLOW_DENOM), 0.0)
     rel = np.where(clip_dead, 0.0, rel_full)
@@ -394,8 +394,8 @@ def audit_adjoint_scope(  # noqa: C901 (four checks in order)
                 "code": "clip_dead_cells_excluded",
                 "severity": "info",
                 "message": f"{n_clip_dead} cell(s) excluded from the per-cell "
-                f"defect scan: the runner's zero-clip ([{float(cfg.nega_cut):g}, "
-                f"{float(cfg.pos_cut):g}) cm^-3) fires there, so they have no fixed "
+                f"defect scan: the runner's zero-clip (every finite value "
+                f"below {float(cfg.pos_cut):g} cm^-3) fires there, so they have no fixed "
                 f"point and their relative defect (up to "
                 f"{clip_dead_worst:.2e}) measures the clip rather than a "
                 "dropped process. They are solver noise -- densities far "

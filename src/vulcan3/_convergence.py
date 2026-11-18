@@ -331,7 +331,7 @@ def real_terminate(
 
 def frozen_column_message(
     ratio: np.ndarray,
-    sol_clip: np.ndarray,
+    negatives: np.ndarray,
     loss_change: np.ndarray,
     statics: _Statics,
     species: Sequence[str],
@@ -342,10 +342,10 @@ def frozen_column_message(
     if ratio[z, i] > statics.rtol_accept:
         why = f"{species[i]} at layer {z} has error ratio {ratio[z, i]:.3g} against rtol {statics.rtol_accept:g}"
         remedy = f"raise `rtol` above the ratio, lower `dt_min`, or {_NEARER_BALANCE}"
-    elif np.any(sol_clip < 0):
-        z, i = (int(v) for v in np.unravel_index(np.argmin(sol_clip), sol_clip.shape))
-        why = f"{species[i]} at layer {z} goes to {sol_clip[z, i]:.3g} cm^-3, below nega_cut {statics.nega_cut:g}"
-        remedy = f"lower `nega_cut`, or {_NEARER_BALANCE}"
+    elif np.any(negatives < 0):
+        z, i = (int(v) for v in np.unravel_index(np.argmin(negatives), negatives.shape))
+        why = f"{species[i]} at layer {z}, a populated gas, goes to {negatives[z, i]:.3g} cm^-3"
+        remedy = f"lower `dt_min`, or {_NEARER_BALANCE}"
     else:
         a = int(np.argmax(loss_change))
         why = f"{atom_order[a]}'s atom loss moves {loss_change[a]:.3g} against loss_eps {statics.loss_eps:g}"

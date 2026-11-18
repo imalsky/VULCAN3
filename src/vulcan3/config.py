@@ -113,6 +113,10 @@ _DERIVED: tuple[tuple[str, Callable[[dict[str, Any]], Any]], ...] = (
 # Retired keys: refused with a remedy instead of merged as inert attributes
 # (tools/audit_master_parity.py reads the names).
 _REMOVED_KEYS: dict[str, str] = {
+    "nega_cut": (
+        "every finite negative is zeroed and counted, as VULCAN 2 does, and a step is rejected only when a populated "
+        'gas goes negative (notes "Parity ledger", C29); remove the key'
+    ),
     "gs": (
         "gravity is derived as G*Mp/Rp**2; set `Mp` (planet mass, g) and `Rp` (planet radius, cm) and remove the key"
     ),

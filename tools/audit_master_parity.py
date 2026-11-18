@@ -36,7 +36,6 @@ INTENTIONAL_JAX_DELTAS = {
     "top_BC_flux_file",
     "bot_BC_flux_file",
     "dt_max",  # capped at config.DT_MAX_S = 1e15 s; master derives 1e17
-    "nega_cut",  # -1e4 cm^-3; master's -1 never fires (notes "Parity ledger")
     # 1e-15 s against master's 1e-14: a floor above the step the error estimate accepts on a fast species (S4) freezes
     # the run once a force-accept keeps the state (notes "Parity ledger")
     "dt_min",

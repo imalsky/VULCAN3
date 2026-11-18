@@ -209,7 +209,6 @@ class _Statics(NamedTuple):
     atom_ini_arr: jnp.ndarray  # (n_atoms,)
     loss_eps: float
     pos_cut: float
-    nega_cut: float
     mtol: float
     atol: float
     dt_var_min: float

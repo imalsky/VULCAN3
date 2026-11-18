@@ -195,10 +195,9 @@ def test_clip_fn_degenerate_layer_stays_finite():
             [-1e-25, -1e-25, -1e-25],  # all negative -> all clip to 0 (0/0 risk)
         ]
     )
-    # Every value here is within [nega_cut, pos_cut), so all clip to 0
-    # (a value below nega_cut would stay negative: see _clip_prologue).
+    # Every value here is finite and below pos_cut, so all clip to 0 (see _clip_prologue).
     for non_gas_present in (False, True):
-        clip = _make_clip_fn(non_gas_present, gas_mask, pos_cut=1e-20, nega_cut=-1e-20)
+        clip = _make_clip_fn(non_gas_present, gas_mask, pos_cut=1e-20)
         _y_clip, ymix_new, _s, _n = clip(y)
         assert bool(jnp.all(jnp.isfinite(ymix_new))), (
             f"clip produced non-finite ymix (non_gas_present={non_gas_present})"

@@ -10,14 +10,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from ._step_control import _CONDENSATE_NEGA_CUT
 from .conden import CondenStatic, apply_h2o_relax_jax, apply_nh3_relax_jax, update_conden_rates
 from .jax_step import _SOLVER, AtmStatic, jax_ros2_step
 from .phy_const import UNDERFLOW_DENOM as _UNDERFLOW_DENOM
 
 if TYPE_CHECKING:
-    from jax.typing import ArrayLike
-
     from .chem import NetworkArrays
     from .config import Config
     from .network import Network
@@ -182,24 +179,14 @@ class BodyTerms(NamedTuple):
     bot_val: jnp.ndarray | None = None  # (m,)
 
 
-def _clip_dead_mask(G: np.ndarray, cfg: Config, gas_mask: ArrayLike | None = None) -> np.ndarray:
+def _clip_dead_mask(G: np.ndarray, cfg: Config) -> np.ndarray:
     """Cells where the runner's per-step zero-clip would not be the identity.
 
-    Applied to a candidate post-step state `G` (number density, cm^-3), the
-    same rule as `_step_control._clip_prologue`:
-
-        y < pos_cut and y >= nega_cut          -> 0     (small/negative cut)
-
-    A gas value below nega_cut is not clipped there (the step is rejected), so
-    it stays in the defect scan. With `gas_mask` (ni,) the condensates take
-    their own cut, `_CONDENSATE_NEGA_CUT`, as the condensing clip does.
+    Applied to a candidate post-step state `G` (number density, cm^-3), the same rule as
+    `_step_control._clip_prologue`: a finite value below `pos_cut` (every finite negative included) goes to 0.
     """
     G = np.asarray(G)
-    pos_cut = float(cfg.pos_cut)
-    nega_cut = np.full(G.shape[-1], float(cfg.nega_cut))
-    if gas_mask is not None:
-        nega_cut = np.where(np.asarray(gas_mask, bool), nega_cut, _CONDENSATE_NEGA_CUT)
-    dead: np.ndarray = (G < pos_cut) & (G >= nega_cut)
+    dead: np.ndarray = (G < float(cfg.pos_cut)) & np.isfinite(G)
     return dead
 
 

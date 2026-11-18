@@ -173,7 +173,7 @@ def make_runner(
         start_conden_time=start_conden_time,
         stop_conden_time=stop_conden_time,
         refresh_static=refresh_static,
-        clip_fn=_make_clip_fn(non_gas_present, gas_indx_mask, statics.pos_cut, statics.nega_cut),
+        clip_fn=_make_clip_fn(non_gas_present, gas_indx_mask, statics.pos_cut),
         agg_delta_fn=_make_aggregate_delta_fn(statics.mtol, statics.atol, zero_bot_row, condense_zero_mask),
         delta_ratio_fn=_make_delta_ratio_fn(statics.mtol, statics.atol, zero_bot_row, condense_zero_mask),
         photo_branch=_make_photo_branch(photo_static) if photo_static is not None else None,

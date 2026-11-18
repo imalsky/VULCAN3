@@ -342,9 +342,9 @@ class OuterLoop:
         # Under a plain jax.jvp the integer reason comes back concrete while the arrays still carry tangents.
         final, atm_static = jax.lax.stop_gradient((final, atm_static))
         failed = self._failed_trial(final, atm_static)  # type: ignore[misc]  # the exit carry came from a built runner
-        ratio, sol_clip, loss_change = (np.asarray(x) for x in failed)
+        ratio, negatives, loss_change = (np.asarray(x) for x in failed)
         raise DtMinFrozenError(
-            message + frozen_column_message(ratio, sol_clip, loss_change, statics, self._species, self._atom_order)
+            message + frozen_column_message(ratio, negatives, loss_change, statics, self._species, self._atom_order)
         )
 
     def _checked_runner(self, state: JaxIntegState, atm_static: AtmStatic) -> JaxIntegState:

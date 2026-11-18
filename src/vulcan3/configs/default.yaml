@@ -151,8 +151,6 @@ atol: 0.1  # absolute tolerance; abundances below it are ignored (try decreasing
 mtol: 1.0e-22  # relative tolerance for adjusting the stepsize; mixing ratios below it are ignored
 mtol_conv: 1.0e-20  # relative tolerance for checking steady state
 pos_cut: 0  # clipping of small numbers (normally not needed)
-# cm^-3, absolute: a gas trial below it rejects the step (a condensate's negative is zeroed). HD189 photo off reaches -1075 (notes "Forward mode").
-nega_cut: -1.0e+4
 loss_eps: 0.1  # criterion for element conservation
 yconv_cri: 0.01  # dy for checking steady state
 slope_cri: 0.0001  # dy/dt for checking steady state

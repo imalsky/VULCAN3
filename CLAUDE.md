@@ -89,7 +89,7 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
   0 power (`y**0` has a NaN tangent at y=0).
 - A where-zeroed numerator over a guarded denominator (the delta and longdy maxima) takes denominator 1, else a sub-atol
   density gives `0 * inf` in the batched tangent.
-- `pos_cut`/`nega_cut` clipping stays outside the JIT'd step and reads the post-solve `ymix`. Asymmetric three-body M:
+- `pos_cut` clipping stays outside the JIT'd step and reads the post-solve `ymix`. Asymmetric three-body M:
   set the forward and reverse slots independently. The codegen RHS stays SymPy-faithful (no XLA rewrite of the multiply
   chains).
 - `VULCAN3_SOLVER=fast` is the default, `ffi` the CUDA-kernel opt-in (production GH200), `reference` the parity pair;
