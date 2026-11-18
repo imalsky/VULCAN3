@@ -27,6 +27,7 @@ cfg = vulcan3.load_config(
     use_condense=True, use_settling=True, condense_sp=["H2O", "NH3"], non_gas_sp=["H2O_l_s", "NH3_l_s"],
     r_p={"H2O_l_s": 5e-5, "NH3_l_s": 5e-5}, rho_p={"H2O_l_s": 0.9, "NH3_l_s": 0.7}, use_relax=[],
     humidity=1.0, start_conden_time=0.0, stop_conden_time=1e22, count_max=30, count_min=1, fix_species=["H2O"],
+    element_budget_tol=float("inf"),  # the pin opens the column
     network="thermo/NCHO_photo_network_lowT_Jupiter.txt",
 )
 rs = vulcan3.RunState.with_pre_loop_setup(cfg)

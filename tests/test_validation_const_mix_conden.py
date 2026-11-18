@@ -9,6 +9,7 @@
 5. Condensation settings master accepts and then ignores: a condensate left out of non_gas_sp, a remove_list
    entry on a condensation row that the rate update rewrites, and a condense_sp entry nothing acts on.
 6. use_relax on a gas whose condensate the network lacks: a bare KeyError at setup.
+7. A boundary flux or pin with a finite element_budget_tol: the closed-column budget cannot be met.
 
 H2S alone (saturation capping, no kinetics) is master-legal and must pass.
 """
@@ -34,9 +35,12 @@ import pytest
                 "condense_sp": ["H2O"],
                 "fix_species": ["H2O", "CO"],
                 "fix_species_from_coldtrap_lev": False,
+                "element_budget_tol": float("inf"),
             },
             None,  # a whole-column pin needs no saturation curve
         ),
+        ({"use_botflux": True}, r"use_botflux open the column, so element_budget_tol=0.01"),
+        ({"use_fix_sp_bot": {"H2O": 1e-3}, "element_budget_tol": float("inf")}, None),
     ],
     ids=[
         "inert_const_mix_key",
@@ -47,6 +51,8 @@ import pytest
         "unknown_diff_esc",
         "fix_species_without_curve",
         "fix_species_whole_column",
+        "open_column_finite_budget",
+        "open_column_budget_off",
     ],
 )
 def test_up_front_validation(overrides, error):

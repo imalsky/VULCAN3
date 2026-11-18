@@ -104,7 +104,7 @@ print(f"CONDEN_OK t={float(rs_out.step.t):.2e} count={int(rs_out.params.count)} 
 import copy
 from vulcan3._build_statics import build_statics
 from vulcan3.state import legacy_view
-cfg.use_sat_surfaceH2O = True
+cfg.use_sat_surfaceH2O = True; cfg.element_budget_tol = float("inf")  # a bottom pin opens the column
 for c in (cfg, copy.deepcopy(cfg)):
     rs = RunState.with_pre_loop_setup(c)
     var, atm, _ = legacy_view(rs)

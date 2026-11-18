@@ -396,8 +396,8 @@ class OuterLoop:
             )
         if any(term.startswith("element budget") for term, _, _ in failing):
             logger.warning(
-                "The element budget assumes a closed column: boundary fluxes and "
-                "bottom or fix_species pins count as drift. For such a column set "
+                "The element budget assumes a closed column: escape (diff_esc) "
+                "counts as drift. For a column with strong escape set "
                 "element_budget_tol: .inf to stop on VULCAN 2's criteria."
             )
 
