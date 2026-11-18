@@ -155,6 +155,34 @@ def test_a_real_accept_clears_the_count():
 
 
 @pytest.mark.strict_isolation
+def test_held_steps_never_certify_a_column():
+    """A column whose every trial fails and is held just above `dt_min` takes no real step, so it never certifies.
+
+    Each held step writes the same state into the convergence window, where longdy reads 0; only a real accept may be a
+    certificate candidate (notes "Parity ledger", C29).
+    """
+    cfg = fast_cfg(
+        count_max=60,
+        nz=12,
+        Tiso=1000.0,
+        use_vm_mol=False,
+        use_hybrid_vm_mol=False,
+        dt_min=_FLOOR_S,
+        rtol=1e30,
+        dt_var_max=1.5,
+        conv_step=20,
+    )
+    cfg.count_min = 5
+    integ = OuterLoop(op_jax.Ros2JAX(), legacy_io.Output(), cfg=cfg)
+    state, atm = integ.prepare_runstate(RunState.with_pre_loop_setup(cfg))
+    state = _frozen_lane(state)
+    final = integ._runner(state, atm)
+    assert np.allclose(np.asarray(final.y), np.asarray(state.y), rtol=1e-14, atol=0.0)  # nothing moved
+    assert int(final.termination_reason) == TERM_STEP_COUNT
+    assert not bool(conv_normal(final, cfg)[0])
+
+
+@pytest.mark.strict_isolation
 def test_a_frozen_lane_stops_alone_and_the_batch_raises(caplog):
     _, integ, rs = _column()
     state, atm_static = integ.prepare_runstate(rs)

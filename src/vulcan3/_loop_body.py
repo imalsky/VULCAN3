@@ -569,7 +569,9 @@ def body_fn(
     s_cand = s._replace(longdy=longdy_next, longdydt=longdydt_next, t=t_next, accept_count=accept_count_next)
     is_conv_cand = _convergence_ok(s_cand, statics)
     ready_after = (t_next > jnp.float64(statics.trun_min)) & (accept_count_next > s.count_min_dyn)
-    candidate = do_accept & is_conv_cand & ready_after
+    # Only a real step certifies: a held one (a force-accept keeps the previous state) adds a copy of that state to the
+    # convergence window and would read longdy 0.
+    candidate = d.accept & is_conv_cand & ready_after
     s_geom = _refresh_geometry(env, s, ymix_after_conden, y_after_conden, do_accept, candidate, it, lane_axis)
 
     # Cumulative element budget: loss_eps misses a slow drain. Accumulate each step's change in the operator-weighted
@@ -593,7 +595,7 @@ def body_fn(
     if statics.hybrid_vm_mol:
         is_conv_after = _convergence_ok(s_cand._replace(Hp=s_geom.Hp), statics)
         in_phase0 = s.hybrid_use_vm > jnp.float64(0.5)
-        conv_flip = in_phase0 & do_accept & ready_after & is_conv_after
+        conv_flip = in_phase0 & d.accept & ready_after & is_conv_after
         runtime_flip = in_phase0 & (t_next > s.runtime_dyn) & ~conv_flip
         count_flip = in_phase0 & (accept_count_next > s.count_max_dyn) & ~conv_flip & ~runtime_flip
         do_flip = conv_flip | runtime_flip | count_flip
