@@ -48,52 +48,28 @@ vulcan3 --config default
 vulcan3 --config W39b
 ```
 
-Results go to `output/`. Configuration files use YAML and are stored in
-`src/vulcan3/configs/`. A file in `./configs/` with the same name overrides
+Results go to `output/`. Configuration files are YAML files in
+`src/vulcan3/configs/`. A file with the same name in `./configs/` replaces
 the packaged file.
 
-The reaction network is fixed when Python first imports the package. Set
-`VULCAN3_NETWORK` before the first import if you need another network.
-See [`examples/quickstart.ipynb`](examples/quickstart.ipynb) for the Python
-interface.
+The reaction network is fixed when Python first imports the package. To use
+another network, set `VULCAN3_NETWORK` before that import. For the Python
+interface, see [`examples/quickstart.ipynb`](examples/quickstart.ipynb).
 
-On a GPU, `VULCAN3_SOLVER=ffi` runs the block-tridiagonal solve of each
-Rosenbrock step as CUDA kernels. Build them once per host with
-`python -m vulcan3.solver_fast --cuda` (needs `nvcc`). For networks of up
-to 96 species the factorization keeps each block in registers (Gauss-Jordan);
-a wider network is refused while the step is traced, so use `VULCAN3_SOLVER=fast`
-there. On a GH200 with the WASP-39 b
-network (89 species, 396 columns) the factorization and the two solves of a
-step take 24.5 ms instead of 39.0 ms, and a whole step 60.7 ms instead of
-75.2 ms.
-The kernel needs sm_80 or newer: the Gauss-Jordan pivot search uses warp REDUX operations,
-its multipliers are corrected products with the IEEE reciprocal, and the
-solve stages each layer's factors with `cp.async`; the results are bitwise
-the same. On a GH200 at 792 columns the factorization then takes 23.1 ms
-instead of 29.1 ms and a solve 4.6 ms instead of 5.3 ms (6.4 and 1.6 ms
-instead of 8.4 and 2.6 ms at 132 columns), and a 2376-job pass-1 batch of
-the WASP-39 b retrieval (792 lanes, compacted to 264 and 132) runs in 301 s
-instead of 344 s.
+GPU options:
 
-`VULCAN3_CHEM_RHS=grouped` (also read at first import) evaluates the
-chemistry right-hand side as one vectorised gather per reaction signature
-instead of one expression per reaction. The operation trees are the same, so
-on a GH200 the batched WASP-39 b runner gives bitwise the same columns; it
-cuts the transposes XLA inserts under the lane vmap. Other compiled programs
-can differ in the last bits, from XLA's fused multiply-add choices; on cells
-that nearly cancel that is a large relative difference, and two CPU
-consistency tests with 1e-12 bars (`test_vmap_kernels` for the RHS,
-`test_vmap_step` for `delta`) fail with it set. It is therefore opt-in.
-
-`queue_compact` (config; `[]`, off, by default) shortens the tail of a
-`run_queue` batch. Once no job is waiting and the live lanes fit the next
-width in the list, they move to a narrower compiled program and continue from
-the same tick, so the few slow columns no longer hold the full width. Each
-column's arithmetic, cadence and certificate are unchanged. With
-`[264, 132]` on 792 lanes, a 2376-column WASP-39 b batch on a GH200 gives
-bitwise the same columns and diagnostics, and its first pass takes 344 s
-instead of 520 s. Below about 64 lanes, XLA's per-lane arithmetic can change
-in the last bits.
+- `VULCAN3_SOLVER=ffi` solves each step with CUDA kernels. The results are
+  bitwise the same. It needs sm_80 or newer and a network of 96 species or
+  fewer. For a larger network, use `VULCAN3_SOLVER=fast`. Build the kernels
+  once per host with `python -m vulcan3.solver_fast --cuda`. This needs
+  `nvcc`. On a GH200, one WASP-39 b retrieval batch takes 301 s instead of
+  344 s.
+- `VULCAN3_CHEM_RHS=grouped` computes the chemistry terms by reaction type.
+  In the batched GH200 runner the results are bitwise the same. In other
+  programs the last bits can change, so this option is off by default.
+- `queue_compact: [264, 132]` moves the last slow columns of a batch to
+  smaller programs. The columns are bitwise the same. On a GH200, the first
+  pass of a WASP-39 b batch takes 344 s instead of 520 s.
 
 ## Example
 
