@@ -71,7 +71,7 @@ print("PASS")
 """
 
 
-@pytest.mark.parametrize("cfg_name", ["HD209", "W39b"])
+@pytest.mark.parametrize("cfg_name", ["HD209", "W39b", "Earth", "K2-18b", "HD189", "HD189_vulcan3"])
 def test_cfg_example_setup(cfg_name: str) -> None:
     from vulcan3._paths import PACKAGE_ROOT
 
