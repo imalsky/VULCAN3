@@ -162,6 +162,8 @@ Integrator
   and `op.py:836` reads it unconditionally. `rtol_min` is upstream's root 0.02 and `rtol_max` 1 (root 2.5); both
   are read only under `use_adapt_rtol`. With no floor, 200 adaptive steps of a default column with H2O pinned at
   3x its seed left rtol 3.9e-4 and t 0.056 s, against 0.02 and 10.9 s at the floor [M, laptop]; HD189 bitwise.
+  The adaptive decrease `adapt_rtol_dec` is 0.5, the VULCAN 3 vm branch's (`op.py:839` there); the pinned VULCAN 2
+  clones use 0.75 (`op.py:839`). It acts only under `use_adapt_rtol`: K2-18b and HD189_vulcan3 among shipped configs.
   `use_ini_cold_trap` and `use_sat_surfaceH2O` default false (root true), kept: upstream's Earth and Jupiter examples
   set the second false and vulcan-forward refuses it under `use_condense`; the first would move the JWST tool's S8 runs.
 
@@ -627,7 +629,8 @@ C21 (geometry) and C22 (tangent); C23 is in "Stage repair and element budget".
   does not certify in either code, below), its network and atm file as received and the C2H5SH inputs built as
   described below (`tools/c2h5sh_inputs/`). Benchmark timing [M, daw, one core, cpu/wall >= 0.999, median of 3,
   vulcan3 `6698920`, `output/timing_earth_k2_2026-11-18/`]: Earth 581.45 s (11216 steps) against VULCAN 2's 4174.34 s
-  (12482 steps), 7.18x; HD189 66.96 s, as the table's 67.8 s.
+  (12482 steps), 7.18x; HD189 66.96 s, as the table's 67.8 s. K2-18b [M, same protocol, vulcan3 `f3e82fd`]: 142.67 s
+  (1961 steps; repeats 142.57-143.40 s), vulcan3 only: no VULCAN 2 column is timed.
 History of the two cases: an external user reports both converge upstream. Their two YAMLs and the K2-18b network and atm
 file are in hand. The Earth network was not sent: the runs use upstream master's own (`c870b1a`; the pinned vm_branch
 clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and six NASA-9 files are in the pinned clones.
