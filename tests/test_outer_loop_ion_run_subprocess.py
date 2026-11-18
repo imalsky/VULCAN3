@@ -9,7 +9,7 @@ activated network needs a fresh child process ($VULCAN3_NETWORK).
 Checks: (A) setup wired the ion path (ion_sp, ion_rate_index, charge_list
 without `e`, non-zero cross_Jion); (B) both cations grow from zero, and the
 loop moved their ion rates off setup's; (C) per-layer charge neutrality to
-~1e-8 rel; (D) the run stays finite and advances in time.
+~1e-8 rel, in y and in the ymix the step control reads; (D) the run stays finite and advances in time.
 """
 
 from __future__ import annotations
@@ -171,6 +171,12 @@ if relresid > 1e-8:
          % (relresid, float(e_dens[mask][bad]), float(cation[mask][bad])))
 print("C NEUTRAL layers=%d max_rel_resid=%.3e e_max=%.3e cation_max=%.3e"
       % (int(mask.sum()), relresid, float(e_dens.max()), float(cation.max())))
+# The balance precedes the clip, as in VULCAN 2, so the mixing ratios the step control reads carry the balanced e.
+ymix = np.asarray(rs_out.step.ymix, dtype=np.float64)
+e_mix = y[:, i_e] / np.sum(y, axis=1)
+mix_resid = float(np.max(np.abs(ymix[:, i_e] - e_mix) / np.maximum(e_mix, 1e-300)))
+if mix_resid > 1e-8:
+    fail("ymix[e] is not the balanced e: max rel resid=%.3e" % mix_resid)
 
 print("D STABLE finite=ok t=%.3e dt=%.3e" % (t_end, dt_end))
 print("PASS")

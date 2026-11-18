@@ -102,7 +102,7 @@ def _ros2_solve(
     statics, net = env.statics, env.net
     # use_ion: master pins the electron rows inside both Ros2 stages
     # (op.py:2908-2911, 2925-2926) so sol[e]=y[e], delta[e]=0; 'e' is then
-    # recomputed by the post-step charge balance below. The fix_mask
+    # recomputed by the charge balance in `_trial`. The fix_mask
     # row-pin implements that; unlike fix_species, the e column
     # must not be overwritten with fix_y (the pinned step already returns
     # sol[e] == y[e]).
@@ -187,6 +187,11 @@ def _trial(env: RunnerEnv, s: JaxIntegState, atm_static_: AtmStatic, matrix_free
     atm_step = _splice_step_atm(atm_static_, s, statics.use_vm_mol, env.refresh_static.kb, env.refresh_static.Navo)
     sol, delta_arr = _ros2_solve(env, s, atm_step, matrix_free)
     sol, h2he_pinned_next, h2he_mix_next, zero_bot_dyn = _bottom_pins(statics, s, sol)
+    if statics.use_ion:
+        # Zero net charge per layer, set before the clip as VULCAN 2 does (op.py:2998-3004): `charge_arr[i]` is
+        # compo[i]['e'] for a charged species and 0 for 'e'. The later hydrostatic rebalance scales every gas alike, so
+        # it keeps the balance.
+        sol = sol.at[:, statics.e_idx].set(-jnp.einsum("zi,i->z", sol, statics.charge_arr))
     sol_clip, ymix_new, small_y_inc, nega_y_inc = env.clip_fn(sol)
 
     # Per-atom relative conservation residual, (n_atoms,).
@@ -487,11 +492,6 @@ def body_fn(
         sol_balanced = jnp.where(gas_indx_mask[None, :], sol_balanced_full, y_after_conden)
     else:
         sol_balanced = sol_balanced_full
-    # Charge balance: with `charge_arr[i] = compo[i]['e']` for charged species (and 0 for 'e' itself),
-    # `e[:] = -dot(y, charge_arr)` enforces zero net charge per layer.
-    if statics.use_ion:
-        e_density = -jnp.einsum("zi,i->z", sol_balanced, statics.charge_arr)
-        sol_balanced = sol_balanced.at[:, statics.e_idx].set(e_density)
 
     y_next = jnp.where(do_accept, sol_balanced, s.y_prev)
     # A retry starts from the previous state: master restores var.y only (op.py:2524-2531), so its retry masks with the
