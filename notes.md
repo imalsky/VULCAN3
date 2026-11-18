@@ -152,7 +152,8 @@ Integrator
   below balance the estimate is (g - 1/2)(f-1)z^2 / ((1+gz)^2 + (f-1)z(1+g^2 z)), z = L dt, g = 1+1/sqrt 2 (within 12 % on the 14 of 16 draws with S4 above `atol` [M]), so large f passes only with z < 0.047 at rtol 0.05. Shipped runs reach neither floor, 6 of 6 `.vul` bitwise [M]. Taking the failed trial at the floor cures the same draws but gives up the estimate there. Evidence: vulcan-retrieval notes "Design records".
 - Step control C29: master's rules let a wrong step through or accept a rejected
   composition ("Parity ledger"). `nega_cut` is -1e4 cm^-3 against master's -1, which only
-  C29 made live: at -1 HD189 photo off stalls ("Forward mode").
+  C29 made live: at -1 HD189 photo off stalls ("Forward mode"). The cut holds for gases only: a condensate's finite
+  negative is zeroed and counted, as master zeroes every negative ("Earth and K2-18b").
 - `default.yaml` rtol 0.2, use_adapt_rtol false, count_max 1e4 (from 3938cf9): [M] rtol and
   count_max equal upstream's HD189 example (`vulcan_cfg_HD189.py:151`, `:136`), not its root
   `vulcan_cfg.py` (0.25, adaptive, `['HC3N']`, 3e4); that example has no `use_adapt_rtol` line
@@ -304,7 +305,7 @@ A. Upstream errors corrected in the port
 | C30 | no rate may exceed collision rates: a rate fit extrapolated far from its range (the reverse of CH + M -> C + H + M is ~6e-5 cm3/s at 300 K, 1 bar), or a dissociation reverse from K_eq (S4 + M -> S2 + S2 + M 8.6e-7 cm3/s at 2620 K) | `rates_jax.build_rate_array` | `apply_collision_limit`: each thermal pair scaled by c = min(1, 1e-9 cm3/s / q), q the larger direction's bimolecular-equivalent rate k M^three-body M^(molecules - 2), counted where molecules + three-body >= 2 (M is a collision partner, so q = k for A + M); a first-order direction (s^-1) does not count; `remove_list` is applied first, so a removed slot does not scale its partner (master's `rev_rate` zeroes a removed reverse before the oracle copy's limit); both directions scaled, so K_eq and the equilibrium are kept; `tests/test_collision_limit.py` (value, tangent and removal order) and the oracle copy through `ORACLE_CODE_DELTAS`, whose agreement `test_gibbs` checks on the slots its HD189 column caps | two-body: in NCHO the CH + M and C2H + M reverses (CH below ~560-650 K, C2H below ~900 K at 1 bar, ~1830 K at 100 bar), NH + M (<= 4x, <= 351 K), the forward fits of NCO + NH2 (<= 2x, >= 1880 K) and CN + C2H6 (<= 1.2x, >= 2890 K); SNCHO adds SH + O2 and S + CS + M, TiSNCHO C + SH and Ti + CN. Dissociations, 4-9 slots per network on a 300-3500 K, 1e-4-100 bar grid: S4 + M from ~1100 K (2.3e3x at 3500 K), C4H3 + M in CHO_photo_network_lowT from ~1100 K (6.5e4x), and above ~2000 K the reverses of C2H2 + C4H3, C3H3 + C3H3, CH2 + C2H2, C2H2 + C2H3, H + C2H4, CH3 + SH, S4 + S4 (up to 5e4x at 3500 K, 1e-4 bar). Gates HD189 / HD209 / W39b keep 1495 / 1206 / 1084 on `fast` and `reference`; y moves at most 4.8e-7 / 4.8e-5 / 3.0e-6 relative above 1 cm^-3 (HD209 at its 2754 K bottom, hydrocarbons up to 2.4e-5 above vmr 1e-12) [M]; the limit 1e-9 is a regularization ceiling, not a measured rate | no |
 | C31 | `C2H + C -> C3H + H` does not balance hydrogen (SNCHO_photo_network_C3 only) | `thermo/SNCHO_photo_network_C3.txt` row 861 | written `C2H + C -> C3 + H` (Hickson et al. 2016, the row's reference) | the file had no consumer that checks balance | no |
 | C32 | HNO3 NASA-9 file holds three sets (below 200 K, 200-1000 K, 1000-6000 K); the readers take the first two as the T < 1000 / T >= 1000 K fits | `thermo/NASA9/HNO3.txt` | the below-200 K set dropped; `hno3_thermo`, declared | Cp/R at 500 K 19.8 -> 8.67; HNO3 K_eq against FastChem +7.6 dex at 999 K, -0.42 at 3000 K before, within 0.03 dex after (maxichem's end-to-end tests, 2026-11-05); NCHO_full_photo and SNCHO_DMS only; no column rerun | no (the three pinned clones carry the same file) |
-| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_delta_ratio_fn` masks where the old and the pre-clip trial ymix are both < mtol; `_clip_prologue` keeps values < nega_cut (step rejected; cut -1e4 cm^-3, master's -1 never fires, notes "Forward mode"); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`, so a second force-accept at exactly `dt_min` with no real accept between ends the run (reason 4; `DtMinFrozenError`, or `raise_if_frozen` after an outer jit; `tests/test_dt_min_frozen.py`). Six shipped runs: 0 force-accepts [M]. 16 cold W39b draws at rtol 0.05 and `dt_min` 1e-14: 5 froze, all in stage 2 from its first step; one force-accepted once and recovered; none recovered after two or more [M]. Exact only between refreshes: a photolysis or geometry refresh can change a mid-run trial (none seen frozen mid-run), and dt held just above the floor (h in (1, 2), so adaptive rtol or a failure outside the estimate) never counts and idles to the cap as before. A column holding none of a conserved atom would read a NaN loss, so `MissingAtomError` refuses it at setup unless the atom is in `loss_ex`; a non-finite gas sum stays non-finite in the condensing clip; `steady_state_grad._clip_dead_mask` matches; `tests/test_step_control.py`; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes) | no |
+| C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_delta_ratio_fn` masks where the old and the pre-clip trial ymix are both < mtol; `_clip_prologue` keeps a gas value < nega_cut (step rejected; cut -1e4 cm^-3, master's -1 never fires, notes "Forward mode"); a condensate's finite negative is zeroed and counted in `nega_y` (`_CONDENSATE_NEGA_CUT`, master's rule), since Ros2 undershoots a condensate at its cloud edge by an amount that grows as dt^3 and with the layer density, so no absolute cut fits (K2-18b, "Earth and K2-18b"); -inf and NaN still fail `all_nonneg`; `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`, so a second force-accept at exactly `dt_min` with no real accept between ends the run (reason 4; `DtMinFrozenError`, or `raise_if_frozen` after an outer jit; `tests/test_dt_min_frozen.py`). Six shipped runs: 0 force-accepts [M]. 16 cold W39b draws at rtol 0.05 and `dt_min` 1e-14: 5 froze, all in stage 2 from its first step; one force-accepted once and recovered; none recovered after two or more [M]. Exact only between refreshes: a photolysis or geometry refresh can change a mid-run trial (none seen frozen mid-run), and dt held just above the floor (h in (1, 2), so adaptive rtol or a failure outside the estimate) never counts and idles to the cap as before. A column holding none of a conserved atom would read a NaN loss, so `MissingAtomError` refuses it at setup unless the atom is in `loss_ex`; a non-finite gas sum stays non-finite in the condensing clip; `_adjoint_core._clip_dead_mask` matches, with the condensates' cut when the body map carries its gas mask; `tests/test_step_control.py`; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes) | no |
 | C33 | a fixed step floor above the step the error estimate accepts on a fast species: once a force-accept keeps the state (C29), a trial failing there can only repeat | `vulcan_cfg.py:135` `dt_min` 1e-14 | `default.yaml` `dt_min` 1e-15; declared in `tools/audit_master_parity.py`; `tests/test_dt_min_frozen.py` | 5 of 16 cold W39b draws froze at rtol 0.05, measured before C30 counted M as a collision partner ("Differences from VULCAN master"); 6 of 6 shipped `.vul` bitwise [M] | no |
 | L1 | `diffdf_settling_vm` drops the `vm` drift at the bottom interface | `op.py:1845-1848` | consistent; `test_diffusion`; silent | one cell, `use_settling` only | no |
 | L2 | vm_branch setup `vm` rolls a 2-D array without `axis=0` | `vulcan3_vm_branch/build_atm.py:803` | `axis=0`; silent | 5e-10 at step 2 | no |
@@ -537,7 +538,7 @@ only within a block, so on imposed large dt its relative residual blows up where
   1e-2: 370x headroom on the worst photo-on gate, 4.6x on a photo-off column. Five knobs open the budget, none on in a
   shipped config (`use_topflux`, `use_botflux`/`v_dep`, `use_fix_sp_bot`, `use_fix_H2He`, the `fix_species` pin); a
   `loss_ex` containing H fails the runner build (H is the reference atom). An open column can fail to certify on
-  exchange it is meant to have (measured on Earth, "Withdrawn configs"; [I] for the external user's K2-18b; the JWST S8
+  exchange it is meant to have (measured on Earth, "Earth and K2-18b"; [I] for the external user's K2-18b; the JWST S8
   pin certified); its step-cap exit names the term and `.inf`. Precedent: KPP's invariant-preserving Rosenbrock, CVODE
   projection, Sandu 2001 (doi:10.1006/jcph.2001.6750).
 - The "strong-Kzz top boundary collapse" of W39b domain extensions was this leak in a 3000-3500 K bottom: since 0.6.0
@@ -618,9 +619,17 @@ C21 (geometry) and C22 (tangent); C23 is in "Stage repair and element budget".
   moldiff. Converging recipe (121 steps): `use_vm_mol=False`, `dt_max=1e11`,
   `conver_ignore` += S/S2/S3/S4/S8/S2O/HS2/CS2, `mtol_conv=1e-15`.
 
-## Withdrawn configs
+## Earth and K2-18b
 
-Earth and K2-18b; an external user reports both converge upstream. Their two YAMLs and the K2-18b network and atm
+- Shipped [M, daw CPU, one core, the commit's tree]: `vulcan3 -c Earth` certifies in 11216 steps (t 1.43e11 s, longdy
+  0.100, 537 s), the timed runs' count; `vulcan3 -c K2-18b` in 1961 (t 7.23e9 s, longdy 0.0255, 142 s with compile).
+  `Earth.yaml` is VULCAN 2's example with O2 pinned at 0.2 (the cure below), the example's own network, atm and
+  NASA-9 files; `K2-18b.yaml` is the external user's case with upwind molecular diffusion (the hybrid central phase
+  does not certify in either code, below), its network and atm file as received and the C2H5SH inputs built as
+  described below (`tools/c2h5sh_inputs/`). Benchmark timing [M, daw, one core, cpu/wall >= 0.999, median of 3,
+  vulcan3 `6698920`, `output/timing_earth_k2_2026-11-18/`]: Earth 581.45 s (11216 steps) against VULCAN 2's 4174.34 s
+  (12482 steps), 7.18x; HD189 66.96 s, as the table's 67.8 s.
+History of the two cases: an external user reports both converge upstream. Their two YAMLs and the K2-18b network and atm
 file are in hand. The Earth network was not sent: the runs use upstream master's own (`c870b1a`; the pinned vm_branch
 clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and six NASA-9 files are in the pinned clones.
 - Earth on main [M] (`c61fd34`, CPU): vulcan3 hits the 20000-step cap at longdy
@@ -666,7 +675,19 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   (185-270 nm) and Clark & Simpson 1965 (162-249 nm); in their overlap they agree within 32% from 200 nm up and
   differ by a factor 4 at 190 nm [M]. With a file built from the two in the layout of `CH3SCH3_cross.csv` (quantum
   yield 1 and no ionisation: assumptions, upstream's file is unseen) the user's full 101-species network sets up
-  [M]; no run was made. Then check `remove_list` by equation (C14), hash-pin inputs, run to end_case 1.
+  [M]. Then check `remove_list` by equation (C14), hash-pin inputs, run to end_case 1.
+- K2-18b stall, cause [M, daw CPU, the user's network with those `C2H5SH` files, `scratch/k2_stall/`]: the step held at
+  6.42 s because liquid water three layers below the cloud base (layers 37-39) trialled negative past `nega_cut`, and
+  each such step was rejected. The trial equals Ros2 on the condensate's linear transport alone to 7 digits (eddy
+  diffusion alone gives it; settling only doubles it) and grows as dt^3: -777, -6,210, -49,595 cm^-3 at dt 1.6, 3.2 and
+  6.4 s, in layers of 6.5e18 cm^-3. A larger absolute cut does not cure it: at -1e6 the step stalls at 17.7 s, at -1e8
+  2,042 steps are rejected. VULCAN 2 zeroes every negative and never sees it. Fix: the condensates' finite negatives
+  are zeroed and counted (Parity ledger, C29). With it and `use_hybrid_vm_mol: false` the column certifies in 1961
+  steps, longdy 0.0255, t 7.23e9 s, `nega_y` 2.7e13 cm^-3 summed over the run against a water-ice column of 1.7e17.
+- K2-18b hybrid [M]: the central phase does not reconverge within its 2000 steps in either code, so the column has no
+  hybrid certificate: vulcan3 with the fix ends at the cap, step 3962, longdy 2.25; the pinned vm_branch clone on the
+  same inputs flips at 1846 and ends at 3846 at longdy 1.50-1.71. Its next-step estimate there is set by top-layer
+  S8, C6H5, CH3CCH and C2H3CN, not by the condensate.
 
 ## Design records
 
@@ -908,6 +929,9 @@ packaged default's load) and is never refused.
 
 ## Ideas not adopted
 
+- A positivity-preserving time step for relaxation-only condensates (backward Euler on the condensate transport), in
+  place of zeroing their negatives: it bounds the condensate error where zeroing does not, but departs from VULCAN 2's
+  Ros2 and needs its first-order accuracy measured; zeroing (master's rule) was chosen.
 - Upper-cell drift where the central stencil turns non-positive (cell Peclet above 0.75), for HD189's CO at layer 148: certifies
   photo off at a cut of -1 in 813 steps, CO 2.92e-7 at 1.185e-8 bar against 3.56e-7 at nz 600, HD189 photo on 1495 steps; the layers
   beside it stay about 0.5 dex off, and it departs from VULCAN 2's operator with its tangent unmeasured [M, runtime patch, HD189
@@ -934,6 +958,7 @@ packaged default's load) and is never refused.
 
 - Removing `retry_exhausted` from `_decide_step`: primals stay bitwise, but `run_jvp` on HD189 photo on moves (tangent_longdy 0.00184703606 in the 9th digit, |change in dy|/y at most 9.5e-12 above ymix 1e-14) [M]; any change to the step's program can do this to a tangent.
 - A host callback to raise `DtMinFrozenError` under an outer jit: the program never enters JAX's persistent cache [M, CPU, jit(eval_batch) at 1 lane: compile 80-83 s on every process, no file; without it 147 s writing 1.39 GB, then a hit in 31 s].
+- A looser absolute `nega_cut` for a condensate's cloud-edge undershoot: at -1e6 K2-18b still stalls at dt 17.7 s, at -1e8 it rejects 2,042 steps [M]; the undershoot grows as dt^3.
 - `nega_cut` as a share of the layer (`y < -1e-6 n`): it certifies HD189 photo off, but it is -8.6e14 cm^-3 at the 0-D atomic-H start's
   n, past every CH4 trial of that start (-5.5e13 to -1.56e5) [M]. An absolute -1e3 ends on the step cap, -1100 clears HD189's -1075 by 2%.
 One line each, with the measured reason.

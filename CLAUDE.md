@@ -79,7 +79,7 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
   preset is not an agreement case with upstream's seed.
 - Gravity derives from `Mp`/`Rp`; there is no `gs` knob. `vm` (upwind moldiff) is refreshed in-loop; the scheme matters
   only at low Kzz, so HD189 is not evidence for it.
-- Re-add a withdrawn config only with a run that certifies on main (notes "Withdrawn configs").
+- Re-add a withdrawn config only with a run that certifies on main (notes "Earth and K2-18b").
 
 ### Numerics and solver
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
+import numpy as np
 
 from .phy_const import UNDERFLOW_DENOM
 
@@ -39,13 +40,22 @@ def _step_size(
     return jnp.clip(dt * h_factor, dt_min, dt_max)
 
 
-def _clip_prologue(y_in: jnp.ndarray, pos_cut: float, nega_cut: float) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+# The condensates' cut: every finite negative is zeroed and counted, as master zeroes every negative (op.py:2459),
+# while -inf and NaN still fail `all_nonneg`. Ros2 undershoots a condensate at the edge of its cloud by an amount that
+# grows as dt^3 and with the layer density, so no absolute cut fits it (notes "Parity ledger", C29).
+_CONDENSATE_NEGA_CUT = -float(np.finfo(np.float64).max)
+
+
+def _clip_prologue(
+    y_in: jnp.ndarray, pos_cut: float, nega_cut: float | jnp.ndarray
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Return `(y_clip, small_y_inc, nega_y_inc)`: the per-step clip of both `_make_clip_fn` branches.
 
     Values in [nega_cut, pos_cut) go to 0. A value below nega_cut stays
     negative, so `all_nonneg` rejects the step (notes "Parity ledger"). Master's
     second rule (op.py:2459 on the post-solve ymix, op.py:2991-2993) zeroes
-    every negative, so its negativity test can never fire.
+    every negative, so its negativity test can never fire. `nega_cut` is a
+    scalar or one cut per species, (ni,).
     """
     small_y_inc = jnp.sum(jnp.where((y_in < pos_cut) & (y_in >= 0), jnp.abs(y_in), 0.0))
     nega_y_inc = jnp.sum(jnp.where((y_in > nega_cut) & (y_in <= 0), jnp.abs(y_in), 0.0))
@@ -67,9 +77,11 @@ def _make_clip_fn(
     """
     if non_gas_present:
         gas_mask_2d = gas_indx_mask  # (ni,) bool
+        # The gases keep the cut; a condensate's finite negatives are zeroed and counted (`_CONDENSATE_NEGA_CUT`).
+        cut = jnp.where(gas_mask_2d, nega_cut, _CONDENSATE_NEGA_CUT)
 
         def clip_fn(y_in: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-            y_clip, small_y_inc, nega_y_inc = _clip_prologue(y_in, pos_cut, nega_cut)
+            y_clip, small_y_inc, nega_y_inc = _clip_prologue(y_in, pos_cut, cut)
             ysum = jnp.sum(jnp.where(gas_mask_2d[None, :], y_clip, 0.0), axis=1, keepdims=True)
             # ysum==0 on an all-clipped gas layer (master divides unguarded):
             # return 0 there. `where`, since a condensate over a floored ysum

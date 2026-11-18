@@ -20,7 +20,8 @@ Build tools read `CXX`, `NVCC` and `NVCC_ARCH` in `solver_fast.build`. The CLI u
 The command sets `VULCAN3_CLI_RELAUNCHED` on its own re-exec, so that a second mismatch raises and does not loop. It is not a user setting.
 
 `nega_cut` (cm^-3, default -1e4) is an absolute number density: a trial value from it up to 0 clips to 0, a value below it rejects
-the step. It is one threshold for the whole column, not a share of the layer: -1e4 is -7e-7 of HD189's top layer (n 1.45e10) and
+the step. It applies to gases only: a condensate's finite negative is zeroed and counted, as VULCAN 2 zeroes every negative,
+because Ros2 undershoots a condensate at its cloud edge by an amount that grows with the step (notes "Parity ledger", C29). It is one threshold for the whole column, not a share of the layer: -1e4 is -7e-7 of HD189's top layer (n 1.45e10) and
 -3e-18 of its bottom. A share of the layer would be far looser at depth. notes "Forward mode" has the reason for the value.
 
 `use_botflux` reads `bot_BC_flux_file`, and a row naming a species outside the network is refused. The shipped

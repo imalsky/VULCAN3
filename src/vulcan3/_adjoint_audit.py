@@ -321,7 +321,7 @@ def audit_adjoint_scope(  # noqa: C901 (four checks in order)
 
     # Exclude cells the zero-clip owns: they have no fixed point, and
     # _AUDIT_MIN_YMIX (a mixing ratio) cannot catch the absolute cm^-3 clip window.
-    clip_dead = _clip_dead_mask(G_np, cfg)
+    clip_dead = _clip_dead_mask(G_np, cfg, None if body_terms is None else body_terms.gas_mask)
     scanned = (y_np > 0.0) & (ymix >= _AUDIT_MIN_YMIX)
     rel_full = np.where(scanned, defect / np.maximum(y_np, _UNDERFLOW_DENOM), 0.0)
     rel = np.where(clip_dead, 0.0, rel_full)

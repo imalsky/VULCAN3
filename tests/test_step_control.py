@@ -74,6 +74,34 @@ def test_shipped_cut_rejects_a_too_negative_step():
     assert bool(decide(-1075.0).accept)
 
 
+def test_condensing_clip_zeroes_a_finite_condensate_negative_and_counts_it():
+    """A condensate's finite negative is zeroed and counted, however large.
+
+    A gas below the cut still rejects the step, and a condensate -inf or NaN still fails it.
+    """
+    from vulcan3._step_control import _make_clip_fn
+
+    clip = _make_clip_fn(True, jnp.asarray([True, True, False]), 0.0, -1.0e4)
+    y_clip, _, _, nega = clip(jnp.asarray([[1.0e18, 5.0e17, -4.96e4], [1.0e18, -2.0e4, 3.0]]))
+    y_clip = np.asarray(y_clip)
+    assert y_clip[0, 2] == 0.0  # the K2-18b cloud-edge trial (notes "Parity ledger", C29): zeroed
+    assert y_clip[1, 1] == -2.0e4  # a gas below the cut stays negative: the step is rejected
+    assert float(nega) == 4.96e4  # the zeroed value is counted
+    for bad in (-jnp.inf, jnp.nan):
+        y_bad = np.asarray(clip(jnp.asarray([[1.0e18, 5.0e17, bad]]))[0])
+        assert not np.all(y_bad >= 0)  # all_nonneg fails: a non-finite solve is never zeroed
+    # The adjoint audit's mask of the cells the clip owns follows the same rule.
+    from types import SimpleNamespace
+
+    from vulcan3._adjoint_core import _clip_dead_mask
+
+    cfg = SimpleNamespace(pos_cut=0.0, nega_cut=-1.0e4)
+    G = np.array([[1.0e18, -2.0e4, -4.96e4]])
+    gas = np.array([True, True, False])
+    np.testing.assert_array_equal(_clip_dead_mask(G, cfg, gas), [[False, False, True]])
+    np.testing.assert_array_equal(_clip_dead_mask(G, cfg), [[False, False, False]])
+
+
 def test_condensing_clip_keeps_a_nan_gas_sum_nan():
     from vulcan3._step_control import _make_clip_fn
 
