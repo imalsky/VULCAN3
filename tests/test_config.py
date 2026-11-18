@@ -29,6 +29,9 @@ _EXPECTED_GS = {
     "W39b": 422.0,
     # Explicit VULCAN 3 preset: HD189 physics, vm_branch numerics.
     "HD189_vulcan3": 2140.0,
+    "Earth": 980.0,
+    # G Mp / Rp^2 of the external user's Mp 5.162832e28 g and Rp 1.66433376e9 cm.
+    "K2-18b": 1243.978491787375,
 }
 
 
@@ -59,8 +62,10 @@ def test_shipped_config_loads_and_resolves(name):
 
     # Derived values are filled by the loader.
     assert cfg.photo_switch_longdy_thresh == cfg.yconv_min * 10.0
-    # No shipped config loosens the column element-budget certificate.
-    assert cfg.element_budget_tol <= 1e-2
+    # No shipped config loosens the column element-budget certificate, except an open column (boundary fluxes or
+    # pins), which has no closed budget to certify and sets it to .inf (CLAUDE.md "Certificates and differentiation").
+    open_column = bool(cfg.use_botflux or cfg.use_topflux or cfg.use_fix_sp_bot or cfg.fix_species)
+    assert cfg.element_budget_tol <= 1e-2 or (open_column and cfg.element_budget_tol == float("inf")), name
 
     # Every case names its own star, so a caller can tell a stated star from default.yaml's.
     from vulcan3._paths import PACKAGE_ROOT

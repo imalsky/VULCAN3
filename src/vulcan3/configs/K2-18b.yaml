@@ -1,0 +1,86 @@
+# VULCAN3 configuration (K2-18b). Overlays default.yaml: only the knobs that
+# differ from it are set here; every other knob takes its default.yaml value.
+# Derived at load time (see config._DERIVED), do NOT add here:
+#   dt_max = min(runtime*1e-5, 1e15), photo_switch_longdy_thresh = yconv_min*10,
+#   para_anaTP = para_warm.
+# Gravity is derived as gs = G*Mp/Rp^2 (set Mp + Rp, not gs).
+#
+# An external user's K2-18b case: 100x solar Neptune-like column with a water cloud, on the user's sulfur network with
+# dimethyl sulfide chemistry. Its C2H5SH thermodynamics come from the pinned clones' Burcat table and its cross
+# sections from the MPI-Mainz atlas, with assumptions (tests/science_sources.yaml). Upwind molecular diffusion only:
+# the hybrid scheme's central phase does not reconverge on this column in either code (notes "Earth and K2-18b").
+
+# ====== Setting up the elements included in the network ======
+atom_list:
+- H
+- O
+- C
+- N
+- S
+
+# ====== Setting up paths and filenames for the input and output files ======
+network: thermo/SNCHO_DMS_photo_network_2025.txt
+atm_file: atm/atm_K2-18b-Nep100X-apo-H2Oclouds.txt
+sflux_file: atm/stellar_flux/sflux-GJ436.txt
+out_name: K2-18b.vul
+
+# ====== Setting up the elemental abundance ======
+use_solar: false
+O_H: 0.049
+C_H: 0.0269
+N_H: 0.00676
+S_H: 0.00132
+He_H: 0.0851
+
+# ====== Setting up photochemistry ======
+r_star: 0.4445
+Rp: 1.66433376e+9
+Mp: 5.162832e+28
+orbit_radius: 0.19092
+sl_angle: 1.0122
+
+# ====== Setting up the atmosphere ======
+nz: 130
+P_b: 5.0e+8
+Kzz_prof: const
+const_Kzz: 1.0e+7
+
+# ====== Reactions ======
+# S + CN -> N + CS and its reverse, as the user's config removes them (positions checked against the equation, C14).
+remove_list:
+- 891
+- 892
+
+# ====== Condensation ======
+use_relax:
+- H2O
+use_condense: true
+use_settling: true
+condense_sp:
+- H2O
+non_gas_sp:
+- H2O_l_s
+r_p:
+  H2O_l_s: 0.001
+fix_species:
+- H2O
+- H2O_l_s
+humidity: 0.8
+use_ini_cold_trap: true
+
+# ====== Steady-state check and step control ======
+count_max: 20000
+mtol: 1.0e-14
+mtol_conv: 1.0e-16
+use_vm_mol: true
+conver_ignore:
+- HC3N
+# Open column (the cold-trap pin): no closed element budget to certify.
+element_budget_tol: .inf
+use_adapt_rtol: true
+rtol: 0.75
+post_conden_rtol: 1.0
+rtol_min: 0.005
+rtol_max: 2.5
+adapt_rtol_inc_period: 500
+adapt_rtol_inc: 1.5

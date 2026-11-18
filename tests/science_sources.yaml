@@ -105,6 +105,79 @@ supported_inputs:
       W39b.yaml. Already carries upstream's own 10.2025 CH2CN falloff fix, so
       it needs no ch2cn_falloff entry.
 
+  thermo/SNCHO_full_photo_network.txt:
+    sha256: 4030260882c9aaad0e2f7b288c0d58cce1c3bf8b60fefd348301c885fb6e0ff7
+    oracle: vulcan2_ncho
+    note: >-
+      The vulcan2_ncho revision's file, unchanged, for Earth.yaml (VULCAN 2's
+      Earth example). It keeps `NH3 + CH -> NH2 + CH2`; Earth.yaml removes it
+      and its reverse by position (remove_list 315, 316), as the example does.
+
+  thermo/SNCHO_DMS_photo_network_2025.txt:
+    sha256: d26efea2b9abac84b2ec2d5cd0cf77910aa63945c6da5d3c227ff045e01b190a
+    oracle: null
+    note: >-
+      An external user's network for K2-18b.yaml, as received: the 2025 sulfur
+      network plus dimethyl sulfide and C2H5SH chemistry. In no pinned clone,
+      so the hash pin is the whole guard. K2-18b.yaml removes `S + CN -> N + CS`
+      and its reverse by position (remove_list 891, 892), as the user's config does.
+
+  atm/atm_Earth_Jan_Kzz.txt:
+    sha256: 76c3fa44a6b8515b633d0c517b5e7d72a5abc8f7464417af8ed820752a955fe4
+    oracle: vulcan2_ncho
+
+  atm/atm_K2-18b-Nep100X-apo-H2Oclouds.txt:
+    sha256: a74cd0b17bb1a95af8d7d4daf6de13569a3ad2ba86bad00a7b47e95efd972028
+    oracle: null
+    note: The external user's K2-18b T-P and Kzz file, as received.
+
+  thermo/NASA9/C2H5SH.txt:
+    sha256: c905e7961c55c534134360bd5b3bf8cc9c7eb4792dd3046e671a0b93709744ec
+    oracle: null
+    note: >-
+      Cut from the pinned clones' raw Burcat table (thermo/NASA9/new_nasa9.TXT,
+      the G3B3 set) by tools/c2h5sh_inputs/make_nasa9_file.py, in the layout of
+      CH3SCH3.txt (byte for byte the same cut for CH3SCH3).
+
+  thermo/photo_cross/C2H5SH/C2H5SH_cross.csv:
+    sha256: 6c4615682e5447ec16f007c14f8837fda5e77424a6d0c9fe9d244dd7f81ac0dc
+    oracle: null
+    note: >-
+      Built by tools/c2h5sh_inputs/make_cross_files.py from the MPI-Mainz atlas
+      (Keller-Rudek et al. 2013): Clark & Simpson 1965 below 185 nm, Bridges et
+      al. 1972 from 185 to 270 nm (both tables beside the script). Assumed:
+      quantum yield 1 and no ionisation; upstream's own file is unseen.
+
+  thermo/photo_cross/C2H5SH/C2H5SH_branch.csv:
+    sha256: 417a132a76c238d80ca5a046630a694e3e696d35533db30d06643a63e348612c
+    oracle: null
+    note: One branch, C2H5SH -> C2H6 + S, the only C2H5SH photolysis row of the user's network.
+
+  thermo/photo_cross/thresholds.txt:
+    sha256: 2aec0032207d5f5c0382f3c3c0fcedfef398898704b5af282e4d069b1a547c1a
+    oracle: null
+    note: The vendored file plus the C2H5SH threshold, 270 nm, upstream's value.
+
+  thermo/NASA9/CH3OOH.txt:
+    sha256: 1974b1e2b17d89bdb5335f611f109625c97529a149016602f98d1148dba2eb35
+    oracle: vulcan2_ncho
+
+  thermo/NASA9/H2SO4.txt:
+    sha256: 411a8b5515675ff97d4fd8b25e1fa86a7267a97ca16b2b9f77c485e5537b99a7
+    oracle: vulcan2_ncho
+
+  thermo/NASA9/H2SO4_l.txt:
+    sha256: 8eacdded8c601dbd01bb2c96d7e04e403e7b5c67acc2b48255f3003547126abd
+    oracle: vulcan2_ncho
+
+  thermo/NASA9/HSO3.txt:
+    sha256: aab70e7a78fd569ead4a16a30a644d2bd394ccf4fc55c89b1a5f28e995e9967b
+    oracle: vulcan2_ncho
+
+  thermo/NASA9/SO3.txt:
+    sha256: 374fb0a749ce9fc7d84f8bb2f02b57393c4af9774aec91d7bec70c59362e28f2
+    oracle: vulcan2_ncho
+
   thermo/all_compose.txt:
     sha256: 64dee9896eb34d3507ccd5e999f2f9f292e44a103476cf4c8be878072e478665
     oracle: vulcan2_ncho
