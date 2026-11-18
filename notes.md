@@ -10,9 +10,10 @@ name in parentheses is the entry of that name here or in vulcan-retrieval's note
 
 ## Current state
 
-- 0.18.0 on main. Tags `v0.17.0`, `v0.18.0` (`760d96c`, the rename plus the W39b baseline merge), `w39b-baseline-v2`.
-  Releases before 0.18.0 were `vulcan-jax`. 0.18.0 is on TestPyPI, not on PyPI [I].
-- Consumers floor `vulcan3>=0.18.0`. Production: vulcan-retrieval's WASP-39b on NAS GH200s (2025 SNCHO file, ni 93; v5
+- 0.19.0 on main: the public names the consumers import, the step-control and electron-balance fixes and the
+  open-column refusal. Tags `v0.17.0`, `v0.18.0` (`760d96c`, the rename plus the W39b baseline merge),
+  `w39b-baseline-v2`. Releases before 0.18.0 were `vulcan-jax`. Releases are on TestPyPI, not on PyPI [I].
+- Consumers floor `vulcan3>=0.19.0`; the deprecated aliases in docs/api.md stay until every released consumer does. Production: vulcan-retrieval's WASP-39b on NAS GH200s (2025 SNCHO file, ni 93; v5
   ran the 2021 file, ni 89; `ffi`, grouped RHS).
 - Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209 1206, W39b 1084 on x86-64 and
   on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test: on x86-64 it certifies at
