@@ -25,8 +25,8 @@ negative cells; -inf and NaN fail the step (notes "Parity ledger", C29).
 The former `nega_cut` key is refused with this remedy.
 
 `use_botflux` reads `bot_BC_flux_file`, and a row naming a species outside the network is refused. The shipped
-`atm/BC_bot_Earth.txt` names H2SO4, which no shipped network holds, and NO3 and HNO3, which the default network does not, so
-copy the file and delete those rows.
+`atm/BC_bot_Earth.txt` names H2SO4, NO3 and HNO3, which the default network lacks: `Earth.yaml` runs it on
+`SNCHO_full_photo_network.txt`, which holds them. With another network, copy the file and delete those rows.
 
 `dt_min` (s, default 1e-15, master's is 1e-14) is the shortest step. A trial that fails there is force-accepted and keeps the previous state, so
 a second such failure stops the run with `DtMinFrozenError`, which a caller that jits its solve raises itself (docs/api.md).
