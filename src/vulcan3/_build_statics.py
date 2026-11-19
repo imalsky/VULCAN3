@@ -9,6 +9,7 @@ import numpy as np
 
 from . import atm_refresh as _atm_refresh_mod, conden as _conden_mod, photo as _photo_mod, phy_const as _phy_const
 from ._carry import _PhotoStatic, _Statics
+from ._loop_body import _HYBRID_FLIP_COUNT_MAX_EXTRA_CONV
 from .chem_funs import NETWORK
 
 if TYPE_CHECKING:
@@ -29,6 +30,10 @@ def build_statics(integ: OuterLoop, var: types.SimpleNamespace, atm: types.Simpl
     # plot_evo reads the same snapshots; only save_evolution writes them
     # to the .vul.
     capture_evo = bool(integ._cfg.save_evolution or integ._cfg.use_plot_evo)
+    hybrid = bool(integ._cfg.use_vm_mol and integ._cfg.use_hybrid_vm_mol and integ._cfg.use_moldiff)
+    # A hybrid run can flip at step count_max + 1 and then run to its new cap, `_HYBRID_FLIP_COUNT_MAX_EXTRA_CONV` steps
+    # on, so the snapshot buffer covers those steps too.
+    evo_steps = int(integ._cfg.count_max) + (_HYBRID_FLIP_COUNT_MAX_EXTRA_CONV + 1 if hybrid else 0)
 
     # conver_ignore species are zeroed in the longdy reduction (op.py:1045-1046).
     conver_ignore_np = np.zeros(ni, dtype=bool)
@@ -140,7 +145,7 @@ def build_statics(integ: OuterLoop, var: types.SimpleNamespace, atm: types.Simpl
         n_0=jnp.asarray(atm.n_0, dtype=jnp.float64),
         Kzz=jnp.asarray(atm.Kzz, dtype=jnp.float64),
         use_vm_mol=bool(integ._cfg.use_vm_mol and integ._cfg.use_moldiff),
-        hybrid_vm_mol=bool(integ._cfg.use_vm_mol and integ._cfg.use_hybrid_vm_mol and integ._cfg.use_moldiff),
+        hybrid_vm_mol=hybrid,
         final_update_photo_frq=int(integ._cfg.final_update_photo_frq),
         update_frq=int(integ._cfg.update_frq),
         use_adapt_rtol=bool(integ._cfg.use_adapt_rtol),
@@ -175,9 +180,7 @@ def build_statics(integ: OuterLoop, var: types.SimpleNamespace, atm: types.Simpl
         fix_species_wholecol=jnp.asarray(fix_species_wholecol),
         save_evolution=capture_evo,
         save_evo_frq=int(integ._cfg.save_evo_frq),
-        save_evo_n_max=(
-            int(np.ceil(int(integ._cfg.count_max) / max(int(integ._cfg.save_evo_frq), 1))) + 1 if capture_evo else 1
-        ),
+        save_evo_n_max=(int(np.ceil(evo_steps / max(int(integ._cfg.save_evo_frq), 1))) + 1 if capture_evo else 1),
     )
 
 

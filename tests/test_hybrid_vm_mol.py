@@ -67,6 +67,17 @@ def test_hybrid_flips_and_extends_budget():
     assert np.all(np.isfinite(np.asarray(final.y)))
 
 
+def test_saved_evolution_keeps_every_snapshot_past_the_flip():
+    """A hybrid run takes steps past count_max after the flip; the snapshot buffer must hold all of them."""
+    vc = _pin_cfg()
+    vc.save_evolution, vc.save_evo_frq = True, 1
+    # The count flip at step 4 sets count_min to 104, so phase 1 runs at least 100 steps past count_max.
+    final = _run(vc, use_vm=True, hybrid=True, count_max=3)
+    assert float(final.hybrid_use_vm) == 0.0
+    assert int(final.accept_count) > 100
+    assert int(final.evo_idx) == int(final.accept_count)
+
+
 def test_returned_atm_carries_refreshed_zmco_and_vm():
     """The returned atm, what the .vul writer stores, must carry the fields upstream refreshes in-loop.
 
