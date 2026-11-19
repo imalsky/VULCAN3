@@ -139,6 +139,19 @@ def test_a_T_cross_sp_entry_without_T_dependent_data_is_refused(monkeypatch, sp,
         photo_setup._build_photo_static_dense(var, atm)
 
 
+@pytest.mark.strict_isolation
+def test_an_ion_branch_missing_from_its_ratio_file_names_the_species(monkeypatch):
+    """H2O_ion_branch.csv has br_ratio_1..4; a fifth network branch must name H2O, as VULCAN 2 does (`op.py:762`)."""
+    from vulcan3 import photo_setup
+    from vulcan3.config import default_config
+
+    var, atm = build_state_through_read_rate()
+    monkeypatch.setattr(default_config(), "use_ion", True)
+    var.ion_sp, var.ion_branch = {"H2O"}, {"H2O": 5}
+    with pytest.raises(ValueError, match=r"ion branching ratio file for H2O \(br_ratio_5\)"):
+        photo_setup._build_photo_static_dense(var, atm)
+
+
 def test_t_dependent_samples_are_found_under_the_configured_root(tmp_path, monkeypatch):
     """Discovery reads the same `cross_folder` as the files it lists."""
     from types import SimpleNamespace

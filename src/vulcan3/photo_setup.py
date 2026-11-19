@@ -448,11 +448,17 @@ def _build_photo_static_dense(var: types.SimpleNamespace, atm: types.SimpleNames
             )
             for i in range(1, var.ion_branch[sp] + 1):
                 br_key = "br_ratio_" + str(i)
-                ratio_at_bins = _interp_edge_extrap(
-                    ion_ratio_raw[sp]["lambda"],
-                    ion_ratio_raw[sp][br_key],
-                    bins,
-                )
+                try:
+                    ratio_at_bins = _interp_edge_extrap(
+                        ion_ratio_raw[sp]["lambda"],
+                        ion_ratio_raw[sp][br_key],
+                        bins,
+                    )
+                except ValueError as e:
+                    raise ValueError(
+                        f"The ion branches in the network file do not match the ion branching ratio file for {sp} "
+                        f"({br_key})"
+                    ) from e
                 cross_Jion_per_key[(sp, i)] = cross_Jion_at_bins * ratio_at_bins
 
     cross_scat_per_sp: dict[str, np.ndarray] = {}
