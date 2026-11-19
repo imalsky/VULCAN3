@@ -106,6 +106,10 @@ def test_flags_given_as_0_or_1_load_as_booleans(tmp_path):
         load_config("default", use_condense=2)
     with pytest.raises(ValueError, match=r"use_solar='yes' must be true or false"):
         load_config("default", use_solar="yes")
+    # A caller that applies overrides with setattr gets the same values from validate_overrides.
+    assert validate_overrides({"use_solar": 1, "O_H": 0.003}) == {"use_solar": True, "O_H": 0.003}
+    with pytest.raises(ValueError, match=r"use_solar=2 must be true or false"):
+        validate_overrides({"use_solar": 2})
 
 
 def test_cwd_configs_override(tmp_path, monkeypatch):

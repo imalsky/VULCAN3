@@ -228,26 +228,35 @@ def _validate_keys(d: dict[str, Any], source: str) -> list[str]:
     return ignored
 
 
-def validate_overrides(overrides: dict[str, Any]) -> None:
-    """Refuse removed or unknown keys in an override dict, as ``load_config(**overrides)`` does.
+def validate_overrides(overrides: dict[str, Any]) -> dict[str, Any]:
+    """Refuse removed or unknown keys in an override dict, and return it with each flag as ``load_config`` loads it.
 
-    For a caller that applies the dict to a loaded Config with ``setattr`` (which checks nothing). Display-only keys
-    are refused here: setattr would apply them, and code has no reason to pass one.
+    For a caller that applies the dict to a loaded Config with ``setattr`` (which checks nothing): apply the returned
+    dict, whose 0 / 1 flags are bools. Display-only keys are refused here: setattr would apply them, and code has no
+    reason to pass one.
 
     Parameters
     ----------
     overrides : dict of str to Any
         Config key to value.
 
+    Returns
+    -------
+    dict of str to Any
+        A copy of `overrides` with each 0 / 1 flag as a bool.
+
     Raises
     ------
     ValueError
-        If a key is display-only, removed or unknown.
+        If a key is display-only, removed or unknown, or a flag is neither a bool nor 0 / 1.
     """
     ignored = sorted(set(overrides) & _IGNORED_KEYS)
     if ignored:
         raise ValueError(f"config overrides: display-only key(s) {ignored} do nothing in VULCAN3; remove them.")
     _validate_keys(overrides, "config overrides")
+    coerced = dict(overrides)
+    _coerce_flags(coerced, "config overrides")
+    return coerced
 
 
 class Config(types.SimpleNamespace):

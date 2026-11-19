@@ -36,7 +36,7 @@ One row per name in `vulcan3.__all__`.
 | `load_config` | `def load_config(name_or_path: str \| os.PathLike = "default", /, **overrides: Any) -> Config:` | Load a YAML config, apply env + caller overrides, resolve derived values. |
 | `make_config` | `def make_config(**overrides: Any) -> Config:` | Load the default config with user overrides (alias for `load_config`). |
 | `raise_if_frozen` | `def raise_if_frozen(termination_reason: np.ndarray \| jnp.ndarray, error_ratio: np.ndarray \| jnp.ndarray \| None = None, *, rtol: float \| None = None) -> None:` | Raise `DtMinFrozenError` if any column stopped frozen at `dt_min`. |
-| `validate_overrides` | `def validate_overrides(overrides: dict[str, Any]) -> None:` | Refuse removed or unknown keys in an override dict, as `load_config(**overrides)` does. |
+| `validate_overrides` | `def validate_overrides(overrides: dict[str, Any]) -> dict[str, Any]:` | Refuse removed or unknown keys in an override dict, and return it with each flag as `load_config` loads it. |
 
 `conv_normal` is defined in `_convergence.py` and `make_config` in `__init__.py`. The source splits the parameters of `raise_if_frozen` over several lines.
 
