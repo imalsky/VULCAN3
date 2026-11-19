@@ -16,8 +16,10 @@ name in parentheses is the entry of that name here or in vulcan-retrieval's note
 - Consumers floor `vulcan3>=0.19.0`. The eight private aliases 0.19.0 kept for consumers released on 0.18.0 are gone on main after the 0.19.0 release. Production: vulcan-retrieval's WASP-39b on NAS GH200s (2025 SNCHO file, ni 93; v5
   ran the 2021 file, ni 89; `ffi`, grouped RHS).
 - Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209 1206, W39b 1084 on x86-64 and
-  on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test: on x86-64 it certified at
-  7801 steps on one CPU, 7802 on three, under the former nega_cut of -1e4 [M]; not re-measured since the clip rule.
+  on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test. It certified at 7601 accepted
+  steps up to `46bbac7` [M, daw, one core]; since C30 (`1c6afe1`, M as a collision partner) its upwind phase converges
+  near 2660 steps and the hybrid phase-1 budget (2000 steps, `op.py:1107-1108`) ends it at 4660 with longdy 0.58 [M,
+  bit-identical from `1c6afe1` to `32c6a95`]. A longer phase-1 budget departs from VULCAN 3; not decided.
 - `oracle.yml` is `workflow_dispatch` only; last green dispatch at `ae17ec8` (the oracle job 85 min, each step-count job under 13; at `ff73d93` the runner's step counts were HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084). At `ae17ec8` the full tier
   with the pinned clone gives 518 passed, 38 skipped on daw (x86-64, CPU) and 519 passed, 37 skipped on arm64 [M]; every
   skip is a GPU or arm64 case on daw and a CUDA case on arm64.

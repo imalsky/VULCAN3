@@ -30,7 +30,7 @@ from .chem_funs import NET_JAX, NETWORK
 from .config import DT_MAX_S, default_config
 from .jax_step import AtmStatic, make_atm_static
 from .runtime_validation import refuse_missing_atoms, validate_runtime_config
-from .state import TERM_CONVERGED, TERM_DT_MIN_FROZEN, DtMinFrozenError, raise_if_frozen
+from .state import TERM_CONVERGED, TERM_DT_MIN_FROZEN, TERM_STEP_COUNT, DtMinFrozenError, raise_if_frozen
 
 if TYPE_CHECKING:
     import types
@@ -382,6 +382,10 @@ class OuterLoop:
             self.output.print_end_msg(var, para)
             return
         self.output.print_unconverged_msg(var, para, end_case)
+        live_cap = int(final.count_max_dyn)
+        if end_case == TERM_STEP_COUNT and live_cap != int(self._cfg.count_max):
+            # The hybrid phase flip resets the cap (op.py:1107-1108); master prints the updated count_max (op.py:3266).
+            logger.warning("The step cap that stopped the run is the hybrid phase-1 budget: %d steps.", live_cap)
         failing = certificate_failures(final, self._cfg, self._atom_order)
         if failing:
             logger.warning(
