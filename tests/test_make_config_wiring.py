@@ -5,6 +5,8 @@ Import-locked overrides fail fast. Also covers RunState reuse and the clip on a 
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 
@@ -180,17 +182,21 @@ def test_save_cfg_serializes_active_cfg(tmp_path, monkeypatch):
     assert "custom.vul" in content
 
 
-def test_saved_cfg_carries_the_surface_gravity_vulcan2_plot_tools_read(tmp_path):
+@pytest.mark.parametrize(
+    "name", sorted(p.stem for p in (Path(__file__).parents[1] / "src/vulcan3/configs").glob("*.yaml"))
+)
+def test_saved_cfg_executes_and_carries_the_surface_gravity_vulcan2_plot_tools_read(tmp_path, name):
     """VULCAN 2's plot_py/prt_spectrum.py imports the saved cfg text as Python and reads `cfg.gs` (cm s^-2)."""
-    import vulcan3
     from vulcan3 import legacy_io
     from vulcan3._tp_kzz import surface_gravity
+    from vulcan3.config import load_config
 
-    cfg = vulcan3.make_config(out_name="g.vul")
+    cfg = load_config(name)
     legacy_io.Output(cfg=cfg).save_cfg(str(tmp_path))
     saved: dict = {}
-    exec((tmp_path / cfg.output_dir / "cfg_g.txt").read_text(), saved)
+    exec(next(tmp_path.rglob("cfg_*.txt")).read_text(), saved)
     assert saved["gs"] == surface_gravity(cfg)
+    assert saved["element_budget_tol"] == cfg.element_budget_tol
 
 
 def test_output_warns_on_the_file_it_will_overwrite(tmp_path, monkeypatch):

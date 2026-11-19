@@ -315,7 +315,8 @@ class Output:
         target_dir = Path(dname) / output_dir
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        lines = []
+        # repr writes a non-finite float as the bare name inf or nan, which the text must define to execute.
+        lines = ["from math import inf, nan"]
         for key in sorted(vars(self._cfg)):
             if key.startswith("_"):
                 continue
