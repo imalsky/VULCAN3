@@ -373,6 +373,16 @@ def _validate_condensation(cfg: Config) -> list[str]:
             "would silently be zero."
         )
 
+    # Master relaxes H2O and NH3 against the saturation curves it builds for condense_sp only (op.py:1335, :1374).
+    from .conden import RELAX_SPECIES
+
+    unsaturated = sorted(sp for sp in RELAX_SPECIES & set(cfg.use_relax) if sp not in condense_sp)
+    if unsaturated:
+        errors.append(
+            f"use_relax entries {unsaturated} are not in condense_sp, so they have no saturation curve to relax to. "
+            "Add them to condense_sp, or take them out of use_relax."
+        )
+
     start_ct = float(cfg.start_conden_time)
     stop_ct = float(cfg.stop_conden_time)
     if stop_ct < start_ct:
@@ -492,7 +502,8 @@ def validate_runtime_config(cfg: Config) -> None:  # noqa: C901 (one refusal per
     errors: list[str] = []
     species = set(chem_funs.spec_list)
 
-    if bool(cfg.use_condense):
+    # Master indexes non_gas_sp into the species list under condensation and settling (op.py:1431, build_atm.py:613).
+    if bool(cfg.use_condense) or bool(cfg.use_settling):
         errors.extend(
             f"non_gas_sp entry {sp!r} is not in the network {cfg.network!r}; remove it or use a network that has it."
             for sp in cfg.non_gas_sp
