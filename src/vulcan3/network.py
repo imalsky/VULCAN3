@@ -35,6 +35,9 @@ _THERMAL_SECTIONS = (
     _SECTION_THREE_BODY_NO_KINF,
 )
 
+# The one reaction with a hardcoded rate (`op.py:197`); `rates_jax` builds it.
+_SPECIAL_OH_CH3 = "OH + CH3 + M -> CH3OH + M"
+
 
 @dataclass(frozen=True)
 class Network:
@@ -314,6 +317,12 @@ def _read_reaction(st: _ParseState, file_id_str: str, eq: str, tail: str) -> Non
         raise ValueError(
             f"{eq!r} has {len(num_cols)} leading numeric rate coefficients in {tail.strip()!r}; "
             f"the {section} section needs {n_coeffs}. Write the missing coefficients."
+        )
+    # VULCAN 2 gives any other special row no rate and fails at its reverse (`op.py:197`, `:304`).
+    if section == _SECTION_SPECIAL and eq != _SPECIAL_OH_CH3:
+        raise ValueError(
+            f"{eq!r} is in the special section, whose only hardcoded rate is {_SPECIAL_OH_CH3!r}. "
+            "Move the row to a section with its Arrhenius coefficients."
         )
     rec: dict[str, Any] = {
         "parser_i": parser_i,

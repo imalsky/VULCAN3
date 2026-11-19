@@ -49,8 +49,6 @@ __all__ = [
 # A NumPy table stays NumPy, a JAX table stays JAX.
 _ArrayT = TypeVar("_ArrayT", np.ndarray, jnp.ndarray)
 
-_SPECIAL_OH_CH3 = "OH + CH3 + M -> CH3OH + M"
-
 # Clip on the Gibbs exponent before exp() in K_eq_array, just under the
 # largest finite float64 exp() argument (log(finfo.max) = 709.78). A clipped K
 # is finite, so k_rev = k_fwd/K is tiny but positive where an overflow would
@@ -196,17 +194,9 @@ def compute_forward_k(
     has_kinf = jnp.asarray(np.asarray(net.has_kinf, dtype=bool))[:, None]
     general = jnp.where(has_kinf, lindemann, arr)
 
-    # Special handling: the one OH+CH3 Troe row; other "special" rows fall back to
-    # plain Arrhenius (a==0 specials give 0 automatically).
+    # The parser admits only the OH + CH3 + M Troe row to the special section.
     is_special = jnp.asarray(np.asarray(net.is_special, dtype=bool))[:, None]
-    oh = np.zeros(net.nr + 1, dtype=bool)
-    for i in range(1, net.nr + 1):
-        if net.is_special[i] and net.Rf.get(i, "").strip() == _SPECIAL_OH_CH3:
-            oh[i] = True
-    oh_mask = jnp.asarray(oh)[:, None]
-    troe = _troe_OH_CH3(T, M)
-    special_val = jnp.where(oh_mask, troe, arr)
-    k = jnp.where(is_special, special_val, general)
+    k = jnp.where(is_special, _troe_OH_CH3(T, M), general)
 
     # Keep only thermal forward slots; zero photo/ion/conden/non-forward.
     thermal_fwd = net.is_forward & ~net.is_photo & ~net.is_ion & ~net.is_conden
