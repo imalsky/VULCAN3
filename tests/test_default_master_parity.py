@@ -502,7 +502,8 @@ def test_conden_fix_species_pin_matches_master() -> None:
 
     jax_script = _CONDEN_JAX_SCRIPT % {
         "network": CONDEN_KNOBS["network"],
-        "jax_cfg": _cfg_lines("cfg.", CONDEN_KNOBS, JAX_ONLY),
+        # The fix_species pin opens the column, so the port's closed-column element budget is off (VULCAN 2 has none).
+        "jax_cfg": _cfg_lines("cfg.", CONDEN_KNOBS, JAX_ONLY) + "\ncfg.element_budget_tol = float('inf')",
     }
     with oracle_worktree("vulcan2_ncho") as master_root:
         # Both sides must read the SAME network file: the condensation rows are

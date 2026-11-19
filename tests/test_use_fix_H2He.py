@@ -22,7 +22,8 @@ def test_use_fix_h2he_pins_the_bottom_ratios():
     if "H2" not in species or "He" not in species:
         pytest.skip("use_fix_H2He needs H2 and He in the network")
 
-    cfg = set_cfg(use_fix_H2He=True, count_max=5, count_min=1, use_print_prog=False)
+    # The pin opens the column, so the closed-column element budget is off.
+    cfg = set_cfg(use_fix_H2He=True, element_budget_tol=float("inf"), count_max=5, count_min=1, use_print_prog=False)
 
     import vulcan3.legacy_io as op
     from vulcan3 import op_jax, outer_loop

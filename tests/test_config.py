@@ -64,7 +64,14 @@ def test_shipped_config_loads_and_resolves(name):
     assert cfg.photo_switch_longdy_thresh == cfg.yconv_min * 10.0
     # No shipped config loosens the column element-budget certificate, except an open column (boundary fluxes or
     # pins), which has no closed budget to certify and sets it to .inf (CLAUDE.md "Certificates and differentiation").
-    open_column = bool(cfg.use_botflux or cfg.use_topflux or cfg.use_fix_sp_bot or cfg.fix_species)
+    open_column = bool(
+        cfg.use_botflux
+        or cfg.use_topflux
+        or cfg.use_fix_sp_bot
+        or cfg.use_fix_H2He
+        or cfg.fix_species
+        or cfg.use_sat_surfaceH2O
+    )
     assert cfg.element_budget_tol <= 1e-2 or (open_column and cfg.element_budget_tol == float("inf")), name
 
     # Every case names its own star, so a caller can tell a stated star from default.yaml's.

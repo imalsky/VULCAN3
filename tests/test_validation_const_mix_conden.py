@@ -41,6 +41,7 @@ import pytest
         ),
         ({"use_botflux": True}, r"use_botflux open the column, so element_budget_tol=0.01"),
         ({"use_fix_sp_bot": {"H2O": 1e-3}, "element_budget_tol": float("inf")}, None),
+        ({"use_fix_H2He": True}, r"use_fix_H2He open the column"),
     ],
     ids=[
         "inert_const_mix_key",
@@ -53,6 +54,7 @@ import pytest
         "fix_species_whole_column",
         "open_column_finite_budget",
         "open_column_budget_off",
+        "fix_h2he_finite_budget",
     ],
 )
 def test_up_front_validation(overrides, error):

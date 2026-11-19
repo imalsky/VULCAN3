@@ -285,7 +285,7 @@ def _validate_open_column(cfg: Config) -> list[str]:
     # the term would only fail at count_max. Escape (diff_esc) is allowed: HD209 certifies with it at the default.
     open_by = [
         key
-        for key in ("use_topflux", "use_botflux", "use_fix_sp_bot", "fix_species", "use_sat_surfaceH2O")
+        for key in ("use_topflux", "use_botflux", "use_fix_sp_bot", "use_fix_H2He", "fix_species", "use_sat_surfaceH2O")
         if getattr(cfg, key)
     ]
     if open_by and math.isfinite(float(cfg.element_budget_tol)):
