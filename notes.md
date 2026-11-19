@@ -16,8 +16,8 @@ name in parentheses is the entry of that name here or in vulcan-retrieval's note
 - Consumers floor `vulcan3>=0.19.0`; the deprecated aliases in docs/api.md stay until every released consumer does. Production: vulcan-retrieval's WASP-39b on NAS GH200s (2025 SNCHO file, ni 93; v5
   ran the 2021 file, ni 89; `ffi`, grouped RHS).
 - Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209 1206, W39b 1084 on x86-64 and
-  on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test: on x86-64 it certifies at
-  7801 steps on one CPU, 7802 on three, with the nega_cut of -1e4 [M].
+  on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test: on x86-64 it certified at
+  7801 steps on one CPU, 7802 on three, under the former nega_cut of -1e4 [M]; not re-measured since the clip rule.
 - `oracle.yml` is `workflow_dispatch` only; last green dispatch at `ae17ec8` (the oracle job 85 min, each step-count job under 13; at `ff73d93` the runner's step counts were HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084). At `ae17ec8` the full tier
   with the pinned clone gives 518 passed, 38 skipped on daw (x86-64, CPU) and 519 passed, 37 skipped on arm64 [M]; every
   skip is a GPU or arm64 case on daw and a CUDA case on arm64.
@@ -537,8 +537,9 @@ only within a block, so on imposed large dt its relative residual blows up where
   `operator_column_weights`: `w_0 = dzi[0]`, `w_j = 0.5*(dzi[j-1]+dzi[j])`, `w_last = dzi[-1]`, so a zero-flux update
   telescopes) on that step's own grid over the fixed t=0 column, RELATIVE TO H. The absolute column carries the
   renormalisation's common mode (-1.04e-2 on every element on the planner's WASP-107 b column; as X/H 2.1e-6). Tolerance
-  1e-2: 370x headroom on the worst photo-on gate, 4.6x on a photo-off column. Five knobs open the budget, none on in a
-  shipped config (`use_topflux`, `use_botflux`/`v_dep`, `use_fix_sp_bot`, `use_fix_H2He`, the `fix_species` pin); a
+  1e-2: 370x headroom on the worst photo-on gate, 4.6x on a photo-off column. Six knobs open the budget (`use_topflux`,
+  `use_botflux`/`v_dep`, `use_fix_sp_bot`, `use_fix_H2He`, the `fix_species` pin, `use_sat_surfaceH2O`); setup refuses
+  any of them with a finite tolerance, and the shipped Earth and K2-18b set `.inf`; a
   `loss_ex` containing H fails the runner build (H is the reference atom). An open column can fail to certify on
   exchange it is meant to have (measured on Earth, "Earth and K2-18b"; [I] for the external user's K2-18b; the JWST S8
   pin certified); its step-cap exit names the term and `.inf`. Precedent: KPP's invariant-preserving Rosenbrock, CVODE

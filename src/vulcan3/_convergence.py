@@ -344,7 +344,7 @@ def frozen_column_message(
         remedy = f"raise `rtol` above the ratio, lower `dt_min`, or {_NEARER_BALANCE}"
     elif np.any(negatives < 0):
         z, i = (int(v) for v in np.unravel_index(np.argmin(negatives), negatives.shape))
-        why = f"{species[i]} at layer {z}, a populated gas, goes to {negatives[z, i]:.3g} cm^-3"
+        why = f"{species[i]} at layer {z} goes to {negatives[z, i]:.3g} cm^-3"
         remedy = f"lower `dt_min`, or {_NEARER_BALANCE}"
     else:
         a = int(np.argmax(loss_change))

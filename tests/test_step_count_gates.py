@@ -65,7 +65,7 @@ def _master_count(name: str) -> int:
 
     The cfg is upstream's HD189 example overlaid with every vulcan3 key except
     the declared departures (`INTENTIONAL_JAX_DELTAS`: VULCAN 2 keeps its own
-    `dt_max`, `dt_min` and `nega_cut`), plus `gs` from `Mp`/`Rp`. Both seeds
+    `dt_max` and `dt_min`), plus `gs` from `Mp`/`Rp`. Both seeds
     read the config's abundance file.
     """
     from oracle import ORACLE_DATA_DELTAS, ORACLE_NETWORK_TRANSPLANTS, oracle_worktree, write_master_cfg
