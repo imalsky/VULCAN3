@@ -23,6 +23,7 @@ def _cfg(**overrides):
         "use_condense": True,
         "use_moldiff": True,
         "condense_sp": ["H2O"],
+        "use_relax": [],
         "start_conden_time": 0.0,
         "stop_conden_time": 1.0e5,
     }
