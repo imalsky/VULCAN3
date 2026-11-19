@@ -464,8 +464,6 @@ ledger" or the named repo's notes.
   config below ~60 K ships (clip the whole log K, re-run the gates).
 - vulcan-forward: `ckd.overlap` random-overlap jumps at sort crossings (accepted); the photolysis-cadence switch
   ignores a profile's `yconv_min` override (timing only).
-- vulcan-retrieval (unverified): the stage-2 elemental projection fixes carbon by scaling CO only, so cool
-  CH4-dominated columns start with negative CO and get rejected (a theta-predictable cut of the prior's cold corner).
 - jwst-transit-authority: the mixed-segment bin.
 
 ## Operational
@@ -1012,6 +1010,20 @@ packaged default's load) and is never refused.
 - Per-step costs left (daw, HD189, one core): block solve 17.5 of a 24.9 ms step, mostly
   the factor's explicit inverse (no bitwise-equal cheaper form [I]); photolysis ~17 ms a
   call x 115; `compute_diff_grav` 0.17 ms a step; a 3.1 MB photo-array copy an iteration.
+- Settling is Stokes with no Cunningham slip and the upper cell's viscosity, as upstream (`settling_velocity_jax`;
+  `build_atm.py:601-613`). The slip factor is 1.2 at Earth's H2SO4_l peak (1 um, 0.28 bar) and 1.2-2.1 over 5-95% of
+  its column, 1.06-1.14 for K2-18b's H2O_l_s, and passes 10 only above 8e-3 bar; the interface-mean viscosity moves
+  vs by at most 2.5% [M, saved runs at `caf7c29`].
+- `SNCHO_full_photo_network.txt` (Earth) keeps upstream's endothermic `S + CN -> N + CS` and `NCO + HCN -> HNCO + CN`
+  (C25 not applied). The collision limit holds N + CS at 1e-9 cm3/s, 534x to 10,600x the C25 rate over 372-200 K;
+  Earth's CS peaks at vmr 1.7e-22 [M, daw, `6698920`].
+- `thermo/NASA9/TiH.txt`'s 200-1000 K block is corrupt (Cp/R -24.8 at 298 K), as in the pinned clones; g/RT, the only
+  quantity read, jumps 0.07 at 1000 K, and no shipped config uses TiSNCHO [M].
+- `photo_cross/C6H6/C6H6_branch.csv` gives 0.99 and 0.15 at 155-157 nm (sum 1.14, 1.0 from 193 nm), as upstream;
+  Tsai et al. (2021, arXiv:2108.01790, p. 8) assign 15% to C3H3 on purpose, so the 0.99 is the likely slip (0.85).
+  Each branch forms its own J, so benzene loss runs 3.4% (solar), 4.8% (HD189), 5.9% (GJ436) high, unattenuated [M].
+  Kept for parity: a fix moves the default-network gates; upstream is not told (the maintainer decided).
+- `photo_cross/N2O/N2O_branch.csv` row 4 reads `2.099e+0` for 209.9 nm, as upstream; inert, every ratio is 1 [M].
 - No CPU test reaches the Gauss-Jordan kernel's division fallback since `2216219`
   removed the `tiny` case (row 3 scaled by 2^-975) from `tests/test_solver_fast.py`;
   the GPU A/B solved a subnormal pivot exactly ("Efficiency program").
