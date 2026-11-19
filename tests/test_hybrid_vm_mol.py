@@ -67,14 +67,29 @@ def test_hybrid_flips_and_extends_budget():
     assert np.all(np.isfinite(np.asarray(final.y)))
 
 
-def test_saved_evolution_keeps_every_snapshot_past_the_flip():
-    """A hybrid run takes steps past count_max after the flip; the snapshot buffer must hold all of them."""
+@pytest.mark.parametrize(
+    ("loose", "central", "capped"),
+    [(True, 150, 10), (False, 10, 150)],
+    ids=["convergence_flip", "count_flip"],
+)
+def test_saved_evolution_keeps_every_snapshot_past_the_flip(loose, central, capped):
+    """A hybrid run takes steps past count_max after the flip; the snapshot buffer must hold all of them.
+
+    Each case runs on the larger of the two post-flip budgets, so a buffer sized for the smaller one drops snapshots.
+    Loose criteria make phase 0 converge before count_max; otherwise it flips on the count cap at step 4.
+    """
     vc = _pin_cfg()
     vc.save_evolution, vc.save_evo_frq = True, 1
-    # The count flip at step 4 sets count_min to 104, so phase 1 runs at least 100 steps past count_max.
-    final = _run(vc, use_vm=True, hybrid=True, count_max=3)
+    vc.hybrid_central_steps, vc.hybrid_central_steps_capped = central, capped
+    if loose:
+        vc.yconv_cri, vc.slope_cri = 1e30, 1e30
+    count_max = 3
+    final = _run(vc, use_vm=True, hybrid=True, count_max=count_max)
     assert float(final.hybrid_use_vm) == 0.0
-    assert int(final.accept_count) > 100
+    # Flip at step <= count_max + 1, then count_min = flip + 100: the run outlasts count_max + the smaller budget.
+    assert int(final.count_max_dyn) <= count_max + 1 + max(central, capped)
+    assert int(final.count_max_dyn) > count_max + 1 + min(central, capped)
+    assert int(final.accept_count) > count_max + 1 + min(central, capped)
     assert int(final.evo_idx) == int(final.accept_count)
 
 
