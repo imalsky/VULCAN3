@@ -63,6 +63,18 @@ _TRACED_CHECK = (
 )
 
 
+def _warn_force_accepts(final: JaxIntegState) -> None:
+    """Warn once if the run force-accepted a trial; master prints each one (op.py:2519). Traced, nothing to read."""
+    forced = final.force_accept_count
+    if isinstance(forced, jax.core.Tracer) or not int(forced):
+        return
+    logger.warning(
+        "%d trial%s force-accepted, keeping the previous state, when dt reached dt_min or the retry budget ran out.",
+        int(forced),
+        " was" if int(forced) == 1 else "s were",
+    )
+
+
 class OuterLoop:
     """Standalone outer-integration driver.
 
@@ -350,6 +362,7 @@ class OuterLoop:
         self._refuse_missing_atoms(state)
         final = self._runner(state, atm_static)  # type: ignore[misc]  # the caller holds this through `runner`, built
         self._raise_if_frozen(final, atm_static)
+        _warn_force_accepts(final)
         return final
 
     def build_refresh_static(self, atm: types.SimpleNamespace) -> _atm_refresh_mod.AtmRefreshStatic:
@@ -368,16 +381,7 @@ class OuterLoop:
         """
         var, _, para = _state_mod.legacy_view(rs)
         end_case = para.end_case
-        forced = int(final.force_accept_count)
-        if forced:
-            # Master prints each one: "Keep producing negative values! Clipping negative solutions and moving on!"
-            # (op.py:2519).
-            logger.warning(
-                "%d trial%s force-accepted, keeping the previous state, when dt reached dt_min or the retry budget "
-                "ran out.",
-                forced,
-                " was" if forced == 1 else "s were",
-            )
+        _warn_force_accepts(final)
         if end_case == TERM_CONVERGED:
             logger.info(
                 "Integration successful with %s steps and long dy, long dydt = %s, %s\nActinic flux change: %.2E",

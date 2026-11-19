@@ -41,7 +41,8 @@ flip also raises `runtime` by 10 % and every flip sets `count_min` 100 steps on;
 `dt_min` (s, default 1e-15, master's is 1e-14) is the shortest step. A trial that fails there is force-accepted and keeps the previous state, so
 a second such failure stops the run with `DtMinFrozenError`, which a caller that jits its solve raises itself (docs/api.md).
 Each force-accept is counted, and a run that recovers from one ends with a WARNING giving the count, where VULCAN 2
-prints a line per force-accept.
+prints a line per force-accept. That holds for `OuterLoop.__call__` and an eager call of `OuterLoop.runner`; under an
+outer jit, read `force_accept_count` off the exit carry.
 
 `O_sequestered_frac` (fraction of bulk O, default 0, not in VULCAN 2) is the share of oxygen held deep in the planet by
 condensates of elements outside the network, such as silicates. The `EQ` seed multiplies O in its elemental abundances by
