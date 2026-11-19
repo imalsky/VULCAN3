@@ -114,6 +114,9 @@ def _build_chem_projection_tables() -> tuple[bool, jnp.ndarray, jnp.ndarray, jnp
     _CHEM_RESERVOIR_IDX,
     _CHEM_INV_RESERVOIR_COUNTS,
 ) = _build_chem_projection_tables()
+# Species that carry a conserved atom. A pin on any other (the electron under use_ion, set from the charge balance)
+# moves no atom, so it must not switch the stage repair off in its layer.
+_CHEM_CARRIES_ATOM = jnp.any(_CHEM_ATOM_COUNTS != 0.0, axis=1)
 
 # atom_list baked into the projection tables above; import-frozen (the tables
 # are module constants). state._assert_frozen_knobs_match_import fails fast
@@ -267,7 +270,7 @@ def _repair_stage(
 
     At small c0 = 1/(gamma dt) the pivoted LU leaks elements. A defect is
     corrected only above both `_DEFECT_FLOOR` of its terms and
-    `REPAIR_ABS_FLOOR` of the layer density. Pinned layers are skipped. A
+    `REPAIR_ABS_FLOOR` of the layer density. A layer with a pinned atom carrier is skipped. A
     correction over `_REPAIR_MAX_CELL_FRAC` of its carrier is dropped. Not in
     VULCAN 2.0 (op.py:2914, :2929).
     """
@@ -283,7 +286,7 @@ def _repair_stage(
     du = jnp.concatenate([-sup_d[:, ridx], pad])
     dl = jnp.concatenate([pad, -sub_d[:, ridx]])
     if fix_mask is not None:
-        pinned = jnp.any(fix_mask, axis=1, keepdims=True)
+        pinned = jnp.any(fix_mask & _CHEM_CARRIES_ATOM[None, :], axis=1, keepdims=True)
         d = jnp.where(pinned, c0, d)
         du = jnp.where(pinned, 0.0, du)
         dl = jnp.where(pinned, 0.0, dl)

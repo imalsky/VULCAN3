@@ -533,6 +533,11 @@ only within a block, so on imposed large dt its relative residual blows up where
   negative H2S band 12 -> 0 at dt 1e11 on the 2021 network, 49 -> 0 at 1e8 on the 2025 one; inert on the gates). Real
   leaks sit at >= 1e-7 of the layer, roundoff at <= 1e-10. Stage identity after the repair: 1e-13 at dt <= 1e11, up to
   1e-11 at the cap, so its bar is 1e-10.
+- The repair skips a layer only where a pinned species carries a conserved atom: the electron, pinned in every layer
+  under `use_ion`, carries none, so it no longer switches the repair off (`_CHEM_CARRIES_ATOM`). Every network row must
+  conserve each element and the charge at load (`composition.refuse_unbalanced_rows`, VULCAN 2's
+  `make_chem_funs.py:727-747`): an unbalanced row would otherwise load and the projection would hide it. All 13
+  loadable vendored networks balance [M]. Gates unchanged on `fast` and `reference` [M].
 - Not fixed by the repair: the moldiff boundary rows (P9, +6.6e-19 to +7.9e-18 /s
   of column gain); they set C23's tolerance floor.
 - C23 accumulates each accepted step's operator-weighted column change (`ini_abun.column_atoms`;

@@ -115,3 +115,21 @@ def test_condensing_clip_keeps_a_nan_gas_sum_nan():
     assert not np.all(np.isfinite(np.asarray(ymix)))
     _, ymix0, _, _ = clip(jnp.asarray([[0.0, 0.0, 2.0]]))  # an all-zero gas layer still gives 0
     np.testing.assert_array_equal(np.asarray(ymix0), [[0.0, 0.0, 0.0]])
+
+
+def test_a_pinned_species_that_carries_no_conserved_atom_does_not_switch_the_repair_off():
+    """Under use_ion the electron is pinned in every layer; that pin moves no atom, so the stage repair still acts."""
+    from vulcan3 import chem_funs
+    from vulcan3.jax_step import _CHEM_CARRIES_ATOM, _repair_stage
+
+    ni, nz = chem_funs.ni, 6
+    free = int(np.flatnonzero(~np.asarray(_CHEM_CARRIES_ATOM))[0])  # He on the default network: no H, O, C, N or S
+    rng = np.random.default_rng(0)
+    k = jnp.asarray(rng.normal(size=(nz, ni)) * 1e6)  # a stage vector with an element defect in every layer
+    y = jnp.full((nz, ni), 1e12)
+    zeros = jnp.zeros((nz, ni))
+    args = (k, zeros, jnp.float64(1e-8), zeros, zeros[:-1], zeros[:-1])
+    n_tot, pin_free = jnp.sum(y, axis=1, keepdims=True), jnp.zeros((nz, ni), dtype=bool).at[:, free].set(True)
+    repaired = _repair_stage(*args, None, n_tot, y)
+    assert not np.array_equal(np.asarray(repaired), np.asarray(k))  # the repair acts on this input
+    np.testing.assert_array_equal(np.asarray(_repair_stage(*args, pin_free, n_tot, y)), np.asarray(repaired))
