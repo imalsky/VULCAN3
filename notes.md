@@ -249,12 +249,15 @@ Refused or not ported (no physics change)
 - Refused as VULCAN 2 refuses them (VULCAN 3 had accepted them silently): a rate row with missing or non-numeric
   coefficients, an unknown special reaction, a network with no reverse-stops line, a reaction repeated in reverse or
   across sections (VULCAN 2 warns), `2*M` or `M + M`, a photolysis or ionisation row without its species and branch
-  columns, a branch-number gap, an ion branch missing from its ratio file, a `T_cross_sp` species with no
+  columns, a branch-number gap or a branch number two rows claim (VULCAN 2 keeps the later, `op.py:245`), an ion
+  branch missing from its ratio file, a `T_cross_sp` species with no
   T-dependent files or no photolysis row, `conv_step` below 2 (a one-slot history passes the test against itself), a
   `use_relax` gas outside `condense_sp`, a settling `non_gas_sp` name the network lacks, a `use_fix_sp_bot` species
   the network lacks, and a species listed twice in a boundary file (`BC_bot_Earth.txt`'s dead H2SO4 7e8 row, which
   both codes overwrote with the later 0 row, is deleted; the flux arrays are bitwise unchanged [M]).
 - Flags given as 0 or 1 load as booleans, as VULCAN 2 reads them (`== True`); any other non-bool flag is refused.
+  A condensation row written without spaces round the arrow is inert in both codes (VULCAN 2 matches
+  `'H2O -> H2O_l_s'` exactly, `op.py:1119`); validation reports it as doing nothing.
   A photolysis-only species is left out of the equilibrium seed when `use_photo` is off, so it stays at 0 as in
   VULCAN 2, which drops it from the network (`make_chem_funs.py:74`); the species list keeps it (38 against 36 on
   `CHO_photo_network_lowT`), because the list is fixed at import.
@@ -823,6 +826,9 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   `use_sat_surfaceH2O` bottom pin is built in `_build_statics.build_statics` from `sat_mix`.
 - The codegen RHS source is emitted in every process and held in a per-process memo keyed on network content +
   `inspect.getsource` of both emitters; emit 2.7 to 3.6 ms on 86 to 93 species [M]. No file is written.
+- The public seed functions (`eq_seed`, `element_vector`, `ratio_indices`, `seed_elements`) take the run config:
+  a consumer traces them after setup's config overlay is gone, so a process default would win (`use_photo`,
+  `O_sequestered_frac`). `validate_overrides` returns the overrides with 0/1 flags as bools; a consumer applies that copy.
 - `parse_network` raises on within-section, reversed and cross-section duplicates (`duplicates_ok=True`
   warns) and on any non-comment row that fails to parse; `composition.py` raises
   on a species with no `all_compose.txt` row and on disagreeing duplicates except
