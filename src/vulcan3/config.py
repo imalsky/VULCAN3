@@ -153,6 +153,7 @@ _REMOVED_KEYS: dict[str, str] = {
         "pin species with `use_fix_sp_bot` and remove the key"
     ),
     "gibbs_text": ("reverse rates read thermo/NASA9/<species>.txt (gibbs.py); remove the key"),
+    "O_sequestered_frac": "use sequestered_frac: {O: f}, a fraction per element, and remove the key",
 }
 
 

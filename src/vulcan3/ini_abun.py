@@ -403,7 +403,7 @@ def element_vector(ratios: jnp.ndarray, idx: jnp.ndarray, cfg: Config) -> jnp.nd
     Starts from `_element_vector(cfg)`, the host path's own no-override vector,
     so `use_solar` and the `cfg.<X>_H` overrides have the same precedence on
     both paths, and it is bit-identical to `_element_vector(cfg, {name: value,
-    ...})` for the same elements: a replaced O also loses `O_sequestered_frac`.
+    ...})` for the same elements: a replaced element also loses its `sequestered_frac`.
 
     Parameters
     ----------
@@ -412,14 +412,14 @@ def element_vector(ratios: jnp.ndarray, idx: jnp.ndarray, cfg: Config) -> jnp.nd
     idx : jnp.ndarray [n]
         Their positions, from `ratio_indices`.
     cfg : Config
-        The run's config: the preset, `use_solar`, `<X>_H`, `O_sequestered_frac` and `use_photo`.
+        The run's config: the preset, `use_solar`, `<X>_H`, `sequestered_frac` and `use_photo`.
 
     Returns
     -------
     jnp.ndarray [n_elements]
         `b` in `seed_elements(cfg)` order, relative to H.
     """
-    scaled = jnp.asarray(ratios, dtype=jnp.float64) * jnp.asarray(_o_scale(cfg))[idx]
+    scaled = jnp.asarray(ratios, dtype=jnp.float64) * jnp.asarray(_sequestered_scale(cfg))[idx]
     return jnp.asarray(_element_vector(cfg)).at[idx].set(scaled)
 
 
@@ -428,8 +428,8 @@ def _element_vector(cfg: Config, ratios: dict | None = None) -> np.ndarray:
 
     The base is the same on both paths -- the preset when `use_solar` is
     true, else the preset with `cfg.<X>_H` applied -- and `ratios` replaces
-    entries on top of it, exactly as `element_vector` does with `idx`. Last, O
-    is scaled by 1 - `O_sequestered_frac`.
+    entries on top of it, exactly as `element_vector` does with `idx`. Last,
+    each element X is scaled by 1 - `sequestered_frac[X]`.
     """
     b = _preset_vector(cfg) if cfg.use_solar is True else _base_vector(cfg)
     if ratios:
@@ -438,32 +438,52 @@ def _element_vector(cfg: Config, ratios: dict | None = None) -> np.ndarray:
             if sp not in elements:
                 raise KeyError(f"ratios[{sp!r}] is not an element of the loaded network ({', '.join(elements)}).")
             b[elements.index(sp)] = float(value)
-    sequestered: np.ndarray = b * _o_scale(cfg)
+    sequestered: np.ndarray = b * _sequestered_scale(cfg)
     return sequestered
 
 
-def _o_sequestered_frac(cfg: Config) -> float:
-    """Return `cfg.O_sequestered_frac`, the fraction of bulk O held in condensates outside the network."""
-    frac = float(cfg.O_sequestered_frac)
-    if not 0.0 <= frac < 1.0:
-        raise ValueError(
-            f"O_sequestered_frac={frac!r} is outside [0, 1): it is the fraction of the bulk O removed from the gas. "
-            "Set a value in [0, 1)."
+def _sequestered_fracs(cfg: Config) -> dict[str, float]:
+    """Return `cfg.sequestered_frac` checked against `cfg.atom_list`: element to fraction of its bulk abundance.
+
+    Builds no seed, so a run with another `ini_mix` is refused without paying for one.
+    """
+    fracs = cfg.sequestered_frac
+    if not isinstance(fracs, dict):
+        raise ValueError(  # noqa: TRY004 (a bad config value, as the other checks here)
+            f"sequestered_frac={fracs!r} is not a mapping. Give a fraction per element, e.g. {{O: 0.2}}, or {{}}."
         )
-    return frac
+    checked = {}
+    for atom, value in fracs.items():
+        if atom == "H":
+            raise ValueError(
+                f"sequestered_frac[{atom!r}]={value!r}: H is the reference element the abundances are relative to. "
+                "Remove the key."
+            )
+        if atom not in cfg.atom_list:
+            raise ValueError(
+                f"sequestered_frac[{atom!r}]={value!r}: {atom!r} is not in atom_list {list(cfg.atom_list)}. Remove "
+                "the key or run a network that carries the element."
+            )
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= value < 1.0:
+            raise ValueError(
+                f"sequestered_frac[{atom!r}]={value!r} is not a number in [0, 1): it is the fraction of the bulk "
+                f"{atom} removed from the gas. Set a value in [0, 1)."
+            )
+        checked[atom] = float(value)
+    return checked
 
 
-def _o_scale(cfg: Config) -> np.ndarray:
-    """`(E,)` factor on the bulk elemental vector: 1 - `O_sequestered_frac` on O, 1 elsewhere."""
+def _sequestered_scale(cfg: Config) -> np.ndarray:
+    """`(E,)` factor on the bulk elemental vector: 1 - `sequestered_frac[X]` on each element X named, 1 elsewhere."""
     elements = seed_elements(cfg)
     scale = np.ones(len(elements), dtype=np.float64)
-    frac = _o_sequestered_frac(cfg)
-    if frac > 0.0 and "O" not in elements:
-        raise ValueError(
-            f"O_sequestered_frac={frac!r} has no effect: the {cfg.network!r} network carries no O. Set it to 0."
-        )
-    if "O" in elements:
-        scale[elements.index("O")] = 1.0 - frac
+    for atom, frac in _sequestered_fracs(cfg).items():
+        if atom not in elements:
+            raise ValueError(
+                f"sequestered_frac[{atom!r}]={frac!r} has no effect: the {cfg.network!r} seed carries no {atom}. "
+                "Remove the key."
+            )
+        scale[elements.index(atom)] = 1.0 - frac
     return scale
 
 
@@ -834,16 +854,16 @@ def compute_initial_abundance(data_atm: types.SimpleNamespace) -> IniAbunOutputs
     Raises
     ------
     ValueError
-        If `ini_mix` is not a mode, `use_ion` is on and the network has no ions, or `O_sequestered_frac` is outside
-        [0, 1) or nonzero for a mode other than EQ.
+        If `ini_mix` is not a mode, `use_ion` is on and the network has no ions, or `sequestered_frac` names H or an
+        element outside `atom_list`, holds a value outside [0, 1), or is not empty for a mode other than EQ.
     """
     mix = _CFG.ini_mix
     if mix not in _MODE_DISPATCH:
         raise ValueError(f"ini_mix={mix!r} is not a mode; choose one of {sorted(_MODE_DISPATCH)}.")
-    if _o_sequestered_frac(_CFG) > 0.0 and mix != "EQ":
+    if _sequestered_fracs(_CFG) and mix != "EQ":
         raise ValueError(
-            f"O_sequestered_frac={_CFG.O_sequestered_frac!r} acts only on the elemental abundances of ini_mix='EQ', "
-            f"and ini_mix={mix!r} does not read them. Set it to 0 or use ini_mix='EQ'."
+            f"sequestered_frac={_CFG.sequestered_frac!r} acts only on the elemental abundances of ini_mix='EQ', "
+            f"and ini_mix={mix!r} does not read them. Set it to {{}} or use ini_mix='EQ'."
         )
     y, charge_list = _MODE_DISPATCH[mix](data_atm)
     y = _apply_condense(y, data_atm)

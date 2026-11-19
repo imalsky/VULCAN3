@@ -44,8 +44,11 @@ Each force-accept is counted, and a run that recovers from one ends with a WARNI
 prints a line per force-accept. That holds for `OuterLoop.__call__` and an eager call of `OuterLoop.runner`; under an
 outer jit, read `force_accept_count` off the exit carry.
 
-`O_sequestered_frac` (fraction of bulk O, default 0, not in VULCAN 2) is the share of oxygen held deep in the planet by
-condensates of elements outside the network, such as silicates. The `EQ` seed multiplies O in its elemental abundances by
-`1 - O_sequestered_frac`, after the preset, the `<X>_H` overrides and any per-run ratios, so the gas column holds that
-much less O and every other element is unchanged. A value outside [0, 1), or a nonzero value with another `ini_mix`, is
-refused at setup.
+`sequestered_frac` (element to fraction of its bulk abundance, default `{}`, not in VULCAN 2) is the share of each
+element held deep in the planet by condensates of elements outside the network: silicates take O, and in cool planets
+FeS takes S, as in `{O: 0.2, S: 0.1}`. The `EQ` seed multiplies each named element X in its elemental abundances by
+`1 - sequestered_frac[X]`, once, after the preset, the `<X>_H` overrides and any per-run ratios, so the gas column holds
+that much less of X and every other element is unchanged. The factor is a constant on the elemental vector, the same on
+the host path and the traced per-run path. Refused at setup: a key that is H (the reference
+element) or not in `atom_list`, an element the seed does not carry, a value outside [0, 1), and a non-empty mapping with
+another `ini_mix`. The former `O_sequestered_frac` key is refused with the remedy `sequestered_frac: {O: f}`.

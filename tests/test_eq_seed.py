@@ -27,6 +27,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 
 from vulcan3._paths import PACKAGE_ROOT
 
@@ -563,48 +564,135 @@ def test_photo_off_seed_leaves_out_the_photolysis_only_species(tmp_path) -> None
     np.testing.assert_array_equal(a["y"][:, : len(sp_kept)], b["y"])
 
 
-def test_oxygen_sequestration_scales_only_the_seed_oxygen() -> None:
-    """`O_sequestered_frac` f leaves (1 - f) of the bulk O to the gas, on both element-vector paths, after overrides.
+_SEQUESTER_PROBE = r"""
+import os
+import sys
+from pathlib import Path
 
-    The fraction is the run's, not the process default's: a consumer traces the seed after setup.
-    """
-    import jax.numpy as jnp
+import numpy as np
+import yaml
 
-    from vulcan3 import composition, ini_abun, make_config
+root, config_name, element_rtol, scale = Path(sys.argv[1]), sys.argv[2], float(sys.argv[3]), sys.argv[4] == "1"
+os.chdir(root)
+raw = {**yaml.safe_load((root / "configs" / "default.yaml").read_text()),
+       **yaml.safe_load((root / "configs" / f"{config_name}.yaml").read_text())}
+os.environ["VULCAN3_NETWORK"] = raw["network"]
+os.environ["VULCAN3_ATOM_LIST"] = ",".join(raw["atom_list"])
+os.environ["VULCAN3_COM_FILE"] = raw["com_file"]
 
-    Tco, p_bar = _hd189_column()
-    elements = ini_abun.seed_elements(make_config())
-    o = elements.index("O")
-    ratios = jnp.asarray([5.0e-4, 3.0e-4])
+import jax.numpy as jnp
 
-    def seed_and_vectors(frac: float):
-        cfg = make_config(O_sequestered_frac=frac)
-        b = ini_abun._element_vector(cfg)
-        b_arr = np.asarray(ini_abun.element_vector(ratios, ini_abun.ratio_indices(["O", "C"], cfg), cfg))
-        ymix = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b), cfg))
-        return b, b_arr, ymix
+from vulcan3 import composition, ini_abun
+from vulcan3.atm_setup import Atm
+from vulcan3.config import default_config, load_config
+from vulcan3.state import _AtmData
 
-    b0, arr0, y0 = seed_and_vectors(0.0)
-    b2, arr2, y2 = seed_and_vectors(0.2)
-    keep = np.arange(len(elements)) != o
-    for before, after in ((b0, b2), (arr0, arr2)):
-        assert after[o] == 0.8 * before[o]
-        np.testing.assert_array_equal(after[keep], before[keep])
+cfg = load_config(config_name)
+for key, value in vars(cfg).items():  # the process default is the run's config, as setup's overlay makes it
+    setattr(default_config(), key, value)
+assert cfg.sequestered_frac == {}
 
+
+def same_bits(a, b):
+    a, b = np.asarray(a), np.asarray(b)
+    return a.dtype == b.dtype and a.shape == b.shape and a.tobytes() == b.tobytes()
+
+
+# {}: the vector the seed solves on is the unscaled one, bit for bit, on both paths.
+unscaled = ini_abun._preset_vector(cfg) if cfg.use_solar is True else ini_abun._base_vector(cfg)
+assert same_bits(ini_abun._element_vector(cfg), unscaled)
+assert same_bits(ini_abun.element_vector(jnp.zeros(0), ini_abun.ratio_indices([], cfg), cfg), unscaled)
+
+if scale:
+    fracs = {"O": 0.2, "S": 0.1}
+    seq = load_config(config_name, sequestered_frac=fracs)
+    elements = ini_abun.seed_elements(cfg)
+    factor = np.ones(len(elements))
+    factor[elements.index("O")], factor[elements.index("S")] = 0.8, 0.9
+
+    # Per-run path: the run's config is the argument, the process default keeps {}. The ratios replace O and S, and
+    # the fraction applies after them.
+    names = ["O", "C", "S"]
+    ratios = jnp.asarray([5.0e-4, 3.0e-4, 1.0e-5])
+    pairs = [
+        (ini_abun._element_vector(cfg), ini_abun._element_vector(seq)),
+        *(
+            tuple(np.asarray(ini_abun.element_vector(r, ini_abun.ratio_indices(n, c), c)) for c in (cfg, seq))
+            for r, n in ((ratios, names), (jnp.zeros(0), []))
+        ),
+    ]
+    assert default_config().sequestered_frac == {}
+    for before, after in pairs:
+        for i, f in enumerate(factor):
+            assert same_bits(after[i], before[i]) if f == 1.0 else after[i] == f * before[i], (elements[i], f)
+
+    # Setup path: the host seed on the overlaid process config holds the scaled column.
+    data_atm = Atm().load_TPK(Atm().f_pico(_AtmData()))
+    column = (data_atm.pco, data_atm.Tco, data_atm.M)
     counts = np.asarray(composition.compo_array)[:, [composition.atom_list.index(e) for e in elements]]
-    per_h0, per_h2 = (y @ counts for y in (y0, y2))
-    per_h0, per_h2 = per_h0 / per_h0[:, [elements.index("H")]], per_h2 / per_h2[:, [elements.index("H")]]
-    expected = np.where(keep, 1.0, 0.8)
-    np.testing.assert_allclose(per_h2 / per_h0, np.broadcast_to(expected, per_h0.shape), rtol=ELEMENT_RTOL, atol=0.0)
+    h = elements.index("H")
+    per_h = {}
+    for name, value in (("none", {}), ("seq", fracs)):
+        default_config().sequestered_frac = value
+        atoms = ini_abun.eq_column(*column) @ counts
+        per_h[name] = atoms / atoms[:, [h]]
+    b0 = ini_abun._element_vector(cfg)
+    for name, f in (("none", 1.0), ("seq", factor)):
+        np.testing.assert_allclose(per_h[name], np.broadcast_to(b0 * f / b0[h], per_h[name].shape), rtol=element_rtol)
+print("SEQUESTER_PROBE_OK")
+"""
+
+# Every shipped config the EQ seed starts; Earth's const_mix start never reads the elemental vector.
+_EQ_CONFIGS = sorted(
+    p.stem
+    for p in (PACKAGE_ROOT / "configs").glob("*.yaml")
+    if yaml.safe_load(p.read_text()).get("ini_mix", "EQ") == "EQ"
+)
+
+
+@pytest.mark.parametrize("config_name", _EQ_CONFIGS)
+def test_sequestration_scales_only_the_named_elements(config_name: str) -> None:
+    """`sequestered_frac` {} seeds bit for bit as without it; {O: 0.2, S: 0.1} leaves exactly 0.8 of O and 0.9 of S.
+
+    Every other element is unchanged to the bit, on the host path and the per-run (config-argument) path, after the
+    `<X>_H` overrides and any per-run ratios, and the setup-path seed holds the scaled column. Each config runs in a
+    subprocess: the network is import-frozen, and the scaling needs W39b's sulfur.
+    """
+    _run(_SEQUESTER_PROBE, PACKAGE_ROOT, config_name, ELEMENT_RTOL, "1" if config_name == "W39b" else "0")
 
 
 @pytest.mark.parametrize(
-    ("frac", "ini_mix", "match"), [(1.0, "EQ", r"1\.0.*\[0, 1\)"), (0.2, "const_mix", r"0\.2.*EQ")]
+    ("fracs", "ini_mix", "match"),
+    [
+        ({"H": 0.1}, "EQ", r"sequestered_frac\['H'\]=0\.1: H is the reference element.*Remove the key"),
+        ({"S": 0.1}, "EQ", r"sequestered_frac\['S'\]=0\.1: 'S' is not in atom_list.*Remove the key"),
+        ({"O": 1.0}, "EQ", r"sequestered_frac\['O'\]=1\.0 is not a number in \[0, 1\).*Set a value in \[0, 1\)"),
+        ({"O": -0.1}, "EQ", r"sequestered_frac\['O'\]=-0\.1 is not a number in \[0, 1\).*Set a value in \[0, 1\)"),
+        (0.2, "EQ", r"sequestered_frac=0\.2 is not a mapping.*\{O: 0\.2\}"),
+        ({"O": 0.2}, "const_mix", r"sequestered_frac=\{'O': 0\.2\} acts only on .*ini_mix='EQ'.*Set it to \{\}"),
+    ],
 )
-def test_oxygen_sequestration_refuses_a_bad_or_inert_fraction(monkeypatch, frac, ini_mix, match) -> None:
-    from vulcan3 import ini_abun
+def test_sequestration_refuses_a_bad_or_inert_fraction(monkeypatch, fracs, ini_mix, match) -> None:
+    """Refused at setup and, for an EQ run, on the per-run path too."""
+    import jax.numpy as jnp
 
-    monkeypatch.setattr(ini_abun._CFG, "O_sequestered_frac", frac, raising=False)
+    from vulcan3 import ini_abun, make_config
+
+    monkeypatch.setattr(ini_abun._CFG, "sequestered_frac", fracs)
     monkeypatch.setattr(ini_abun._CFG, "ini_mix", ini_mix)
     with pytest.raises(ValueError, match=match):
         ini_abun.compute_initial_abundance(None)
+    if ini_mix == "EQ":
+        cfg = make_config(sequestered_frac=fracs)
+        with pytest.raises(ValueError, match=match):
+            ini_abun.element_vector(jnp.zeros(0), ini_abun.ratio_indices([], cfg), cfg)
+
+
+def test_the_old_oxygen_key_is_refused_with_its_remedy() -> None:
+    from vulcan3 import make_config, validate_overrides
+
+    old = r"O_sequestered_frac` -- use sequestered_frac: \{O: f\}"
+    with pytest.raises(ValueError, match=old):
+        make_config(O_sequestered_frac=0.2)
+    with pytest.raises(ValueError, match=old):
+        validate_overrides({"O_sequestered_frac": 0.2})
