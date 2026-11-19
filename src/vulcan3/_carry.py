@@ -78,6 +78,7 @@ class JaxIntegState(NamedTuple):
     accept_count: jnp.ndarray  # () int32, accepted steps
     retry_count: jnp.ndarray  # () int32, retries on the in-flight step
     keep_prev_run: jnp.ndarray  # () int32, force-accepts at dt_min that kept the state, since the last real accept
+    force_accept_count: jnp.ndarray  # () int32, force-accepted trials over the run
     atom_loss: jnp.ndarray  # (n_atoms,)
     atom_loss_prev: jnp.ndarray  # (n_atoms,)
     nega_count: jnp.ndarray  # () int32, cumulative over the run

@@ -648,6 +648,7 @@ def body_fn(
         accept_count=accept_count_next,
         retry_count=retry_count_next,
         keep_prev_run=keep_prev_run_next,
+        force_accept_count=s.force_accept_count + d.force_accept.astype(jnp.int32),
         atom_loss=atom_loss_next,
         atom_loss_prev=atom_loss_prev_next,
         nega_count=s.nega_count + d.nega_count_inc,

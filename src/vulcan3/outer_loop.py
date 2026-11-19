@@ -368,6 +368,16 @@ class OuterLoop:
         """
         var, _, para = _state_mod.legacy_view(rs)
         end_case = para.end_case
+        forced = int(final.force_accept_count)
+        if forced:
+            # Master prints each one: "Keep producing negative values! Clipping negative solutions and moving on!"
+            # (op.py:2519).
+            logger.warning(
+                "%d trial%s force-accepted, keeping the previous state, when dt reached dt_min or the retry budget "
+                "ran out.",
+                forced,
+                " was" if forced == 1 else "s were",
+            )
         if end_case == TERM_CONVERGED:
             logger.info(
                 "Integration successful with %s steps and long dy, long dydt = %s, %s\nActinic flux change: %.2E",

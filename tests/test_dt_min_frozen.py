@@ -155,6 +155,24 @@ def test_a_real_accept_clears_the_count():
 
 
 @pytest.mark.strict_isolation
+def test_a_force_accept_the_run_recovers_from_is_counted_and_reported(caplog):
+    """VULCAN 2 prints each force-accept (op.py:2519); the run counts them and warns once at its end."""
+    from vulcan3 import _pack_state
+
+    _, integ, rs = _column()
+    state, atm_static = integ.prepare_runstate(rs)
+    # A loss record no trial matches, at a spent retry budget: the first trial is force-accepted above dt_min, which
+    # takes the real record, and the run goes on.
+    first = state._replace(atom_loss_prev=jnp.ones_like(state.atom_loss), retry_count=jnp.int32(110))
+    final = integ._runner(first, atm_static)
+    assert int(final.termination_reason) == TERM_STEP_COUNT
+    assert int(final.force_accept_count) == 1
+    with caplog.at_level(logging.WARNING, logger="vulcan3"):
+        integ._report_end(_pack_state.unpack_state(integ, final, rs), final)
+    assert "1 trial was force-accepted" in caplog.text
+
+
+@pytest.mark.strict_isolation
 def test_held_steps_never_certify_a_column():
     """A column whose every trial fails and is held just above `dt_min` takes no real step, so it never certifies.
 

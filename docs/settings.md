@@ -32,3 +32,5 @@ The former `nega_cut` key is refused with this remedy.
 
 `dt_min` (s, default 1e-15, master's is 1e-14) is the shortest step. A trial that fails there is force-accepted and keeps the previous state, so
 a second such failure stops the run with `DtMinFrozenError`, which a caller that jits its solve raises itself (docs/api.md).
+Each force-accept is counted, and a run that recovers from one ends with a WARNING giving the count, where VULCAN 2
+prints a line per force-accept.
