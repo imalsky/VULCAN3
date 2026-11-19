@@ -91,6 +91,20 @@ def _condensate_species() -> set[str]:
     return out
 
 
+def _photo_only_species() -> set[str]:
+    """Species that appear only in photolysis or ionisation rows.
+
+    With `use_photo` off VULCAN 2 drops those rows and these species (`make_chem_funs.py:74`). Left out of the
+    seed, they start at 0, and no remaining row produces them.
+    """
+    net = chem_funs.NETWORK
+    out = set(net.species)
+    for i in np.flatnonzero(net.is_forward & ~net.is_photo & ~net.is_ion):
+        for idx, stoich in ((net.reactant_idx, net.reactant_stoich), (net.product_idx, net.product_stoich)):
+            out -= {net.species[sp_idx] for sp_idx, s in zip(idx[i], stoich[i], strict=True) if s != 0.0}
+    return out
+
+
 def _make_hvector(coeffs: np.ndarray) -> Callable[[jnp.ndarray], jnp.ndarray]:
     """`T -> mu0(T)/(RT)` (K,) at the 1 bar standard state.
 
@@ -109,8 +123,10 @@ def _make_hvector(coeffs: np.ndarray) -> Callable[[jnp.ndarray], jnp.ndarray]:
     return hvector
 
 
-def _build_seed_setup() -> tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]:
+def _build_seed_setup(use_photo: bool) -> tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]:
     """Build the ExoGibbs setup for the loaded network's gas species.
+
+    With `use_photo` off the photolysis-only species are left out, as VULCAN 2 leaves them out of the run.
 
     Every array in the returned setup is NumPy. The result is cached for the
     process, and the first seed call may happen inside a trace (a consumer
@@ -119,7 +135,7 @@ def _build_seed_setup() -> tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]:
     """
     from exogibbs.thermo.models import ChemicalSetup
 
-    excluded = _condensate_species() | set(_charged_species())
+    excluded = _condensate_species() | set(_charged_species()) | (set() if use_photo else _photo_only_species())
     seed_idx = np.array([i for i, sp in enumerate(species) if sp not in excluded], dtype=np.int64)
     coeffs, present = gibbs.load_nasa9(tuple(species), rates_jax.thermo_dir(_CFG.network))
     missing = [species[i] for i in seed_idx if not present[i]]
@@ -142,19 +158,20 @@ def _build_seed_setup() -> tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]:
     return setup, seed_idx, elements
 
 
-_SEED: tuple[ChemicalSetup, np.ndarray, tuple[str, ...]] | None = None
+# The built seed setup, keyed on the config's `use_photo`.
+_SEED: dict[bool, tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]] = {}
 
 
 def _seed() -> tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]:
-    """Return `(setup, seed species indices, element names)`, built once on first use.
+    """Return `(setup, seed species indices, element names)`, built once per `use_photo` on first use.
 
     Lazy: it reads one `thermo/NASA9/<sp>.txt` per species, and a
     run with any other `ini_mix` must not pay for that at import.
     """
-    global _SEED  # noqa: PLW0603 (a cache of the built seed setup)
-    if _SEED is None:
-        _SEED = _build_seed_setup()
-    return _SEED
+    use_photo = bool(_CFG.use_photo)
+    if use_photo not in _SEED:
+        _SEED[use_photo] = _build_seed_setup(use_photo)
+    return _SEED[use_photo]
 
 
 def seed_elements() -> tuple[str, ...]:
@@ -169,16 +186,16 @@ def seed_elements() -> tuple[str, ...]:
 _SEED_METHOD = "scan_hot_from_bottom"
 
 
-def _seed_key() -> tuple[float, int]:
-    """Return the config's solver controls, read at call time (`_cfg_overlay`)."""
-    return (float(_CFG.fastchem_newton_tol), int(_CFG.fastchem_newton_max_iter))
+def _seed_key() -> tuple[float, int, bool]:
+    """Return the config's solver controls and `use_photo`, read at call time (`_cfg_overlay`)."""
+    return (float(_CFG.fastchem_newton_tol), int(_CFG.fastchem_newton_max_iter), bool(_CFG.use_photo))
 
 
 @functools.cache
 def _seed_controls(
-    tol: float, max_iter: int
+    tol: float, max_iter: int, use_photo: bool
 ) -> tuple[EquilibriumOptions, Callable[[jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray]]:
-    """`(options, eq_seed jitted)` for one set of solver controls, interned.
+    """`(options, eq_seed jitted)` for one set of solver controls and one `use_photo`, interned.
 
     ExoGibbs keys its scan-body cache on `id(options)`, so a fresh dataclass
     per call would rebuild the profile scan every time. `eq_seed` reads the
@@ -190,6 +207,7 @@ def _seed_controls(
     """
     from exogibbs.api.gas import EquilibriumOptions
 
+    del use_photo  # a key only: the trace reads the seed species through `_seed`
     options = EquilibriumOptions(epsilon_crit=tol, max_iter=max_iter, method=_SEED_METHOD)
     return options, jax.jit(lambda Tco, p_bar, b: eq_seed(Tco, p_bar, b))  # noqa: PLW0108 (a fresh closure)
 

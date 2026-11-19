@@ -61,7 +61,9 @@ Ar) is not appended; `runtime_validation` refuses such a config.
 | `const_lowT` | the five-molecule H2/H2O/CH4/He/NH3 system by Newton |
 
 The EQ seed uses the same NASA-9 polynomials as the reverse rates, so the seed and the kinetics cannot disagree about
-thermochemistry. Its tangent is zero, and a batched lane equals the solo seed bitwise. Cite
+thermochemistry. Its tangent is zero, and a batched lane equals the solo seed bitwise. Condensates and ions are not
+seeded, nor, with `use_photo` off, species that appear only in photolysis or ionisation rows: VULCAN 2 leaves those out
+of a photo-off run, and here they start and stay at 0. Cite
 [ExoGibbs](https://github.com/HajimeKawahara/exogibbs) when a run uses it.
 
 ## Time step

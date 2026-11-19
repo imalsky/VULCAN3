@@ -193,10 +193,10 @@ b = jnp.asarray(ini_abun._element_vector())
 # `_element_vector` needs the element order, so drop the setup again: the
 # first seed CALL has to be the traced one, so the lazy setup is built inside
 # that trace.
-ini_abun._SEED = None
+ini_abun._SEED.clear()
 y = np.asarray(jax.jit(ini_abun.eq_seed)(Tco, p_bar, b))
 assert np.isfinite(y).all()
-fm = ini_abun._SEED[0].formula_matrix
+fm = ini_abun._seed()[0].formula_matrix
 assert not isinstance(fm, jax.core.Tracer), f"formula_matrix is a {type(fm)}"
 
 # Anything later must be able to reuse the cached setup: another trace at
@@ -496,3 +496,53 @@ def _hd189_column() -> tuple[np.ndarray, np.ndarray]:
         np.asarray(data_atm.Tco, dtype=np.float64),
         np.asarray(data_atm.pco, dtype=np.float64) / 1.0e6,
     )
+
+
+_PHOTO_OFF_PROBE = r"""
+import os
+import sys
+from pathlib import Path
+
+import numpy as np
+
+root, out_npz, network, use_photo = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4] == "1"
+os.chdir(root)
+os.environ["VULCAN3_NETWORK"] = network
+
+import jax.numpy as jnp
+
+from vulcan3 import chem_funs, ini_abun
+from vulcan3.atm_setup import Atm
+from vulcan3.config import default_config
+from vulcan3.state import _AtmData
+
+default_config().use_photo = use_photo
+data_atm = Atm().load_TPK(Atm().f_pico(_AtmData()))
+Tco = jnp.asarray(np.asarray(data_atm.Tco, dtype=np.float64))
+p_bar = jnp.asarray(np.asarray(data_atm.pco, dtype=np.float64) / 1.0e6)
+y = ini_abun.eq_seed(Tco, p_bar, jnp.asarray(ini_abun._element_vector()))
+np.savez(out_npz, y=np.asarray(y), species=np.array(chem_funs.spec_list))
+"""
+
+
+def test_photo_off_seed_leaves_out_the_photolysis_only_species(tmp_path) -> None:
+    """With use_photo off, VULCAN 2 drops the photo rows and their species (`make_chem_funs.py:74`).
+
+    On CHO_photo_network_lowT that is O_1 and CH2_1 (38 species against 36). The seed must give them exactly 0 and
+    give the other 36 what the network without its photo rows gives.
+    """
+    full = PACKAGE_ROOT / "thermo" / "CHO_photo_network_lowT.txt"
+    lines = full.read_text().splitlines(keepends=True)
+    cut = next(i for i, line in enumerate(lines) if line.startswith("# photo"))
+    stripped = tmp_path / "CHO_photo_network_lowT_no_photo.txt"
+    stripped.write_text("".join(lines[:cut]))
+
+    _run(_PHOTO_OFF_PROBE, PACKAGE_ROOT, tmp_path / "full.npz", full, "0")
+    _run(_PHOTO_OFF_PROBE, PACKAGE_ROOT, tmp_path / "stripped.npz", stripped, "1")
+    a, b = np.load(tmp_path / "full.npz"), np.load(tmp_path / "stripped.npz")
+    sp_full, sp_kept = list(a["species"]), list(b["species"])
+    assert sp_full[: len(sp_kept)] == sp_kept
+    assert sp_full[len(sp_kept) :] == ["O_1", "CH2_1"]
+    assert np.isfinite(b["y"]).all()
+    assert np.all(a["y"][:, len(sp_kept) :] == 0.0), "a photolysis-only species entered the photo-off seed"
+    np.testing.assert_array_equal(a["y"][:, : len(sp_kept)], b["y"])
