@@ -290,9 +290,11 @@ def _validate_numerical_bounds(cfg: Config) -> list[str]:
 def _validate_open_column(cfg: Config) -> list[str]:
     # The element budget assumes a closed column; a boundary flux or a pin moves the element columns by design, so
     # the term would only fail at count_max. Escape (diff_esc) is allowed: HD209 certifies with it at the default.
+    # Condensation does too: the hydrostatic rebalance scales the gas only, and the condensate is clipped at zero
+    # (notes "Stage repair and element budget").
     open_by = [
         key
-        for key in ("use_topflux", "use_botflux", "use_fix_sp_bot", "use_fix_H2He", "fix_species")
+        for key in ("use_topflux", "use_botflux", "use_fix_sp_bot", "use_fix_H2He", "fix_species", "use_condense")
         if getattr(cfg, key)
     ]
     # The runner pins surface water only under condensation of H2O (`_build_statics.build_statics`).

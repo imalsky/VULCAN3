@@ -71,6 +71,7 @@ def test_shipped_config_loads_and_resolves(name):
         or cfg.use_fix_H2He
         or cfg.fix_species
         or cfg.use_sat_surfaceH2O
+        or cfg.use_condense
     )
     assert cfg.element_budget_tol <= 1e-2 or (open_column and cfg.element_budget_tol == float("inf")), name
 

@@ -65,6 +65,7 @@ cfg.use_fix_sp_bot = {}
 cfg.use_ini_cold_trap = False
 cfg.use_print_prog = False
 cfg.use_condense = True
+cfg.element_budget_tol = float("inf")  # condensation opens the column
 cfg.use_settling = True
 cfg.condense_sp = ["H2O", "NH3"]
 cfg.non_gas_sp = ["H2O_l_s", "NH3_l_s"]

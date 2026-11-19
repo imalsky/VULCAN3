@@ -604,9 +604,11 @@ only within a block, so on imposed large dt its relative residual blows up where
   `operator_column_weights`: `w_0 = dzi[0]`, `w_j = 0.5*(dzi[j-1]+dzi[j])`, `w_last = dzi[-1]`, so a zero-flux update
   telescopes) on that step's own grid over the fixed t=0 column, RELATIVE TO H. The absolute column carries the
   renormalisation's common mode (-1.04e-2 on every element on the planner's WASP-107 b column; as X/H 2.1e-6). Tolerance
-  1e-2: 370x headroom on the worst photo-on gate, 4.6x on a photo-off column. Six knobs open the budget (`use_topflux`,
-  `use_botflux`/`v_dep`, `use_fix_sp_bot`, `use_fix_H2He`, the `fix_species` pin, `use_sat_surfaceH2O`); setup refuses
-  any of them with a finite tolerance, and the shipped Earth and K2-18b set `.inf`; a
+  1e-2: 370x headroom on the worst photo-on gate, 4.6x on a photo-off column. Seven knobs open the budget (`use_topflux`,
+  `use_botflux`/`v_dep`, `use_fix_sp_bot`, `use_fix_H2He`, the `fix_species` pin, `use_sat_surfaceH2O`,
+  `use_condense`: the hydrostatic rebalance scales the gas only and the condensate is clipped at zero; K2-18b without
+  its H2O pin at tolerance 1e-2 ends at count_max with O/H drift 1.6e-2, longdy 0.21 from H2O [M, daw, `ddc3be7`]);
+  setup refuses any of them with a finite tolerance, and the shipped Earth and K2-18b set `.inf`; a
   `loss_ex` containing H fails the runner build (H is the reference atom). An open column can fail to certify on
   exchange it is meant to have (measured on Earth, "Earth and K2-18b"; [I] for the external user's K2-18b; the JWST S8
   pin certified); its step-cap exit names the term and `.inf`. Precedent: KPP's invariant-preserving Rosenbrock, CVODE

@@ -25,7 +25,7 @@ import pytest
         ({"ini_mix": "const_mix", "const_mix": {"H2": 0.9, "Ar": 0.1}}, r"const_mix key 'Ar'"),
         ({"ini_mix": "const_mix", "const_mix": {"H2": 0.9, "He": 0.1}}, None),
         ({"use_condense": True, "condense_sp": ["Fe"]}, r"condense_sp entry 'Fe'"),
-        ({"use_condense": True, "condense_sp": ["H2S"]}, None),  # sat-only tier
+        ({"use_condense": True, "condense_sp": ["H2S"], "element_budget_tol": float("inf")}, None),  # sat-only tier
         ({"conver_ignore": ["HC3N", "HC3M"]}, r"conver_ignore entries \['HC3M'\]"),
         ({"diff_esc": ["H", "Xe"]}, r"diff_esc entries \['Xe'\]"),
         ({"use_condense": True, "condense_sp": ["H2O"], "fix_species": ["H2O", "CO"]}, r"fix_species entries \['CO'\]"),
@@ -42,6 +42,7 @@ import pytest
         ({"use_botflux": True}, r"use_botflux open the column, so element_budget_tol=0.01"),
         ({"use_fix_sp_bot": {"H2O": 1e-3}, "element_budget_tol": float("inf")}, None),
         ({"use_fix_H2He": True}, r"use_fix_H2He open the column"),
+        ({"use_condense": True, "condense_sp": ["H2S"]}, r"use_condense open the column"),
         ({"use_sat_surfaceH2O": True}, None),  # the pin needs condensation; without it nothing opens the column
         ({"use_condense": True, "condense_sp": ["H2O"], "use_relax": ["NH3"]}, r"use_relax entries \['NH3'\] are not"),
         ({"use_settling": True, "non_gas_sp": ["H2O_l_s"]}, r"non_gas_sp entry 'H2O_l_s' is not in the network"),
@@ -63,6 +64,7 @@ import pytest
         "open_column_finite_budget",
         "open_column_budget_off",
         "fix_h2he_finite_budget",
+        "condense_finite_budget",
         "inert_surface_h2o_pin",
         "relax_outside_condense_sp",
         "settling_unknown_non_gas_sp",

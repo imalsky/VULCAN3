@@ -50,7 +50,7 @@ cfg.const_mix = {"N2": 0.79, "O2": 0.20, "H2O": 1e-2, "CO2": 4e-4}
 cfg.nz = 50; cfg.P_b = 1e6; cfg.P_t = 1e-1
 cfg.use_topflux = False; cfg.use_botflux = False
 cfg.use_fix_sp_bot = {}; cfg.use_ini_cold_trap = False; cfg.use_print_prog = False
-cfg.use_condense = True
+cfg.use_condense = True; cfg.element_budget_tol = float("inf")  # condensation opens the column
 
 # ---- Check 1: settling velocities for both condensates ----
 cfg.use_settling = True
@@ -105,7 +105,7 @@ print(f"CONDEN_OK t={float(rs_out.step.t):.2e} count={int(rs_out.params.count)} 
 import copy
 from vulcan3._build_statics import build_statics
 from vulcan3.state import legacy_view
-cfg.use_sat_surfaceH2O = True; cfg.element_budget_tol = float("inf")  # a bottom pin opens the column
+cfg.use_sat_surfaceH2O = True
 for c in (cfg, copy.deepcopy(cfg)):
     rs = RunState.with_pre_loop_setup(c)
     var, atm, _ = legacy_view(rs)
