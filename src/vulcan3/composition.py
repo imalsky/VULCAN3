@@ -5,11 +5,20 @@ from pathlib import Path
 import jax.numpy as jnp
 import numpy as np
 
-from . import chem_funs
+from . import chem_funs, network as _network
 from ._paths import resolve_data_path
 from .config import default_config
 
-__all__ = ["COM_FILE_PATH", "atom_list", "compo", "compo_array", "compo_row", "species", "species_mass"]
+__all__ = [
+    "COM_FILE_PATH",
+    "atom_list",
+    "compo",
+    "compo_array",
+    "compo_row",
+    "refuse_unbalanced_rows",
+    "species",
+    "species_mass",
+]
 
 _CFG = default_config()
 species = chem_funs.spec_list
@@ -69,5 +78,47 @@ for _i, _sp in enumerate(species):
     for _j, _atom in enumerate(atom_list):
         _compo_array_np[_i, _j] = float(_row[_atom])
 compo_array = jnp.asarray(_compo_array_np)
+
+
+def refuse_unbalanced_rows(net: "_network.Network", counts: np.ndarray, names: tuple[str, ...]) -> None:
+    """Refuse a network whose rows do not conserve every element and the charge.
+
+    VULCAN 2 refuses such a network when it writes its chemistry code (make_chem_funs.py:727-747). Without the check an
+    unbalanced row would load, and the atom-conservation projection would hide it by moving the atoms onto the
+    reservoir species. A sink belongs in a product species with its true composition row. M carries nothing.
+
+    Parameters
+    ----------
+    net : network.Network
+        The parsed network.
+    counts : np.ndarray [ni, n_columns]
+        Each species' count of every composition column (elements and charge).
+    names : tuple of str
+        The column names of ``counts``.
+
+    Raises
+    ------
+    ValueError
+        Naming every forward row whose reactants and products differ in a column, and by how much.
+    """
+    padded = np.vstack([counts, np.zeros((1, counts.shape[1]))])  # the pad slot `ni` carries nothing
+    made = np.einsum("rt,rtc->rc", net.product_stoich, padded[net.product_idx])
+    used = np.einsum("rt,rtc->rc", net.reactant_stoich, padded[net.reactant_idx])
+    change = made - used
+    bad = [
+        f"row {i} {net.Rf.get(i, '?')}: "
+        + ", ".join(f"{names[c]} {change[i, c]:+g}" for c in np.flatnonzero(change[i]))
+        for i in range(1, net.nr + 1, 2)
+        if np.any(change[i] != 0.0)
+    ]
+    if bad:
+        raise ValueError(
+            f"{net.network_path}: {len(bad)} reaction(s) do not conserve every element and the charge: "
+            + "; ".join(bad)
+            + ". Give the sink product a composition row with its true atoms, or correct the equation."
+        )
+
+
+refuse_unbalanced_rows(chem_funs.NETWORK, _compo_array_np, atom_list)
 # Molar mass (g/mol) per network species, first table row (`list.index`).
 species_mass = np.array([float(compo["mass"][compo_row.index(sp)]) for sp in species], dtype=np.float64)

@@ -63,6 +63,11 @@ def test_configured_networks_have_no_duplicate_reactions(net_rel):
 
 
 _SHIPPED_NETWORKS = sorted(glob.glob("src/vulcan3/thermo/*network*.txt"))
+# Every vendored network except the C3 one, whose C3, C3H and C4 have no composition row (it cannot load; counted by
+# hand its rows balance).
+_SHIPPED_BALANCE_NETWORKS = [
+    p for p in sorted(glob.glob(str(ROOT / "src/vulcan3/thermo/*network*.txt"))) if not p.endswith("_C3.txt")
+]
 
 
 @pytest.mark.parametrize("net_path", _SHIPPED_NETWORKS, ids=os.path.basename)
@@ -257,3 +262,39 @@ def test_the_shared_network_tables_are_read_only():
     for a in arrays:
         with pytest.raises(ValueError, match="read-only"):
             a.flat[0] = a.flat[0]
+
+
+def _counts(net):
+    from vulcan3 import composition
+
+    names = composition.atom_list
+    rows = {str(r["species"]): r for r in composition.compo[::-1]}  # first table row wins, as the code takes it
+    return np.asarray([[float(rows[sp][a]) for a in names] for sp in net.species]), names
+
+
+@pytest.mark.parametrize("path", _SHIPPED_BALANCE_NETWORKS, ids=os.path.basename)
+def test_every_row_of_a_shipped_network_conserves_every_element_and_the_charge(path):
+    """VULCAN 2's load-time check (make_chem_funs.py:727-747): an unbalanced row would hide behind the projection."""
+    from vulcan3 import composition
+    from vulcan3.network import parse_network
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # TiSNCHO's known duplicate rows
+        net = parse_network(path, duplicates_ok=True)
+    counts, names = _counts(net)
+    composition.refuse_unbalanced_rows(net, counts, names)
+
+
+def test_a_row_that_loses_atoms_is_refused_with_its_equation():
+    """A one-way sink to nothing, as a haze row with no composition would be, must not load."""
+    from dataclasses import replace
+
+    from vulcan3 import chem_funs, composition
+
+    net = chem_funs.NETWORK
+    counts, names = _counts(net)
+    i = 1  # the first forward row: drop its first product
+    stoich = net.product_stoich.copy()
+    stoich[i, 0] = 0.0
+    with pytest.raises(ValueError, match=rf"row {i} .*do not conserve|do not conserve.*row {i} "):
+        composition.refuse_unbalanced_rows(replace(net, product_stoich=stoich), counts, names)
