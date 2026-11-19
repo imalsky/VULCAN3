@@ -42,6 +42,7 @@ import pytest
         ({"use_botflux": True}, r"use_botflux open the column, so element_budget_tol=0.01"),
         ({"use_fix_sp_bot": {"H2O": 1e-3}, "element_budget_tol": float("inf")}, None),
         ({"use_fix_H2He": True}, r"use_fix_H2He open the column"),
+        ({"use_sat_surfaceH2O": True}, None),  # the pin needs condensation; without it nothing opens the column
     ],
     ids=[
         "inert_const_mix_key",
@@ -55,6 +56,7 @@ import pytest
         "open_column_finite_budget",
         "open_column_budget_off",
         "fix_h2he_finite_budget",
+        "inert_surface_h2o_pin",
     ],
 )
 def test_up_front_validation(overrides, error):
