@@ -231,6 +231,19 @@ def test_a_reversed_or_cross_section_duplicate_and_a_multiple_M_are_refused(tmp_
         netmod.parse_network(f)
 
 
+def test_a_photolysis_branch_gap_is_refused(tmp_path):
+    """Branches 1..n run in J order; VULCAN 2 raises on the missing `pho_rate_index[(sp, 2)]` (`op.py:2785`)."""
+    from vulcan3 import network as netmod
+
+    f = tmp_path / "net.txt"
+    f.write_text(
+        "1  [ H + OH -> H2O ]  1.0E-10  0.0  0.0\n# reverse stops\n# photo\n"
+        "3  [ H2O -> H + OH ]  H2O  1\n5  [ H2O -> H + H + O ]  H2O  3\n"
+    )
+    with pytest.raises(ValueError, match=r"H2O.*branch.*\[2\]"):
+        netmod.parse_network(f)
+
+
 def test_duplicate_reactions_refuse_naming_the_equations():
     """TiSNCHO's three upstream duplicates must refuse by default, warn on opt-in."""
     from vulcan3 import network as netmod

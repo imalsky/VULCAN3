@@ -506,7 +506,8 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
     ------
     ValueError
         If a reaction is duplicated or written in reverse (its contribution would be double-counted;
-        `duplicates_ok` downgrades this to a RuntimeWarning), the file has no `# reverse stops` line, or a row cannot
+        `duplicates_ok` downgrades this to a RuntimeWarning), the file has no `# reverse stops` line, a photo or ion
+        species skips a branch number, or a row cannot
         be read (a thermal row short of numeric rate coefficients, an unknown special row, a coefficient on M),
         naming the file and line.
     """
@@ -528,6 +529,19 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
             f"Network {network_path} has no '# reverse stops' line, so the rows with a thermal reverse rate are "
             "undefined. Add the line after the last such row, before the condensation or photo section."
         )
+    # J runs over branches 1..n; VULCAN 2 raises at a missing one (`op.py:2785`, `:2819`). Here its J would be summed
+    # into the species total with no reaction to receive it.
+    for kind, rate_index, n_branch in (
+        ("photo", st.pho_rate_index, st.n_branch),
+        ("ion", st.ion_rate_index, st.ion_branch),
+    ):
+        for sp, n in n_branch.items():
+            missing = [br for br in range(1, n + 1) if (sp, br) not in rate_index]
+            if missing:
+                raise ValueError(
+                    f"Network {network_path}: {kind} species {sp} has branches up to {n} but no row for branch "
+                    f"{missing}. Number its rows 1..n without gaps, matching br_ratio_1..n in its branch file."
+                )
     conden_indx = st.conden_indx if st.conden_indx is not None else nr + 1
 
     return Network(
