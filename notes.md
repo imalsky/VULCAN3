@@ -19,7 +19,7 @@ name in parentheses is the entry of that name here or in vulcan-retrieval's note
   on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test. It certified at 7601 accepted
   steps up to `46bbac7` [M, daw, one core]; since C30 (`1c6afe1`, M as a collision partner) its upwind phase converges
   near 2660 steps and the hybrid phase-1 budget (2000 steps, `op.py:1107-1108`) ends it at 4660 with longdy 0.58 [M,
-  bit-identical from `1c6afe1` to `32c6a95`]. A longer phase-1 budget departs from VULCAN 3; not decided.
+  bit-identical from `1c6afe1` to `32c6a95`]. The budget stays VULCAN 3's (the maintainer decided): a stated limit.
 - `oracle.yml` is `workflow_dispatch` only; last green dispatch at `ae17ec8` (the oracle job 85 min, each step-count job under 13; at `ff73d93` the runner's step counts were HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084). At `ae17ec8` the full tier
   with the pinned clone gives 518 passed, 38 skipped on daw (x86-64, CPU) and 519 passed, 37 skipped on arm64 [M]; every
   skip is a GPU or arm64 case on daw and a CUDA case on arm64.
