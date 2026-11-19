@@ -58,12 +58,13 @@ interface, see [`examples/quickstart.ipynb`](examples/quickstart.ipynb).
 
 GPU options:
 
-- `VULCAN3_SOLVER=ffi` solves each step with CUDA kernels. The results are
-  bitwise the same. It needs sm_80 or newer and a network of 96 species or
-  fewer. For a larger network, use `VULCAN3_SOLVER=fast`. Build the kernels
-  once per host with `python -m vulcan3.solver_fast --cuda`. This needs
-  `nvcc`. On a GH200, one WASP-39 b retrieval batch takes 301 s instead of
-  344 s.
+- `VULCAN3_SOLVER=ffi` solves each step with CUDA kernels. The results match
+  the CPU solver to roundoff, not bitwise. It needs sm_80 or newer and a
+  network of 96 species or fewer. For a larger network, use
+  `VULCAN3_SOLVER=fast`. Build the kernels once per host with
+  `python -m vulcan3.solver_fast --cuda`. This needs `nvcc`. Tuning the
+  kernel's factorization cut one WASP-39 b retrieval batch on a GH200 from
+  344 s to 301 s.
 - `VULCAN3_CHEM_RHS=grouped` computes the chemistry terms by reaction type.
   In the batched GH200 runner the results are bitwise the same. In other
   programs the last bits can change, so this option is off by default.
