@@ -221,8 +221,9 @@ Refused or not ported (no physics change)
   T-dependent species, `aflux_change` is absent with photochemistry off, `conden_min_lev` is empty, `conden_status`,
   `min_sat`, `sflux_raw` and `fix_e_indx` are not written, and `ion_wavelen` is empty. The saved config is `key =
   repr(value)` plus a YAML file, and a VULCAN 2 `.py` config cannot be read. Display-only keys (`config._IGNORED_KEYS`,
-  `output_humanread` among them, which writes a text dump in VULCAN 2) warn and are dropped. `diagnose.py`,
-  `tools/make_mix_table.py`, `print_actinic_flux.py` and the spectrum converters have no counterpart.
+  `output_humanread` among them, which writes a text dump in VULCAN 2) warn and are dropped. `diagnose.py` is
+  `vulcan3.diagnose.reaction_rates`; `tools/make_mix_table.py`, `print_actinic_flux.py` and the spectrum converters
+  are not ported (they reformat what the `.vul` holds).
 - Stricter than VULCAN 2, on values it runs with [M, make_config and setup probes at `e9cee8b`]: `humidity` above 1
   (VULCAN 2 multiplies it into the saturation, `build_atm.py:226`), `fix_species` with condensation off (inert there,
   `op.py:2896`, `:2922`), a stellar file with non-increasing wavelengths or negative flux (`interp1d` sorts it,
