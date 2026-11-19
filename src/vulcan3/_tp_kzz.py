@@ -412,7 +412,8 @@ def load_TPK(cfg: Config, pco: np.ndarray, *, pico: np.ndarray) -> dict[str, np.
             dtype=np.float64,
         )
     elif Kzz_prof == "file":
-        if "Kzz" not in out:
+        # With use_Kzz off master reads no column and keeps its zero Kzz (store.py:123, build_atm.py:420).
+        if use_Kzz and "Kzz" not in out:
             raise ValueError('Kzz_prof="file" requires atm_type="file" with a Kzz column.')
     else:
         raise ValueError(

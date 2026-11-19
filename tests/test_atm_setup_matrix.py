@@ -136,7 +136,11 @@ def test_load_TPK_kzz_modes(Kzz_prof):
 
 
 def test_disabled_switches_give_zero_arrays():
-    """use_Kzz, use_moldiff, use_settling and the BC-flux flags off give all-zero arrays of the right shape."""
+    """use_Kzz, use_moldiff, use_settling and the BC-flux flags off give all-zero arrays of the right shape.
+
+    use_Kzz off zeroes Kzz whatever Kzz_prof says, as master's preset zeros stay when no profile is read
+    (store.py:123, build_atm.py:420).
+    """
     from vulcan3.atm_setup import (
         compute_mol_diff,
         compute_pico,
@@ -163,7 +167,10 @@ def test_disabled_switches_give_zero_arrays():
         off, T, np.full(nz, 1e15), g, np.full(nz, 8e5), np.full(nz, 1e5), np.ones(ni), np.zeros(ni), sp
     )
     arrays = {
-        "Kzz": (load_TPK(tpk_cfg(use_Kzz=False, P_b=1e6), pco, pico=np.asarray(compute_pico(pco)))["Kzz"], (nz - 1,)),
+        "Kzz": (
+            load_TPK(tpk_cfg(use_Kzz=False, Kzz_prof="file", P_b=1e6), pco, pico=np.asarray(compute_pico(pco)))["Kzz"],
+            (nz - 1,),
+        ),
         "vs": (compute_settling_velocity(off, T, g, sp, rho_p={}, r_p={}), (nz - 1, ni)),
         "Dzz": (mol["Dzz"], (nz - 1, ni)),
         "Dzz_cen": (mol["Dzz_cen"], (nz, ni)),
