@@ -156,3 +156,18 @@ def test_kinetics_set_matches_sat_set():
 
     assert set(SUPPORTED_CONDEN_KINETICS) <= set(_SUPPORTED_CONDENSABLES)
     assert set(_SUPPORTED_CONDENSABLES) - set(SUPPORTED_CONDEN_KINETICS) == {"H2S"}
+
+
+@pytest.mark.parametrize(("use_topflux", "warned"), [(False, True), (True, False)])
+def test_escape_without_a_top_flux_is_logged(caplog, use_topflux, warned):
+    """Both codes add escape only through the top-flux term (op.py:1487-1490), so diff_esc alone does nothing."""
+    import logging
+
+    from vulcan3 import make_config
+    from vulcan3.runtime_validation import validate_runtime_config
+
+    top = {"use_topflux": True, "top_BC_flux_file": "atm/BC_top_Jupiter.txt"} if use_topflux else {}
+    cfg = make_config(diff_esc=["H"], element_budget_tol=float("inf"), **top)
+    with caplog.at_level(logging.WARNING, logger="vulcan3"):
+        validate_runtime_config(cfg)
+    assert ("diff_esc ['H'] is not applied" in caplog.text) == warned, caplog.text

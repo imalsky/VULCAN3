@@ -26,6 +26,9 @@ gas (pre-step mixing ratio at least `mtol` and density at least `atol`) negative
 negative cells; -inf and NaN fail the step (notes "Parity ledger", C29).
 The former `nega_cut` key is refused with this remedy.
 
+`diff_esc` acts only with `use_topflux` on, in both codes: escape enters the right-hand side through the top flux. Without
+it validation logs a WARNING; under `use_vm_mol` the Jacobian's escape entry still sees it.
+
 `use_botflux` reads `bot_BC_flux_file`, and a row naming a species outside the network is refused. The shipped
 `atm/BC_bot_Earth.txt` names H2SO4, NO3 and HNO3, which the default network lacks: `Earth.yaml` runs it on
 `SNCHO_full_photo_network.txt`, which holds them. With another network, copy the file and delete those rows.

@@ -111,7 +111,15 @@ def test_a_diffusion_option_the_run_would_ignore_is_refused(flags, expect):
     from vulcan3.runtime_validation import _validate_diffusion_flags
 
     cfg = SimpleNamespace(
-        **{"use_moldiff": True, "use_vm_mol": False, "use_settling": False, "use_hybrid_vm_mol": False, **flags}
+        **{
+            "use_moldiff": True,
+            "use_vm_mol": False,
+            "use_settling": False,
+            "use_hybrid_vm_mol": False,
+            "diff_esc": [],
+            "use_topflux": False,
+            **flags,
+        }
     )
     errors = _validate_diffusion_flags(cfg)
     assert errors == [] if expect is None else any(expect in e for e in errors), errors

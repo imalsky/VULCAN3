@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 import math
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -36,6 +37,8 @@ _LIST_KNOBS = ("condense_sp", "non_gas_sp", "fix_species", "T_cross_sp", "scat_s
 
 # Rejections before a force-accept; `_loop_body._decide_step`. The one value allowed.
 _RETRY_BUDGET = 110
+
+logger = logging.getLogger(__name__)
 
 
 class RuntimeConfigError(ValueError, RuntimeError):
@@ -320,8 +323,19 @@ def _validate_slope_min(cfg: Config) -> list[str]:
 
 
 def _validate_diffusion_flags(cfg: Config) -> list[str]:
-    """Return errors for a molecular-diffusion option that is switched on where the run would ignore it."""
+    """Return errors for a molecular-diffusion option that is switched on where the run would ignore it.
+
+    Escape without a top flux is legal in both codes and inert, so it is logged, not refused.
+    """
     errors: list[str] = []
+    # Both codes add escape only through the top-flux term (op.py:1487-1490, `jax_step._apply_diffusion_jax`).
+    if cfg.diff_esc and not bool(cfg.use_topflux):
+        logger.warning(
+            "diff_esc %s is not applied: use_topflux is off, and escape enters the right-hand side only through the "
+            "top flux (as in VULCAN 2); under use_vm_mol only the Jacobian's escape entry sees it. Set use_topflux: "
+            "true to apply it.",
+            list(cfg.diff_esc),
+        )
     if not bool(cfg.use_moldiff):
         errors.extend(
             f"{key}=True needs use_moldiff=True: with molecular diffusion off the option does nothing. Set "
