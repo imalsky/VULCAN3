@@ -256,11 +256,13 @@ def _validate_numerical_bounds(cfg: Config) -> list[str]:
             f"dt_var_min={dt_var_min:g} and dt_min={dt_min:g} must take a reject chain from {dt_start:g} s below "
             f"dt_min within {_RETRY_BUDGET} rejections."
         )
-    # int32 in the runner; the cadences are modulo divisors there (x % 0 does not raise in XLA).
+    # int32 in the runner; the cadences are modulo divisors there (x % 0 does not raise in XLA). A one-slot
+    # conv_step look-back compares the newest state with itself (op.py:1037 caps the look-back at count - conv_step).
     for key in _COUNTERS:
         v = float(getattr(cfg, key))
-        if not (math.isfinite(v) and v.is_integer() and 1 <= v < 2**31):
-            errors.append(f"{key}={v:g} must be an integer in [1, 2**31).")
+        low = 2 if key == "conv_step" else 1
+        if not (math.isfinite(v) and v.is_integer() and low <= v < 2**31):
+            errors.append(f"{key}={v:g} must be an integer in [{low}, 2**31).")
     # A unit slip (degrees, percent) runs on to a plausible wrong answer.
     sl_angle = float(cfg.sl_angle)
     if not 0.0 <= sl_angle < math.pi / 2.0:

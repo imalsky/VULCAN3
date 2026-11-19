@@ -71,6 +71,8 @@ _NAN = float("nan")
         {"dt_min": 1.0e-30},
         {"dt_min": 0.0},
         {"humidity": 50.0},
+        # a one-slot look-back compares the newest state with itself
+        {"conv_step": 1},
         *(
             dict(**{k: v})
             for k in ("count_min", "batch_max_retries", "ini_update_photo_frq", "final_update_photo_frq")
