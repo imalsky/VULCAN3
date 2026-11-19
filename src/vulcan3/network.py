@@ -303,9 +303,10 @@ def _read_reaction(st: _ParseState, file_id_str: str, eq: str, tail: str) -> Non
     file_id = int(file_id_str) if file_id_str else 0
     eq = eq.strip()
     reactants, products = _parse_eq(eq)
-    # The rate takes one M factor per side; VULCAN 2 takes a `2*M` term for a species named M.
-    if any(sp == "M" and stoich != 1 for stoich, sp in reactants + products):
-        raise ValueError(f"{eq!r} writes more than one M as a coefficient on M. Write a single M on each side.")
+    # The rate takes one M factor per side; VULCAN 2 takes a `2*M` term for a species named M and builds `M*M`
+    # from `M + M`.
+    if any(sum(stoich for stoich, sp in side if sp == "M") > 1 for side in (reactants, products)):
+        raise ValueError(f"{eq!r} writes more than one M on a side. Write a single M on each side.")
 
     for _stoich, sp in reactants + products:
         if sp != "M" and sp not in st.species_idx:
@@ -327,6 +328,15 @@ def _read_reaction(st: _ParseState, file_id_str: str, eq: str, tail: str) -> Non
             f"{eq!r} is in the special section, whose only hardcoded rate is {_SPECIAL_OH_CH3!r}. "
             "Move the row to a section with its Arrhenius coefficients."
         )
+    photo_meta: tuple[str, int] | None = None
+    if section in (_SECTION_PHOTO, _SECTION_ION):
+        # VULCAN 2 reads the species and branch with int(columns[1]) and raises without them (`op.py:245`, `:266`).
+        if len(cols) < 2 or not cols[1].isdigit():
+            raise ValueError(
+                f"{eq!r} is a {section} row without its species and branch columns; it has {tail.strip()!r}. "
+                "Write them after the equation, as in 'H2O 1'."
+            )
+        photo_meta = (cols[0], int(cols[1]))
     rec: dict[str, Any] = {
         "parser_i": parser_i,
         "section": section,
@@ -337,17 +347,14 @@ def _read_reaction(st: _ParseState, file_id_str: str, eq: str, tail: str) -> Non
         "has_M_reac": any(sp == "M" for _, sp in reactants),
         "has_M_prod": any(sp == "M" for _, sp in products),
         "num_cols": num_cols,
-        # Photo/ion-specific metadata: columns[0]=species, columns[1]=branch
-        "photo_meta": (cols[0], int(cols[1]))
-        if (section in (_SECTION_PHOTO, _SECTION_ION) and len(cols) >= 2 and cols[1].isdigit())
-        else None,
+        "photo_meta": photo_meta,  # (species, branch) of a photo or ion row
     }
     st.forward_records.append(rec)
     st.Rf_text[parser_i] = eq
     if section in _THERMAL_SECTIONS:
         st.temp_ranges[parser_i] = _parse_temp_ranges(cols[len(num_cols) :])
 
-    if section in (_SECTION_PHOTO, _SECTION_ION):
+    if photo_meta is not None:
         if file_id != parser_i:
             st.stale_ids.append((parser_i, file_id, eq))
         sp_list, rate_index, n_br = (
@@ -355,12 +362,11 @@ def _read_reaction(st: _ParseState, file_id_str: str, eq: str, tail: str) -> Non
             if section == _SECTION_PHOTO
             else (st.ion_sp, st.ion_rate_index, st.ion_branch)
         )
-        target_sp = cols[0] if cols else eq.split()[0]
+        target_sp, branch = photo_meta
         if target_sp not in sp_list:
             sp_list.append(target_sp)
-        if rec["photo_meta"] is not None:
-            rate_index[rec["photo_meta"]] = parser_i
-            n_br[target_sp] = max(n_br.get(target_sp, 0), rec["photo_meta"][1])
+        rate_index[photo_meta] = parser_i
+        n_br[target_sp] = max(n_br.get(target_sp, 0), branch)
 
     st.parser_i += 2
 
@@ -508,7 +514,7 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
         If a reaction is duplicated or written in reverse (its contribution would be double-counted;
         `duplicates_ok` downgrades this to a RuntimeWarning), the file has no `# reverse stops` line, a photo or ion
         species skips a branch number, or a row cannot be read (a thermal row short of numeric rate coefficients, an
-        unknown special row, a coefficient on M), naming the file and line.
+        unknown special row, more than one M on a side, a photo row without its branch), naming the file and line.
     """
     from ._paths import resolve_data_path
 
