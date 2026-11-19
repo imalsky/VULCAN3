@@ -752,6 +752,18 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   same inputs flips at 1846 and ends at 3846 at longdy 1.50-1.71. Its next-step estimate there is set by top-layer
   S8, C6H5, CH3CCH and C2H3CN, not by the condensate.
 
+- K2-18b and the one-sided `CH3SCH2 + M -> H2CS + CH3` row (C26 class, corrected in `a9b238d`) [M, daw CPU, one
+  core, `32c6a95` against `de7d98f`, `scratch/k2_mrow/` there]: the row alone moves the column (the HNCO row alone
+  <= 0.004 dex, same 1961 steps). Old row: the association H2CS + CH3 (+M) ran slow by exactly M (3.6e11 to 2.1e21
+  cm^-3 over the column; (kf M / k_rev,eff) / K_c = M, against 1.000 with the product M), as both codes multiply M per
+  side as written and build K_eq from non-M species (`make_chem_funs.py:228-256`, `:569-580`; `network.py:473-474`).
+  Corrected: 1876 steps; at layer 115 H2CS 3.2e-5 -> 1.0e-11, CS 1.3e-5 -> 5.4e-9 (H2CS was lost 99.7% to photolysis,
+  now 100% to the association); the sulfur moves into CH3SCH2 (2.0e-5 at layer 115, 7.9e-5 at layer 90); DMS 5.4e-18
+  -> 2.5e-11 at layer 30, made 100% by H2 + CH3SCH2 -> CH3SCH3 + H. Two open questions: from layer 60 up the
+  association runs at the collision ceiling (NASA-9 reaction enthalpy 163-166 kJ/mol above E_inf 138 kJ/mol gives it
+  an activation energy near -3000 K), and CH3SCH2 has no attack by H, O or O2 and no photolysis in the network. The
+  row's k0 (2.16e-16, no T dependence) acts only at the bottom layer; kinf = 4.4e13 exp(-16600/T) s^-1.
+
 ## Design records
 
 ### Charter, configs, API
