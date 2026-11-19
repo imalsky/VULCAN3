@@ -42,6 +42,7 @@ ini_mix: EQ  # initial abundances: EQ, const_mix, const_lowT, vulcan_ini or tabl
 # -3.0, for networks with no Mg/Si/Fe species. ..._lodders2009.dat: all solar
 # (upstream's file). Match this file before comparing with VULCAN 2.
 fastchem_solar_abundance_file: thermo/solar_element_abundances.dat
+O_sequestered_frac: 0.0  # fraction of bulk O held in condensates outside the network (silicates), 0 <= f < 1; EQ only
 const_mix:  # uniform (constant with pressure) mixing ratios; only read when ini_mix is const_mix
   CH4: 0.00055522
   O2: 0.0004807

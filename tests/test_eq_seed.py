@@ -546,3 +546,48 @@ def test_photo_off_seed_leaves_out_the_photolysis_only_species(tmp_path) -> None
     assert np.isfinite(b["y"]).all()
     assert np.all(a["y"][:, len(sp_kept) :] == 0.0), "a photolysis-only species entered the photo-off seed"
     np.testing.assert_array_equal(a["y"][:, : len(sp_kept)], b["y"])
+
+
+def test_oxygen_sequestration_scales_only_the_seed_oxygen(monkeypatch) -> None:
+    """`O_sequestered_frac` f leaves (1 - f) of the bulk O to the gas, on both element-vector paths, after overrides."""
+    import jax.numpy as jnp
+
+    from vulcan3 import composition, ini_abun
+
+    Tco, p_bar = _hd189_column()
+    elements = ini_abun.seed_elements()
+    o = elements.index("O")
+    idx = ini_abun.ratio_indices(["O", "C"])
+    ratios = jnp.asarray([5.0e-4, 3.0e-4])
+
+    def seed_and_vectors(frac: float):
+        monkeypatch.setattr(ini_abun._CFG, "O_sequestered_frac", frac, raising=False)
+        b = ini_abun._element_vector()
+        b_arr = np.asarray(ini_abun.element_vector(ratios, idx))
+        ymix = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b)))
+        return b, b_arr, ymix
+
+    b0, arr0, y0 = seed_and_vectors(0.0)
+    b2, arr2, y2 = seed_and_vectors(0.2)
+    keep = np.arange(len(elements)) != o
+    for before, after in ((b0, b2), (arr0, arr2)):
+        assert after[o] == 0.8 * before[o]
+        np.testing.assert_array_equal(after[keep], before[keep])
+
+    counts = np.asarray(composition.compo_array)[:, [composition.atom_list.index(e) for e in elements]]
+    per_h0, per_h2 = (y @ counts for y in (y0, y2))
+    per_h0, per_h2 = per_h0 / per_h0[:, [elements.index("H")]], per_h2 / per_h2[:, [elements.index("H")]]
+    expected = np.where(keep, 1.0, 0.8)
+    np.testing.assert_allclose(per_h2 / per_h0, np.broadcast_to(expected, per_h0.shape), rtol=ELEMENT_RTOL, atol=0.0)
+
+
+@pytest.mark.parametrize(
+    ("frac", "ini_mix", "match"), [(1.0, "EQ", r"1\.0.*\[0, 1\)"), (0.2, "const_mix", r"0\.2.*EQ")]
+)
+def test_oxygen_sequestration_refuses_a_bad_or_inert_fraction(monkeypatch, frac, ini_mix, match) -> None:
+    from vulcan3 import ini_abun
+
+    monkeypatch.setattr(ini_abun._CFG, "O_sequestered_frac", frac, raising=False)
+    monkeypatch.setattr(ini_abun._CFG, "ini_mix", ini_mix)
+    with pytest.raises(ValueError, match=match):
+        ini_abun.compute_initial_abundance(None)

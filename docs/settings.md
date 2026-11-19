@@ -34,3 +34,9 @@ The former `nega_cut` key is refused with this remedy.
 a second such failure stops the run with `DtMinFrozenError`, which a caller that jits its solve raises itself (docs/api.md).
 Each force-accept is counted, and a run that recovers from one ends with a WARNING giving the count, where VULCAN 2
 prints a line per force-accept.
+
+`O_sequestered_frac` (fraction of bulk O, default 0, not in VULCAN 2) is the share of oxygen held deep in the planet by
+condensates of elements outside the network, such as silicates. The `EQ` seed multiplies O in its elemental abundances by
+`1 - O_sequestered_frac`, after the preset, the `<X>_H` overrides and any per-run ratios, so the gas column holds that
+much less O and every other element is unchanged. A value outside [0, 1), or a nonzero value with another `ini_mix`, is
+refused at setup.

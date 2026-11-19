@@ -393,7 +393,7 @@ def element_vector(ratios: jnp.ndarray, idx: jnp.ndarray) -> jnp.ndarray:
     Starts from `_element_vector()`, the host path's own no-override vector,
     so `use_solar` and the `cfg.<X>_H` overrides have the same precedence on
     both paths, and it is bit-identical to `_element_vector({name: value,
-    ...})` for the same elements.
+    ...})` for the same elements: a replaced O also loses `O_sequestered_frac`.
 
     Parameters
     ----------
@@ -407,7 +407,8 @@ def element_vector(ratios: jnp.ndarray, idx: jnp.ndarray) -> jnp.ndarray:
     jnp.ndarray [n_elements]
         `b` in `seed_elements()` order, relative to H.
     """
-    return jnp.asarray(_element_vector()).at[idx].set(jnp.asarray(ratios, dtype=jnp.float64))
+    scaled = jnp.asarray(ratios, dtype=jnp.float64) * jnp.asarray(_o_scale())[idx]
+    return jnp.asarray(_element_vector()).at[idx].set(scaled)
 
 
 def _element_vector(ratios: dict | None = None) -> np.ndarray:
@@ -415,7 +416,8 @@ def _element_vector(ratios: dict | None = None) -> np.ndarray:
 
     The base is the same on both paths -- the preset when `use_solar` is
     true, else the preset with `cfg.<X>_H` applied -- and `ratios` replaces
-    entries on top of it, exactly as `element_vector` does with `idx`.
+    entries on top of it, exactly as `element_vector` does with `idx`. Last, O
+    is scaled by 1 - `O_sequestered_frac`.
     """
     b = _preset_vector() if _CFG.use_solar is True else _base_vector()
     if ratios:
@@ -424,7 +426,32 @@ def _element_vector(ratios: dict | None = None) -> np.ndarray:
             if sp not in elements:
                 raise KeyError(f"ratios[{sp!r}] is not an element of the loaded network ({', '.join(elements)}).")
             b[elements.index(sp)] = float(value)
-    return b
+    sequestered: np.ndarray = b * _o_scale()
+    return sequestered
+
+
+def _o_sequestered_frac() -> float:
+    """Return `cfg.O_sequestered_frac`, the fraction of bulk O held in condensates outside the network."""
+    frac = float(_CFG.O_sequestered_frac)
+    if not 0.0 <= frac < 1.0:
+        raise ValueError(
+            f"O_sequestered_frac={frac!r} is outside [0, 1): it is the fraction of the bulk O removed from the gas. "
+            "Set a value in [0, 1)."
+        )
+    return frac
+
+
+def _o_scale() -> np.ndarray:
+    """`(E,)` factor on the bulk elemental vector: 1 - `O_sequestered_frac` on O, 1 elsewhere."""
+    scale = np.ones(len(seed_elements()), dtype=np.float64)
+    frac = _o_sequestered_frac()
+    if frac > 0.0 and "O" not in seed_elements():
+        raise ValueError(
+            f"O_sequestered_frac={frac!r} has no effect: the {_CFG.network!r} network carries no O. Set it to 0."
+        )
+    if "O" in seed_elements():
+        scale[seed_elements().index("O")] = 1.0 - frac
+    return scale
 
 
 def _abun_lowT_residual(
@@ -794,11 +821,17 @@ def compute_initial_abundance(data_atm: types.SimpleNamespace) -> IniAbunOutputs
     Raises
     ------
     ValueError
-        If `ini_mix` is not a mode, or `use_ion` is on and the network has no ions.
+        If `ini_mix` is not a mode, `use_ion` is on and the network has no ions, or `O_sequestered_frac` is outside
+        [0, 1) or nonzero for a mode other than EQ.
     """
     mix = _CFG.ini_mix
     if mix not in _MODE_DISPATCH:
         raise ValueError(f"ini_mix={mix!r} is not a mode; choose one of {sorted(_MODE_DISPATCH)}.")
+    if _o_sequestered_frac() > 0.0 and mix != "EQ":
+        raise ValueError(
+            f"O_sequestered_frac={_CFG.O_sequestered_frac!r} acts only on the elemental abundances of ini_mix='EQ', "
+            f"and ini_mix={mix!r} does not read them. Set it to 0 or use ini_mix='EQ'."
+        )
     y, charge_list = _MODE_DISPATCH[mix](data_atm)
     y = _apply_condense(y, data_atm)
     ymix = _compute_ymix(y)
