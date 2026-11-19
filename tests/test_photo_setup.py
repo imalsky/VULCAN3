@@ -122,6 +122,23 @@ def test_branch_key_order_is_deterministic():
             assert branches == sorted(branches), f"{name}: {sp} branches {branches}"
 
 
+@pytest.mark.strict_isolation
+@pytest.mark.parametrize(
+    ("sp", "match"),
+    [("CH4", r"CH4.*no CH4_cross_<T>K\.csv"), ("XYZ", r"\['XYZ'\].*not photodissociated")],
+    ids=["no T files", "not in the network"],
+)
+def test_a_T_cross_sp_entry_without_T_dependent_data_is_refused(monkeypatch, sp, match):
+    """VULCAN 2 raises on both (`op.py:553`, `:615`); neither may fall back to room T or vanish."""
+    from vulcan3 import photo_setup
+    from vulcan3.config import default_config
+
+    monkeypatch.setattr(default_config(), "T_cross_sp", [sp])
+    var, atm = build_state_through_read_rate()
+    with pytest.raises(ValueError, match=match):
+        photo_setup._build_photo_static_dense(var, atm)
+
+
 def test_t_dependent_samples_are_found_under_the_configured_root(tmp_path, monkeypatch):
     """Discovery reads the same `cross_folder` as the files it lists."""
     from types import SimpleNamespace

@@ -331,6 +331,13 @@ def _build_photo_static_dense(var: types.SimpleNamespace, atm: types.SimpleNames
     absp_sp_list = sorted(set(photo_sp) | set(ion_sp))
     use_ion = bool(_CFG.use_ion)
     T_cross_sp = list(_CFG.T_cross_sp)
+    # VULCAN 2 raises on a T_cross_sp entry it has no branches for (`op.py:615`).
+    not_photo = [sp for sp in T_cross_sp if sp not in photo_sp]
+    if not_photo:
+        raise ValueError(
+            f"T_cross_sp {not_photo} are not photodissociated in the network, so they have no T-dependent "
+            "cross section to use. Remove them from T_cross_sp."
+        )
     scat_sp_list = list(_CFG.scat_sp)
     nz = int(atm.Tco.shape[0])
 
@@ -359,6 +366,12 @@ def _build_photo_static_dense(var: types.SimpleNamespace, atm: types.SimpleNames
             ratio_raw[sp] = _read_table(sp_path + "_branch.csv", True)
         if sp in T_cross_sp:
             T_list = _discover_T_cross_files(sp)
+            # VULCAN 2 raises here (`op.py:553`); the room-T cross section alone is not T-dependent.
+            if not T_list:
+                raise ValueError(
+                    f"T_cross_sp names {sp}, but {folder}{sp}/ has no {sp}_cross_<T>K.csv file. "
+                    f"Remove {sp} from T_cross_sp or add its T-dependent cross sections."
+                )
             cross_T_sp_list_local[sp] = T_list
             for tt in T_list:
                 cross_T_raw[(sp, tt)] = _read_table(sp_path + "_cross_" + str(tt) + "K.csv", cross_cols)
