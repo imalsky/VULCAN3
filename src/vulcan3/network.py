@@ -179,7 +179,7 @@ def _announce_duplicate_reactions(network_path: str, dups: list[tuple[str, int, 
     more = f" (+{len(dups) - _DUPS_SHOWN} more)" if len(dups) > _DUPS_SHOWN else ""
     msg = (
         f"Network {network_path} contains {len(dups)} duplicated reaction(s) "
-        f"within the same section: {shown}{more}. Both copies are parsed as "
+        f"(repeated, or written in reverse): {shown}{more}. Both copies are parsed as "
         "independent reactions, so their rate contributions are DOUBLE-COUNTED "
         "in both directions. Fix the network file before using it for science, "
         "or pass duplicates_ok=True to parse it anyway for inspection."
@@ -303,6 +303,9 @@ def _read_reaction(st: _ParseState, file_id_str: str, eq: str, tail: str) -> Non
     file_id = int(file_id_str) if file_id_str else 0
     eq = eq.strip()
     reactants, products = _parse_eq(eq)
+    # The rate takes one M factor per side; VULCAN 2 takes a `2*M` term for a species named M.
+    if any(sp == "M" and stoich != 1 for stoich, sp in reactants + products):
+        raise ValueError(f"{eq!r} writes more than one M as a coefficient on M. Write a single M on each side.")
 
     for _stoich, sp in reactants + products:
         if sp != "M" and sp not in st.species_idx:
@@ -395,20 +398,24 @@ def _read_file(network_path: str) -> _ParseState:
 
 
 def _find_duplicates(forward_records: list[dict]) -> list[tuple[str, int, int]]:
-    """Find reactions repeated within one section, which this positional parser would double-count."""
-    seen_eq: dict[tuple, int] = {}
+    """Find reactions this positional parser would double-count.
+
+    A row before the photo section matches another anywhere before it, in either direction, as in VULCAN 2's
+    `check_duplicate` (`make_chem_funs.py:749-766`); a photo or ion row matches one of its own section and branch.
+    """
+    seen: dict[tuple, int] = {}
     dups: list[tuple[str, int, int]] = []
     for rec in forward_records:
-        key = (
-            rec["section"],
-            tuple(sorted(rec["reactants_collapsed"].items())),
-            tuple(sorted(rec["products_collapsed"].items())),
-            rec["has_M_reac"],
-            rec["has_M_prod"],
-            rec["photo_meta"],
-        )
-        first_i = seen_eq.setdefault(key, rec["parser_i"])
-        if first_i != rec["parser_i"]:
+        reac = (tuple(sorted(rec["reactants_collapsed"].items())), rec["has_M_reac"])
+        prod = (tuple(sorted(rec["products_collapsed"].items())), rec["has_M_prod"])
+        if rec["section"] in (_SECTION_PHOTO, _SECTION_ION):
+            keys: list[tuple] = [(rec["section"], rec["photo_meta"], reac, prod)]
+        else:
+            keys = [(reac, prod), (prod, reac)]
+        first_i = next((seen[key] for key in keys if key in seen), None)
+        if first_i is None:
+            seen[keys[0]] = rec["parser_i"]
+        else:
             dups.append((rec["Rf"], first_i, rec["parser_i"]))
     return dups
 
@@ -498,9 +505,10 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
     Raises
     ------
     ValueError
-        If a reaction is duplicated within one section (its contribution would be double-counted; `duplicates_ok`
-        downgrades this to a RuntimeWarning), the file has no `# reverse stops` line, or a row cannot be read (a
-        thermal row short of numeric rate coefficients among them), naming the file and line.
+        If a reaction is duplicated or written in reverse (its contribution would be double-counted;
+        `duplicates_ok` downgrades this to a RuntimeWarning), the file has no `# reverse stops` line, or a row cannot
+        be read (a thermal row short of numeric rate coefficients, an unknown special row, a coefficient on M),
+        naming the file and line.
     """
     from ._paths import resolve_data_path
 

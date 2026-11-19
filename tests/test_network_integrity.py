@@ -1,7 +1,7 @@
 """Network-file integrity: no silent duplicates, positional photo indices, pinned T-range exposure."""
 
 # The parser is positional and appends every reaction row, so a reaction
-# duplicated within one section is double-counted in both directions with no
+# repeated (in any section before photo, or reversed) is double-counted with no
 # error. The vendored TiSNCHO network ships three such duplicates (an upstream
 # data bug; no shipped config selects it): `parse_network` must REFUSE them
 # (warn under `duplicates_ok=True`), and the networks the shipped configs DO
@@ -206,6 +206,28 @@ def test_a_network_without_the_reverse_stops_line_is_refused(tmp_path):
     f = tmp_path / "net.txt"
     f.write_text("1  [ H + H -> H2 ]  1.0E-10  0.0  0.0\n")
     with pytest.raises(ValueError, match="# reverse stops"):
+        netmod.parse_network(f)
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        "1  [ H + OH -> H2O ]  1.0E-10  0.0  0.0\n3  [ H2O -> OH + H ]  1.0E-10  0.0  0.0",
+        (
+            "1  [ H + H + M -> H2 + M ]  1.0E-30  0.0  0.0\n"
+            "# 3-body reactions without high-pressure rates\n3  [ H + H + M -> H2 + M ]  1.0E-30  0.0  0.0"
+        ),
+        "1  [ H + H + 2*M -> H2 + M ]  1.0E-30  0.0  0.0",
+    ],
+    ids=["reversed", "across sections", "2*M"],
+)
+def test_a_reversed_or_cross_section_duplicate_and_a_multiple_M_are_refused(tmp_path, rows):
+    """A thermal row repeated in reverse or in another section is double-counted; `2*M` would count as one M."""
+    from vulcan3 import network as netmod
+
+    f = tmp_path / "net.txt"
+    f.write_text(f"{rows}\n# reverse stops\n")
+    with pytest.raises(ValueError, match=r"duplicated reaction|more than one M"):
         netmod.parse_network(f)
 
 

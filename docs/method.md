@@ -22,7 +22,10 @@ with master at machine precision. Test oracles are in `tests/_oracles.py`.
 `network.parse_network` reads the sections in file order: two-body, three-body with `k_inf` (Lindemann), three-body
 without `k_inf`, special (hardcoded), condensation, radiative recombination, photo and ionisation. Radiative-recombination
 networks are refused. So are a thermal row with fewer than three leading numeric coefficients (`A n E`; six with `k_inf`)
-and a special row other than `OH + CH3 + M -> CH3OH + M`, the one hardcoded rate, as VULCAN 2 fails on both.
+and a special row other than `OH + CH3 + M -> CH3OH + M`, the one hardcoded rate, as VULCAN 2 fails on both. A coefficient
+on M (`2*M`) is refused: the rate takes one M. A repeated reaction is refused, where VULCAN 2's `check_duplicate` only
+warns: a row before the photo section matches any earlier one in either direction, a photo or ion row one of its own
+section and branch.
 
 Forward reactions sit at odd parser indices with a reverse slot at `i+1`. Reverse rates come from NASA-9 Gibbs energies.
 Thermal reverse rates fill only slots below `stop_rev_indx` (the `# reverse stops` line; a file without one is refused,
