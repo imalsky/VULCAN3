@@ -447,7 +447,7 @@ def _validate_condensation_network(cfg: Config, net: Network) -> list[str]:
     # relaxed gas has no live row: its rate is held at zero.
     # A row counts only as its gas's full condensation reaction, as `conden.make_conden_spec` matches it.
     live = np.flatnonzero(net.is_conden & net.is_forward)
-    sides = {int(i): [s.strip() for s in net.Rf[int(i)].split(" -> ")] for i in live}
+    sides = {int(i): [s.strip() for s in net.Rf[int(i)].partition(" -> ")[::2]] for i in live}
     rows = {gas: i for i, (gas, product) in sides.items() if GAS_TO_CONDENSATE.get(gas) == product}
     relaxed = RELAX_SPECIES & set(cfg.use_relax)
     removed = {int(i) for i in cfg.remove_list}

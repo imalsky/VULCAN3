@@ -149,6 +149,19 @@ def test_remove_list_on_a_live_condensation_row_is_refused(sulfur_net):
     assert _validate_condensation_network(relaxed, sulfur_net) == []
 
 
+def test_unspaced_condensation_row_is_inert(sulfur_net):
+    """The parser takes `S8->S8_l_s`, but the rate update matches only the spaced text, as master's op.py:1119 does."""
+    import dataclasses
+
+    from vulcan3 import make_config
+    from vulcan3.runtime_validation import _validate_condensation_network
+
+    rf = {i: ("S8->S8_l_s" if text == "S8 -> S8_l_s" else text) for i, text in sulfur_net.Rf.items()}
+    assert rf != sulfur_net.Rf
+    errors = _validate_condensation_network(make_config(**_S8_CONDENSATION), dataclasses.replace(sulfur_net, Rf=rf))
+    assert any("condense_sp entries ['S8'] would do nothing" in e for e in errors), errors
+
+
 def test_kinetics_set_matches_sat_set():
     """The kinetics tier stays a subset of the saturation tier, and the only sat-only species is H2S."""
     from vulcan3._saturation import _SUPPORTED_CONDENSABLES
