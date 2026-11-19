@@ -92,6 +92,22 @@ def test_overrides_win_over_yaml_and_derived():
     assert default_config() is default_config()  # cached singleton
 
 
+def test_flags_given_as_0_or_1_load_as_booleans(tmp_path):
+    """A 0 / 1 flag loads as a bool, from a file or an override; any other non-bool value is refused.
+
+    VULCAN 2 tests `== True`, so 1 is on; setup tests `is True`.
+    """
+    path = tmp_path / "flags.yaml"
+    path.write_text("use_ion: 1\nuse_photo: 0\n")
+    for cfg in (load_config(path), load_config("default", use_ion=1, use_photo=0)):
+        assert cfg.use_ion is True
+        assert cfg.use_photo is False
+    with pytest.raises(ValueError, match=r"use_condense=2 must be true or false"):
+        load_config("default", use_condense=2)
+    with pytest.raises(ValueError, match=r"use_solar='yes' must be true or false"):
+        load_config("default", use_solar="yes")
+
+
 def test_cwd_configs_override(tmp_path, monkeypatch):
     cfgdir = tmp_path / "configs"
     cfgdir.mkdir()

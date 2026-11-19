@@ -1,6 +1,8 @@
 # Settings
 
 Run settings are config keys: `configs/default.yaml` lists them, and `config.py` and `runtime_validation.py` hold the refusals.
+A flag (a key whose `default.yaml` value is true or false) also takes 0 or 1, as VULCAN 2's `== True` reads it, and loads as a
+bool; any other value is refused.
 These environment variables are read once in the process, and a bad value is refused. The first three must be set before the
 first `import vulcan3`; `cli_main` re-execs once to match a config, the Python API does not. When one of them
 replaces a value that the loaded config file names (not the packaged `default.yaml`), `load_config` logs a WARNING

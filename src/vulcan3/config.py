@@ -15,6 +15,7 @@ from __future__ import annotations
 import copy
 import functools
 import logging
+import numbers
 import re
 import sys
 import types
@@ -23,6 +24,7 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import yaml
 
 from . import _settings
@@ -305,6 +307,19 @@ def _apply_frozen_env(d: dict[str, Any], raw: dict[str, Any], source: str) -> No
         d[key] = selected
 
 
+def _coerce_flags(d: dict[str, Any], source: str) -> None:
+    """Load each flag (a knob whose default.yaml value is a bool) as a bool: VULCAN 2 tests `== True`, so 1 is on.
+
+    Setup tests `is True` and the runner truthiness, so a flag left as an int would take both branches.
+    """
+    for key, default in _packaged_defaults().items():
+        if isinstance(default, bool) and key in d and not isinstance(d[key], bool):
+            value = d[key]
+            if not (isinstance(value, (numbers.Integral, np.bool_)) and value in (0, 1)):
+                raise ValueError(f"{source}: {key}={value!r} must be true or false (or 0 / 1).")
+            d[key] = bool(value)
+
+
 def _resolve_derived(d: dict[str, Any]) -> None:
     """Fill derived values (only when absent) and normalize a couple of types."""
     for key, fn in _DERIVED:
@@ -335,7 +350,7 @@ def load_config(name_or_path: str | os.PathLike = "default", /, **overrides: Any
     Raises
     ------
     ValueError
-        If the file does not parse to a mapping.
+        If the file does not parse to a mapping, or a flag is neither a bool nor 0 / 1.
     """
     raw = yaml.load(_read_text(name_or_path), Loader=_StrictLoader)
     if not isinstance(raw, dict):
@@ -348,6 +363,7 @@ def load_config(name_or_path: str | os.PathLike = "default", /, **overrides: Any
     d.update(overrides)
     for key in _validate_keys(d, f"config {name_or_path!r}"):
         del d[key]
+    _coerce_flags(d, f"config {name_or_path!r}")
     _resolve_derived(d)
     return Config(**d)
 
