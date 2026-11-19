@@ -287,6 +287,23 @@ def test_read_bc_flux_use_botflux(tmp_path):
     assert out["bot_vdep"][1] == 0.005
 
 
+@pytest.mark.parametrize("side", ["top", "bot"])
+def test_read_bc_flux_refuses_a_species_listed_twice(tmp_path, side):
+    """The last row would silently win, as it does in VULCAN 2; the reader names the species and both rows."""
+    from vulcan3.atm_setup import read_bc_flux
+
+    bc = tmp_path / "bc.txt"
+    bc.write_text("# header\nH2SO4\t7.0e8\t1\nCO\t3.7e11\t0.03\nH2SO4\t0\t1.\n")
+    cfg = SimpleNamespace(
+        use_topflux=side == "top",
+        use_botflux=side == "bot",
+        top_BC_flux_file=str(bc),
+        bot_BC_flux_file=str(bc),
+    )
+    with pytest.raises(ValueError, match=r"bc\.txt.*'H2SO4'.*line 2.*7\.0e8.*line 4.*keep one"):
+        read_bc_flux(cfg, ["H2SO4", "CO"])
+
+
 # sat_p (sp_sat) per condensable
 
 

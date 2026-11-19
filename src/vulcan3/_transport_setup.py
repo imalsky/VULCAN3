@@ -618,12 +618,25 @@ def compute_mol_diff(
 
 
 def _parse_bc_file(path: str) -> list[list[str]]:
-    """Read a BC text file into token rows; skip comments and blank lines."""
+    """Read a BC text file into token rows; skip comments and blank lines; refuse a species listed twice.
+
+    Both codes keep the last of two rows for one species, so the first would be dead.
+    """
     rows: list[list[str]] = []
+    first: dict[str, tuple[int, str]] = {}
     with Path(resolve_data_path(path)).open() as f:
-        for line in f:
-            if not line.startswith("#") and line.strip():
-                rows.append(line.split())
+        for lineno, line in enumerate(f, start=1):
+            if line.startswith("#") or not line.strip():
+                continue
+            tokens = line.split()
+            if tokens[0] in first:
+                n, text = first[tokens[0]]
+                raise ValueError(
+                    f"{path}: species {tokens[0]!r} is listed twice, line {n} ({text!r}) and line {lineno} "
+                    f"({line.strip()!r}); keep one row."
+                )
+            first[tokens[0]] = (lineno, line.strip())
+            rows.append(tokens)
     return rows
 
 

@@ -130,6 +130,16 @@ supported_inputs:
     sha256: 76c3fa44a6b8515b633d0c517b5e7d72a5abc8f7464417af8ed820752a955fe4
     oracle: vulcan2_ncho
 
+  atm/BC_bot_Earth.txt:
+    sha256: b4f20dd65fd7e6a438059db4218e3f52164bdd17fd53bf4bbcb20da8a50b961d
+    oracle: null
+    note: >-
+      The vulcan2_ncho revision's file without its first H2SO4 row (flux
+      7.0e+8). H2SO4 was listed twice and both codes keep the last row (flux
+      0), so that row was dead; the boundary arrays are bitwise unchanged and
+      the reader now refuses a species listed twice. The audit's line
+      comparison does not cover a deleted line, so the hash pin is the guard.
+
   atm/atm_K2-18b-Nep100X-apo-H2Oclouds.txt:
     sha256: a74cd0b17bb1a95af8d7d4daf6de13569a3ad2ba86bad00a7b47e95efd972028
     oracle: null
