@@ -236,18 +236,6 @@ def _validate_numerical_bounds(cfg: Config) -> list[str]:
         off = key == "element_budget_tol" and v == math.inf
         if not ((math.isfinite(v) or off) and v > 0.0):
             errors.append(f"{key}={v} must be finite and > 0.")
-    # The element budget assumes a closed column; a boundary flux or a pin moves the element columns by design, so
-    # the term would only fail at count_max. Escape (diff_esc) is allowed: HD209 certifies with it at the default.
-    open_by = [
-        key
-        for key in ("use_topflux", "use_botflux", "use_fix_sp_bot", "fix_species", "use_sat_surfaceH2O")
-        if getattr(cfg, key)
-    ]
-    if open_by and math.isfinite(float(cfg.element_budget_tol)):
-        errors.append(
-            f"{', '.join(open_by)} open the column, so element_budget_tol={cfg.element_budget_tol:g} cannot be met: "
-            "set element_budget_tol: .inf to stop on VULCAN 2's criteria."
-        )
     errors.extend(_validate_slope_min(cfg))
     # An inverted window runs on to an empty photolysis grid.
     if not float(cfg.photo_lambda_min) < float(cfg.photo_lambda_max):
@@ -290,6 +278,24 @@ def _validate_numerical_bounds(cfg: Config) -> list[str]:
             "without H (the element budget is measured relative to H)."
         )
     return errors
+
+
+def _validate_open_column(cfg: Config) -> list[str]:
+    # The element budget assumes a closed column; a boundary flux or a pin moves the element columns by design, so
+    # the term would only fail at count_max. Escape (diff_esc) is allowed: HD209 certifies with it at the default.
+    open_by = [
+        key
+        for key in ("use_topflux", "use_botflux", "use_fix_sp_bot", "fix_species", "use_sat_surfaceH2O")
+        if getattr(cfg, key)
+    ]
+    if open_by and math.isfinite(float(cfg.element_budget_tol)):
+        return [
+            (
+                f"{', '.join(open_by)} open the column, so element_budget_tol={cfg.element_budget_tol:g} cannot be "
+                "met: set element_budget_tol: .inf to stop on VULCAN 2's criteria."
+            )
+        ]
+    return []
 
 
 def _validate_slope_min(cfg: Config) -> list[str]:
@@ -582,6 +588,7 @@ def validate_runtime_config(cfg: Config) -> None:  # noqa: C901 (one refusal per
     errors.extend(_validate_network_assets(cfg))
     errors.extend(_validate_abundance_preset(cfg))
     errors.extend(_validate_numerical_bounds(cfg))
+    errors.extend(_validate_open_column(cfg))
 
     # Plots run after the solve; refuse a plot request that would fail there.
     if cfg.use_plot_end or cfg.use_plot_evo:
