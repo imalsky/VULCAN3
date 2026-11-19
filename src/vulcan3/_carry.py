@@ -163,7 +163,7 @@ class JaxIntegState(NamedTuple):
 
     # Live termination budget, seeded from the static caps; the termination
     # test reads these, not the closure constants. Only the hybrid phase flip
-    # extends them (see _HYBRID_FLIP_*); non-hybrid runs never touch them.
+    # extends them (hybrid_central_steps*); non-hybrid runs never touch them.
     count_min_dyn: jnp.ndarray  # () int32
     count_max_dyn: jnp.ndarray  # () int32
     runtime_dyn: jnp.ndarray  # () float64
@@ -245,6 +245,8 @@ class _Statics(NamedTuple):
     # in the carry (s.update_photo_frq / s.rtol / s.loss_criteria).
     use_vm_mol: bool  # upwind molecular diffusion -> refresh vm in-loop with mu
     hybrid_vm_mol: bool  # two-stage: converge upwind, then finish central-diff
+    hybrid_central_steps: int  # central-phase step budget after a convergence flip
+    hybrid_central_steps_capped: int  # after a runtime or count-cap flip
     final_update_photo_frq: int
     update_frq: int
     use_adapt_rtol: bool

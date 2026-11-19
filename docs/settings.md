@@ -29,6 +29,11 @@ The former `nega_cut` key is refused with this remedy.
 `diff_esc` acts only with `use_topflux` on, in both codes: escape enters the right-hand side through the top flux. Without
 it validation logs a WARNING; under `use_vm_mol` the Jacobian's escape entry still sees it.
 
+`use_hybrid_vm_mol` runs the upwind scheme first, then flips to central differences. After the flip the run gets
+`hybrid_central_steps` (default 2000) more accepted steps if the upwind phase converged, and `hybrid_central_steps_capped`
+(default 1000) if it hit `runtime` or `count_max`, as VULCAN 3's vm_branch does; both must be positive integers. A runtime
+flip also raises `runtime` by 10 % and every flip sets `count_min` 100 steps on; those two stay fixed.
+
 `use_botflux` reads `bot_BC_flux_file`, and a row naming a species outside the network is refused. The shipped
 `atm/BC_bot_Earth.txt` names H2SO4, NO3 and HNO3, which the default network lacks: `Earth.yaml` runs it on
 `SNCHO_full_photo_network.txt`, which holds them. With another network, copy the file and delete those rows.

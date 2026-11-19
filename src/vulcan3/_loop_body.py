@@ -33,14 +33,10 @@ if TYPE_CHECKING:
     from ._carry import RunnerEnv
     from .jax_step import AtmStatic
 
-# Hybrid vm_mol phase-flip budget, vm_branch@84d010d stop(): count_min =
-# count + 100 on every flip (op.py:1107, 1128, 1152); count_max = count + 2000
-# after convergence (op.py:1108), count + 1000 after the runtime or
-# step-count limit (op.py:1129, 1153); runtime grows 10% on a runtime flip
-# (op.py:1130).
+# Hybrid vm_mol phase flip, vm_branch@84d010d stop(): count_min = count + 100 on every flip (op.py:1107, 1128, 1152);
+# runtime grows 10% on a runtime flip (op.py:1130). The count_max budgets (op.py:1108, 1129, 1153) are the config's
+# `hybrid_central_steps` and `hybrid_central_steps_capped`.
 _HYBRID_FLIP_COUNT_MIN_EXTRA = 100
-_HYBRID_FLIP_COUNT_MAX_EXTRA_CONV = 2000
-_HYBRID_FLIP_COUNT_MAX_EXTRA_BUDGET = 1000
 _HYBRID_FLIP_RUNTIME_FACTOR = 1.1
 
 
@@ -586,8 +582,8 @@ def body_fn(
     budget_ok_next = candidate & (jnp.max(jnp.abs(budget_drift_next)) < jnp.float64(statics.element_budget_tol))
 
     # Hybrid vm_mol phase flip: when phase 0 (upwind) ends by convergence, runtime or step count, switch to central
-    # difference, reset the convergence trackers and extend the budget (_HYBRID_FLIP_*). Priority as vm_branch stop():
-    # convergence > runtime > count.
+    # difference, reset the convergence trackers and extend the budget (the hybrid_central_steps keys). Priority as
+    # vm_branch stop(): convergence > runtime > count.
     hybrid_use_vm_next = s.hybrid_use_vm
     count_min_dyn_next = s.count_min_dyn
     count_max_dyn_next = s.count_max_dyn
@@ -602,8 +598,8 @@ def body_fn(
         do_flip = conv_flip | runtime_flip | count_flip
 
         new_count_min = accept_count_next + jnp.int32(_HYBRID_FLIP_COUNT_MIN_EXTRA)
-        count_max_conv = accept_count_next + jnp.int32(_HYBRID_FLIP_COUNT_MAX_EXTRA_CONV)
-        count_max_budget = accept_count_next + jnp.int32(_HYBRID_FLIP_COUNT_MAX_EXTRA_BUDGET)
+        count_max_conv = accept_count_next + jnp.int32(statics.hybrid_central_steps)
+        count_max_budget = accept_count_next + jnp.int32(statics.hybrid_central_steps_capped)
 
         hybrid_use_vm_next = jnp.where(do_flip, jnp.float64(0.0), s.hybrid_use_vm)
         count_min_dyn_next = jnp.where(do_flip, new_count_min, s.count_min_dyn)

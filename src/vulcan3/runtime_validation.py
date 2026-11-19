@@ -207,6 +207,8 @@ _COUNTERS = (
     "count_max",
     "update_frq",
     "conv_step",
+    "hybrid_central_steps",
+    "hybrid_central_steps_capped",
     "ini_update_photo_frq",
     "final_update_photo_frq",
 )

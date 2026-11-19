@@ -78,6 +78,17 @@ def test_saved_evolution_keeps_every_snapshot_past_the_flip():
     assert int(final.evo_idx) == int(final.accept_count)
 
 
+def test_the_post_flip_budget_is_a_config_key():
+    """A count-cap flip at step count_max + 1 gives the central phase `hybrid_central_steps_capped` more steps."""
+    vc = _pin_cfg()
+    vc.hybrid_central_steps_capped = 50
+    final = _run(vc, use_vm=True, hybrid=True, count_max=3)
+    assert float(final.hybrid_use_vm) == 0.0
+    # Flip at accepted step 4, cap 4 + 50; the run stops on the first step past it (count > count_max).
+    assert int(final.count_max_dyn) == 54
+    assert int(final.accept_count) == 55
+
+
 def test_returned_atm_carries_refreshed_zmco_and_vm():
     """The returned atm, what the .vul writer stores, must carry the fields upstream refreshes in-loop.
 

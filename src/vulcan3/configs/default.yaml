@@ -181,6 +181,8 @@ final_update_photo_frq: 5  # steps between updates of the actinic flux and optic
 use_moldiff: true  # include molecular diffusion
 use_vm_mol: false  # use the upwind scheme for molecular diffusion
 use_hybrid_vm_mol: false
+hybrid_central_steps: 2000  # accepted steps the central phase gets after the upwind phase converges (vm_branch op.py:1108)
+hybrid_central_steps_capped: 1000  # accepted steps it gets after the upwind phase hits runtime or count_max (op.py:1129)
 high_temp_cut: false  # lift the bottom above deep layers hotter than high_temp_cut_K, then re-grid (no T clip)
 high_temp_cut_K: 3500.0  # upper T limit, K
 high_temp_cut_P: 1000000.0  # dyn cm^-2; the cut is only considered at P at or above it (about 1 bar)

@@ -28,6 +28,8 @@ _VALID = {
     "count_max": 10000,
     "update_frq": 100,
     "conv_step": 500,
+    "hybrid_central_steps": 2000,
+    "hybrid_central_steps_capped": 1000,
     "batch_max_retries": 110,
     "dt_var_min": 0.5,
     "dttry": 1.0e-10,
@@ -75,7 +77,14 @@ _NAN = float("nan")
         {"conv_step": 1},
         *(
             dict(**{k: v})
-            for k in ("count_min", "batch_max_retries", "ini_update_photo_frq", "final_update_photo_frq")
+            for k in (
+                "count_min",
+                "batch_max_retries",
+                "ini_update_photo_frq",
+                "final_update_photo_frq",
+                "hybrid_central_steps",
+                "hybrid_central_steps_capped",
+            )
             for v in (0, 1.5, _NAN, 2**31)
         ),
     ],
