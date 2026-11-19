@@ -255,3 +255,15 @@ def test_empty_queue_and_lane_count_below_one_raise(prepared):
             n_lanes=0,
             out_fn=_out_fn,
         )
+
+
+def test_a_shared_surface_water_pin_is_refused(prepared):
+    """The surface-water bottom pin is baked from the first profile, so a batch of two would share it."""
+    integ, init_b, atm_b = prepared
+    two = _take_jobs((init_b, atm_b), slice(0, 2))
+    cfg = integ._cfg
+    cfg.use_condense, cfg.use_sat_surfaceH2O, cfg.condense_sp = True, True, ["H2O"]
+    with pytest.raises(ValueError, match="Run each profile solo"):
+        integ.run_batch(*two)
+    with pytest.raises(ValueError, match="Run each profile solo"):
+        integ.run_queue(_ident, two, n_lanes=2, out_fn=_out_fn)

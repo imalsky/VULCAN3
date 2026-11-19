@@ -603,6 +603,15 @@ class OuterLoop:
         init_state = self.pack_state(rs)
         return init_state, atm_static
 
+    def _refuse_shared_surface_pin(self, n_profiles: int) -> None:
+        # `build_statics` bakes the first profile's surface saturation into the bottom pin, so every lane would get it.
+        cfg = self._cfg
+        if n_profiles > 1 and cfg.use_condense and cfg.use_sat_surfaceH2O and "H2O" in cfg.condense_sp:
+            raise ValueError(
+                f"use_sat_surfaceH2O with condensation pins bottom H2O at the first profile's surface saturation, so "
+                f"the other {n_profiles - 1} profiles would share it. Run each profile solo, with its own OuterLoop."
+            )
+
     def run_batch(self, states_batched: JaxIntegState, atm_static_batched: AtmStatic) -> JaxIntegState:
         """Integrate a whole batch of profiles in one vmapped device call.
 
@@ -628,7 +637,8 @@ class OuterLoop:
 
         Notes
         -----
-        The checks this call runs also raise `MissingAtomError` if a lane holds none of a conserved atom, and
+        The checks this call runs also raise `ValueError` for more than one profile under condensation with
+        `use_sat_surfaceH2O`, `MissingAtomError` if a lane holds none of a conserved atom, and
         `DtMinFrozenError`, after the loop, if a lane froze at `dt_min` (it stops with `termination_reason` 4). Under
         an outer jit the caller checks the returned carry (`raise_if_frozen`).
 
@@ -641,6 +651,7 @@ class OuterLoop:
             raise RuntimeError(
                 "run_batch called before the runner was built; call prepare_runstate on at least one profile first."
             )
+        self._refuse_shared_surface_pin(int(states_batched.t.shape[0]))
         self._refuse_missing_atoms(states_batched)
         if self._vrunner is None:
             self._vrunner = jax.jit(self._runner_batch)
@@ -694,7 +705,8 @@ class OuterLoop:
 
         Notes
         -----
-        The checks this call runs also raise, after the loop: `MissingAtomError`, naming the job, if a job's column
+        The checks this call runs also raise `ValueError` for more than one job under condensation with
+        `use_sat_surfaceH2O`, and, after the loop: `MissingAtomError`, naming the job, if a job's column
         holds none of a conserved atom, and `DtMinFrozenError`, naming its index, if a job froze at `dt_min`. That job
         gives up its lane like a finished one.
 
@@ -716,6 +728,9 @@ class OuterLoop:
             raise RuntimeError(
                 "run_queue called before the runner was built; call prepare_runstate on at least one profile first."
             )
+        self._refuse_shared_surface_pin(
+            next(int(np.shape(x)[0]) for x in jax.tree_util.tree_leaves(jobs) if np.ndim(x))
+        )
         # The callables are part of the key, not their `id`s: holding them
         # keeps a dead closure's id from being reused by a new one.
         if compact is None:
