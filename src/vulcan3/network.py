@@ -243,7 +243,6 @@ class _ParseState:
     parser_i: int = 1  # forwards: 1, 3, 5, ...
     stop_rev_indx: int | None = None
     conden_indx: int | None = None
-    photo_indx: int | None = None
     species_order: list[str] = field(default_factory=list)
     species_idx: dict[str, int] = field(default_factory=dict)
     photo_sp: list[str] = field(default_factory=list)
@@ -259,7 +258,7 @@ class _ParseState:
 
 
 def _enter_section(st: _ParseState, section: str, network_path: str, lineno: int) -> None:
-    """Switch to `section`, recording where the condensation and photo sections start."""
+    """Switch to `section`, recording where the condensation section starts."""
     st.section = section
     if section == _SECTION_CONDEN and st.conden_indx is None:
         st.conden_indx = st.parser_i
@@ -269,8 +268,6 @@ def _enter_section(st: _ParseState, section: str, network_path: str, lineno: int
             "not supported -- rates_jax.py excludes those slots, "
             "so their reactions would be silently dropped."
         )
-    if section == _SECTION_PHOTO and st.photo_indx is None:
-        st.photo_indx = st.parser_i
 
 
 def _collapse_side(side: Iterable[tuple[float, str]], species_idx: dict[str, int]) -> dict[int, float]:
@@ -468,10 +465,6 @@ def _fill_rows(forward_records: list[dict], nr: int) -> dict[str, np.ndarray]:
 def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> Network:
     """Parse a VULCAN network file; the format is in docs/method.md.
 
-    Raises ValueError if a reaction is duplicated within one section (its
-    contribution would be silently double-counted); `duplicates_ok=True`
-    downgrades that to a RuntimeWarning for inspection/file-sweep uses.
-
     Parameters
     ----------
     network_path : str or Path
@@ -483,6 +476,12 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
     -------
     Network
         Species, the stoichiometry and rate-coefficient tables ([nr + 1, ...], row 0 unused) and the section indices.
+
+    Raises
+    ------
+    ValueError
+        If a reaction is duplicated within one section (its contribution would be double-counted; `duplicates_ok`
+        downgrades this to a RuntimeWarning), or the file has no `# reverse stops` line.
     """
     from ._paths import resolve_data_path
 
@@ -496,11 +495,12 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
     # upstream's check_duplicate() only prints; this parser refuses.
     _announce_duplicate_reactions(network_path, _find_duplicates(st.forward_records), duplicates_ok)
 
-    stop_rev_indx = st.stop_rev_indx
-    if stop_rev_indx is None:
-        # Older networks may omit `# reverse stops`; default: reverses are
-        # computed up to the photo section.
-        stop_rev_indx = st.photo_indx if st.photo_indx is not None else nr + 1
+    if st.stop_rev_indx is None:
+        # VULCAN 2 reads `stop_rev_indx` unset and fails (`op.py:289`).
+        raise ValueError(
+            f"Network {network_path} has no '# reverse stops' line, so the rows with a thermal reverse rate are "
+            "undefined. Add the line after the last such row, before the condensation or photo section."
+        )
     conden_indx = st.conden_indx if st.conden_indx is not None else nr + 1
 
     return Network(
@@ -510,7 +510,7 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
         nr=nr,
         **_fill_stoichiometry(st.forward_records, nr, ni),
         **_fill_rows(st.forward_records, nr),
-        stop_rev_indx=stop_rev_indx,
+        stop_rev_indx=st.stop_rev_indx,
         conden_indx=conden_indx,
         photo_sp=tuple(st.photo_sp),
         pho_rate_index=dict(st.pho_rate_index),

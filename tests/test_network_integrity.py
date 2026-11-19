@@ -168,6 +168,16 @@ def test_a_radiative_section_is_refused(tmp_path):
         netmod.parse_network(f)
 
 
+def test_a_network_without_the_reverse_stops_line_is_refused(tmp_path):
+    """VULCAN 2 reads `stop_rev_indx` unset and fails (`op.py:289`); no default is guessed."""
+    from vulcan3 import network as netmod
+
+    f = tmp_path / "net.txt"
+    f.write_text("1  [ H + H -> H2 ]  1.0E-10  0.0  0.0\n")
+    with pytest.raises(ValueError, match="# reverse stops"):
+        netmod.parse_network(f)
+
+
 def test_duplicate_reactions_refuse_naming_the_equations():
     """TiSNCHO's three upstream duplicates must refuse by default, warn on opt-in."""
     from vulcan3 import network as netmod

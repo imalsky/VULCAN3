@@ -24,7 +24,8 @@ without `k_inf`, special (hardcoded), condensation, radiative recombination, pho
 networks are refused.
 
 Forward reactions sit at odd parser indices with a reverse slot at `i+1`. Reverse rates come from NASA-9 Gibbs energies.
-Thermal reverse rates fill only slots below `stop_rev_indx` and skip condensation, photo and ion rows: photo and ion reverse
+Thermal reverse rates fill only slots below `stop_rev_indx` (the `# reverse stops` line; a file without one is refused,
+as VULCAN 2 fails on it) and skip condensation, photo and ion rows: photo and ion reverse
 slots stay zero, and a condensation reverse slot holds the evaporation rate set at run time.
 
 No rate may exceed collision rates, a limit VULCAN 2 does not have (`rates_jax.apply_collision_limit`). A rate fit
