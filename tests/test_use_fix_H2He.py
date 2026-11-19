@@ -44,3 +44,31 @@ def test_use_fix_h2he_pins_the_bottom_ratios():
     # The one-shot snapshot fired and holds the pre-run mixing ratios.
     assert bool(final.h2he_pinned)
     assert np.array_equal(np.asarray(final.h2he_mix), mix_pre)
+
+
+def test_use_fix_h2he_leaves_a_user_h2_bottom_pin_alone():
+    """Master skips the automatic pin when H2 is already in use_fix_sp_bot (op.py:2935): the user's value holds."""
+    from vulcan3 import chem_funs
+
+    species = list(chem_funs.spec_list)
+    if "H2" not in species or "He" not in species:
+        pytest.skip("use_fix_H2He needs H2 and He in the network")
+
+    import vulcan3.legacy_io as op
+    from vulcan3 import op_jax, outer_loop
+    from vulcan3.state import RunState
+
+    cfg = set_cfg(use_fix_H2He=True, element_budget_tol=float("inf"), count_max=5, count_min=1, use_print_prog=False)
+    rs = RunState.with_pre_loop_setup(cfg)
+    rs = rs._replace(step=rs.step._replace(t=1.5e6))
+    i_h2 = species.index("H2")
+    # 1 % above the start, where the automatic pin would snapshot it.
+    h2_start = float(np.asarray(rs.step.ymix)[0, i_h2])
+    h2_pin = 1.01 * h2_start
+    cfg.use_fix_sp_bot = {"H2": h2_pin}
+    integ = outer_loop.OuterLoop(op_jax.Ros2JAX(), op.Output())
+    state, atm_static = integ.prepare_runstate(rs)
+    final = integ._runner(state, atm_static)
+    assert not bool(final.h2he_pinned)
+    # The rebalance spreads the 1 % over the layer, so the held value sits between the start and the pin.
+    assert float(final.ymix[0, i_h2]) > 1.003 * h2_start

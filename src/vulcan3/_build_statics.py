@@ -83,7 +83,8 @@ def build_statics(integ: OuterLoop, var: types.SimpleNamespace, atm: types.Simpl
         fix_sp_bot_idx = np.zeros((0,), dtype=np.int32)
         fix_sp_bot_mix = np.zeros((0,), dtype=np.float64)
 
-    use_fix_H2He = bool(integ._cfg.use_fix_H2He)
+    # Master skips the automatic H2/He pin when the config already pins H2 at the bottom (op.py:2935).
+    use_fix_H2He = bool(integ._cfg.use_fix_H2He) and "H2" not in fix_sp_bot_cfg
     if use_fix_H2He:
         h2_idx = int(NETWORK.species_idx["H2"])
         he_idx = int(NETWORK.species_idx["He"])
