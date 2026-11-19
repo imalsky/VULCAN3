@@ -551,6 +551,11 @@ def validate_runtime_config(cfg: Config) -> None:  # noqa: C901 (one refusal per
                 f"first import."
             )
 
+    # Master indexes every bottom pin into the species list (op.py:1435).
+    unknown_bot = [sp for sp in cfg.use_fix_sp_bot if sp not in species]
+    if unknown_bot:
+        errors.append(f"use_fix_sp_bot entries {unknown_bot} are not in the network {cfg.network!r}; remove them.")
+
     if bool(cfg.use_fix_H2He):
         for sp in ("H2", "He"):
             if sp not in species:

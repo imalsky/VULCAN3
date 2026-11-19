@@ -45,6 +45,10 @@ import pytest
         ({"use_sat_surfaceH2O": True}, None),  # the pin needs condensation; without it nothing opens the column
         ({"use_condense": True, "condense_sp": ["H2O"], "use_relax": ["NH3"]}, r"use_relax entries \['NH3'\] are not"),
         ({"use_settling": True, "non_gas_sp": ["H2O_l_s"]}, r"non_gas_sp entry 'H2O_l_s' is not in the network"),
+        (
+            {"use_fix_sp_bot": {"H2O": 1e-3, "Xe": 1e-3}, "element_budget_tol": float("inf")},
+            r"use_fix_sp_bot entries \['Xe'\] are not in the network",
+        ),
     ],
     ids=[
         "inert_const_mix_key",
@@ -61,6 +65,7 @@ import pytest
         "inert_surface_h2o_pin",
         "relax_outside_condense_sp",
         "settling_unknown_non_gas_sp",
+        "fix_sp_bot_unknown_species",
     ],
 )
 def test_up_front_validation(overrides, error):
