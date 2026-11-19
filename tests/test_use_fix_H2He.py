@@ -72,3 +72,15 @@ def test_use_fix_h2he_leaves_a_user_h2_bottom_pin_alone():
     assert not bool(final.h2he_pinned)
     # The rebalance spreads the 1 % over the layer, so the held value sits between the start and the pin.
     assert float(final.ymix[0, i_h2]) > 1.003 * h2_start
+
+
+def test_use_fix_h2he_needs_he_only_when_it_pins(monkeypatch):
+    """With H2 in use_fix_sp_bot master skips both lookups (op.py:2935), so a network without He is valid."""
+    from vulcan3 import chem_funs, make_config
+    from vulcan3.runtime_validation import validate_runtime_config
+
+    monkeypatch.setattr(chem_funs, "spec_list", [sp for sp in chem_funs.spec_list if sp != "He"])
+    pin = {"use_fix_H2He": True, "element_budget_tol": float("inf")}
+    validate_runtime_config(make_config(**pin, use_fix_sp_bot={"H2": 0.9}))
+    with pytest.raises(RuntimeError, match="requires 'He'"):
+        validate_runtime_config(make_config(**pin))

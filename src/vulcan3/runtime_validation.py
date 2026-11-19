@@ -572,7 +572,8 @@ def validate_runtime_config(cfg: Config) -> None:  # noqa: C901 (one refusal per
     if unknown_bot:
         errors.append(f"use_fix_sp_bot entries {unknown_bot} are not in the network {cfg.network!r}; remove them.")
 
-    if bool(cfg.use_fix_H2He):
+    # A user H2 bottom pin skips the automatic one and both its lookups (op.py:2935).
+    if bool(cfg.use_fix_H2He) and "H2" not in cfg.use_fix_sp_bot:
         for sp in ("H2", "He"):
             if sp not in species:
                 errors.append(f"use_fix_H2He=True requires {sp!r} in the network; got species list without it.")
