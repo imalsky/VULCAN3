@@ -165,13 +165,16 @@ def make_conden_spec(
     coeffs: list[float] = []
     for re in var.conden_re_list:
         rf = var.Rf[re]  # 'H2O -> H2O_l_s', etc.
-        gas_sp = rf.split(" -> ")[0].strip()
+        gas_sp, _, product = (side.strip() for side in rf.partition(" -> "))
         if gas_sp not in cfg.condense_sp:
             # Reaction is in the network but not active in this run.
             # Match op.conden's behavior: leaves k untouched (=0).
             continue
         if gas_sp not in GAS_MASS_G_PER_MOL:
             raise NotImplementedError(f"conden formula {rf!r} not yet ported to JAX")
+        if product != GAS_TO_CONDENSATE[gas_sp]:
+            # op.conden names the whole reaction (op.py:1119-1269); any other product keeps k at 0.
+            continue
         coeff = _m_over_rho_r2(atm, gas_sp)
         # use_relax short-circuit exists only on upstream H2O/NH3
         # branches (op.py:1121-1123, 1153-1155). Other condensates,

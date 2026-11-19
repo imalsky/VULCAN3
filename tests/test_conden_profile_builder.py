@@ -154,6 +154,15 @@ def test_make_conden_spec_inactive_species_skipped():
     assert not sp.nh3_active
 
 
+def test_make_conden_spec_matches_the_whole_reaction():
+    """A row whose product is not its gas's condensate gets no rate: master names the full reaction (op.py:1119)."""
+    cfg, var, atm = _fake_setup(use_relax=())
+    var.Rf[10] = "H2O -> S8_l_s"
+    sp = conden.make_conden_spec(cfg, var, atm, SPECIES_IDX)
+    assert sp.gas_names == ("NH3", "S8")
+    assert sp.conden_re_idx == (14, 20)
+
+
 def test_builder_matches_upstream_formulas(spec):
     """Machine-precision parity with the independent NumPy oracle, on an isothermal and a non-isothermal column."""
     T_iso, T_slope, pco, n_0, Dzz = _profiles()
