@@ -44,8 +44,14 @@ def test_clip_zeroes_every_finite_negative_and_counts_it():
 
     from vulcan3._adjoint_core import _clip_dead_mask
 
-    dead = _clip_dead_mask(np.asarray(y), SimpleNamespace(pos_cut=1.0))
+    cfg = SimpleNamespace(pos_cut=1.0, mtol=1e-16, atol=1e-1)
+    y_old = np.asarray([[5.0, 0.5, 0.0, 0.0, 1.0, 1.0]])  # an empty cell at index 3, so its undershoot is the clip's
+    dead = _clip_dead_mask(np.asarray(y), y_old, np.ones(6, dtype=bool), cfg)
     np.testing.assert_array_equal(dead, [[False, True, True, True, False, False]])
+    # A populated gas driven negative is rejected by the runner, not zeroed: it stays in the audit's scan.
+    y_pop = np.asarray([[5.0, 0.5, 0.0, 3.0, 1.0, 1.0]])
+    dead_pop = _clip_dead_mask(np.asarray(y), y_pop, np.ones(6, dtype=bool), cfg)
+    np.testing.assert_array_equal(dead_pop, [[False, True, True, False, False, False]])
 
 
 def test_only_a_populated_gas_going_negative_rejects_the_step():

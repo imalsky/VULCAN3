@@ -179,14 +179,17 @@ class BodyTerms(NamedTuple):
     bot_val: jnp.ndarray | None = None  # (m,)
 
 
-def _clip_dead_mask(G: np.ndarray, cfg: Config) -> np.ndarray:
+def _clip_dead_mask(G: np.ndarray, y: np.ndarray, gas_mask: np.ndarray, cfg: Config) -> np.ndarray:
     """Cells where the runner's per-step zero-clip would not be the identity.
 
-    Applied to a candidate post-step state `G` (number density, cm^-3), the same rule as
-    `_step_control._clip_prologue`: a finite value below `pos_cut` (every finite negative included) goes to 0.
+    Applied to a candidate post-step state `G` (number density, cm^-3) from the state `y`, the same rule as
+    `_step_control._clip_prologue`: a finite value below `pos_cut` goes to 0. A populated gas driven negative is not
+    the clip's: the runner rejects that step (`_step_control.populated_negative`), so the cell stays in the scan.
     """
-    G = np.asarray(G)
-    dead: np.ndarray = (G < float(cfg.pos_cut)) & np.isfinite(G)
+    G, y = np.asarray(G), np.asarray(y)
+    ymix = y / np.maximum(y.sum(axis=1, keepdims=True), np.finfo(np.float64).tiny)
+    populated_neg = (G < 0) & (ymix >= float(cfg.mtol)) & (y >= float(cfg.atol)) & np.asarray(gas_mask)[None, :]
+    dead: np.ndarray = (G < float(cfg.pos_cut)) & np.isfinite(G) & ~populated_neg
     return dead
 
 
