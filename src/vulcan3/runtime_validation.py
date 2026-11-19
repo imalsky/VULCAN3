@@ -578,11 +578,10 @@ def validate_runtime_config(cfg: Config) -> None:  # noqa: C901 (one refusal per
     errors.extend(_validate_condensation_network(cfg, chem_funs.NETWORK))
     errors.extend(_validate_diffusion_flags(cfg))
 
-    required_paths = [
-        ("network", cfg.network),
-        ("com_file", cfg.com_file),
-        ("atm_file", cfg.atm_file),
-    ]
+    required_paths = [("network", cfg.network), ("com_file", cfg.com_file)]
+    # Only a file atmosphere reads atm_file (`_tp_kzz.load_TPK`; master build_atm.py:355-362).
+    if cfg.atm_type == "file":
+        required_paths.append(("atm_file", cfg.atm_file))
     if bool(cfg.use_photo):
         required_paths.extend(
             [
