@@ -308,6 +308,13 @@ def _read_reaction(st: _ParseState, file_id_str: str, eq: str, tail: str) -> Non
 
     cols = tail.split()
     num_cols = _numeric_prefix(cols)
+    # VULCAN 2 reads A, n, E (and A_inf, n_inf, E_inf with k_inf) with float() and raises on a gap (`op.py:151-159`).
+    n_coeffs = 6 if section == _SECTION_THREE_BODY_KINF else 3
+    if section in _THERMAL_SECTIONS and len(num_cols) < n_coeffs:
+        raise ValueError(
+            f"{eq!r} has {len(num_cols)} leading numeric rate coefficients in {tail.strip()!r}; "
+            f"the {section} section needs {n_coeffs}. Write the missing coefficients."
+        )
     rec: dict[str, Any] = {
         "parser_i": parser_i,
         "section": section,
@@ -371,7 +378,10 @@ def _read_file(network_path: str) -> _ParseState:
             m = _RE_LINE.match(line)
             if m is None:
                 raise ValueError(f"{network_path}:{lineno}: not a reaction row and not a comment: {line!r}")
-            _read_reaction(st, m.group(1), m.group(2), m.group(3))
+            try:
+                _read_reaction(st, m.group(1), m.group(2), m.group(3))
+            except ValueError as e:
+                raise ValueError(f"{network_path}:{lineno}: {e}") from None
     return st
 
 
@@ -455,10 +465,9 @@ def _fill_rows(forward_records: list[dict], nr: int) -> dict[str, np.ndarray]:
 
         cols = rec["num_cols"]
         if sec in _THERMAL_SECTIONS:
-            if len(cols) >= 3:
-                arrays["a"][i], arrays["n"][i], arrays["E"][i] = cols[0], cols[1], cols[2]
-            if sec == _SECTION_THREE_BODY_KINF and len(cols) >= 6:
-                arrays["a_inf"][i], arrays["n_inf"][i], arrays["E_inf"][i] = cols[3], cols[4], cols[5]
+            arrays["a"][i], arrays["n"][i], arrays["E"][i] = cols[0], cols[1], cols[2]
+        if sec == _SECTION_THREE_BODY_KINF:
+            arrays["a_inf"][i], arrays["n_inf"][i], arrays["E_inf"][i] = cols[3], cols[4], cols[5]
     return {**arrays, **masks}
 
 
@@ -481,7 +490,8 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
     ------
     ValueError
         If a reaction is duplicated within one section (its contribution would be double-counted; `duplicates_ok`
-        downgrades this to a RuntimeWarning), or the file has no `# reverse stops` line.
+        downgrades this to a RuntimeWarning), the file has no `# reverse stops` line, or a row cannot be read (a
+        thermal row short of numeric rate coefficients among them), naming the file and line.
     """
     from ._paths import resolve_data_path
 

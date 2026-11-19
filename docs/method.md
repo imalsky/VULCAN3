@@ -21,7 +21,8 @@ with master at machine precision. Test oracles are in `tests/_oracles.py`.
 
 `network.parse_network` reads the sections in file order: two-body, three-body with `k_inf` (Lindemann), three-body
 without `k_inf`, special (hardcoded), condensation, radiative recombination, photo and ionisation. Radiative-recombination
-networks are refused.
+networks are refused. So is a thermal row with fewer than three leading numeric coefficients (`A n E`; six with `k_inf`),
+as VULCAN 2 refuses it.
 
 Forward reactions sit at odd parser indices with a reverse slot at `i+1`. Reverse rates come from NASA-9 Gibbs energies.
 Thermal reverse rates fill only slots below `stop_rev_indx` (the `# reverse stops` line; a file without one is refused,

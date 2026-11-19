@@ -168,6 +168,25 @@ def test_a_radiative_section_is_refused(tmp_path):
         netmod.parse_network(f)
 
 
+@pytest.mark.parametrize(
+    "rows",
+    [
+        "1  [ H + H -> H2 ]  1.0E-10  0.0",
+        "1  [ H + H -> H2 ]  1.0E-10  x  0.0",
+        "# 3-body\n1  [ H + H + M -> H2 + M ]  1.0E-30  0.0  0.0  1.0E-10",
+    ],
+    ids=["two-body short", "two-body non-numeric", "k_inf short"],
+)
+def test_a_rate_row_with_missing_coefficients_is_refused(tmp_path, rows):
+    """VULCAN 2 raises on `float(columns[k])` (`op.py:151-159`); a short row must not become rate 0."""
+    from vulcan3 import network as netmod
+
+    f = tmp_path / "net.txt"
+    f.write_text(f"{rows}\n# reverse stops\n")
+    with pytest.raises(ValueError, match=r"net\.txt:\d+: .*H \+ H.*numeric rate coefficient"):
+        netmod.parse_network(f)
+
+
 def test_a_network_without_the_reverse_stops_line_is_refused(tmp_path):
     """VULCAN 2 reads `stop_rev_indx` unset and fails (`op.py:289`); no default is guessed."""
     from vulcan3 import network as netmod
