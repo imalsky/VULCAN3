@@ -688,7 +688,8 @@ C21 (geometry) and C22 (tangent); C23 is in "Stage repair and element budget".
 ## Earth and K2-18b
 
 - Shipped [M, daw CPU, one core, the commit's tree]: `vulcan3 -c Earth` certifies in 11216 steps (t 1.43e11 s, longdy
-  0.100, 537 s), the timed runs' count; `vulcan3 -c K2-18b` in 1961 (t 7.23e9 s, longdy 0.0255, 142 s with compile).
+  0.100, 537 s), the timed runs' count; `vulcan3 -c K2-18b` in 1961 (t 7.23e9 s, longdy 0.0255, 142 s with compile; 1876 since the CH3SCH2 + M
+  correction, `a9b238d`).
   `Earth.yaml` is VULCAN 2's example with O2 pinned at 0.2 (the cure below), the example's own network, atm and
   NASA-9 files; `K2-18b.yaml` is the external user's case with upwind molecular diffusion (the hybrid central phase
   does not certify in either code, below), its network and atm file as received and the C2H5SH inputs built as
@@ -867,11 +868,25 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
 - Hybrid (`use_hybrid_vm_mol`, only `HD189_vulcan3.yaml`): carry `hybrid_use_vm`
   flips 1 -> 0 in-loop on `_convergence_ok` alone; phase 0 cannot end a run; flip
   priority convergence, runtime, step count (upstream's `stop()`); phase-1 budget
-  `count + 2000` (convergence), `count + 1000` + `runtime * 1.1` (runtime),
-  `count + 1000` (count).
+  `count + hybrid_central_steps` (2000, convergence), `count + hybrid_central_steps_capped` (1000) + `runtime * 1.1`
+  (runtime), `count + hybrid_central_steps_capped` (count).
 - Zhang+2013 Eq. 1 benchmark (`git show
   fe17de5:benchmarks/zhang2013_moldiff_benchmark.py`): central goes negative
   between cell Peclet 1.55 and 1.88; upwind stays positive.
+- Post-flip steps to a certificate, budget 50000 [M, daw CPU, one core, `de7d98f`, `scratch/hybrid_inv/` there]:
+  HD189_vulcan3 flips at 2659 and certifies at 7326 (+4667; trace C2H2 at layer 142 settles slowly, cell Peclet
+  0.15); Earth with `use_vm_mol` + hybrid never converges upwind (top-layer H cycles 3.3e8 / 3e5 / 57 cm^-3 from
+  step ~5000), flips at the 20000 cap and certifies at 24775 (+4774); with `diff_esc: []` it converges upwind at
+  12764 and certifies at 17840 (+5076): the escape Jacobian entry (top_flux / y, about -10 s^-1 for H at 57 cm^-3,
+  no RHS term with `use_topflux` off) drives the upwind stall. K2-18b + hybrid flips at 1876 and certifies at 16669
+  (+14793) on the slope test alone, dt held near 3.2e3 s by S8 at layer 111 alternating between zero and 1e-14..1e-17
+  (central odd-even at cell Peclet 2.2-2.5); pure central certifies the same way at 12043. HD189 at `const_Kzz` 1e7
+  flips at 986, oscillates ~21000 steps (C2H2, C3H2, O2, HCN at layers 116-123, Peclet above 1.55), settles to
+  longdy 1e-5 and ends at the cap on the element budget (C/H 0.0133 against 0.01, lost in ~600 steps beside a
+  4.6e19 cm^-3 clipped-negative event; not traced). Upstream vm_branch on HD189_vulcan3 (declared deltas) does not
+  converge upwind in 20000 steps and ends its 1000 central steps uncertified at longdy 0.19. The look-back history
+  is not reset at the flip, in either code; it inflated post-flip longdy (Earth 1.9-62 against 0.09-0.23) but
+  changed no outcome.
 
 ### Differentiability
 
