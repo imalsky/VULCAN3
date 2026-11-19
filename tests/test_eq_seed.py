@@ -182,21 +182,24 @@ os.chdir(root)
 
 from vulcan3 import ini_abun
 from vulcan3.atm_setup import Atm
+from vulcan3.config import default_config
 from vulcan3.state import _AtmData
 
+cfg = default_config()
 make_atm = Atm()
 data_atm = make_atm.load_TPK(make_atm.f_pico(_AtmData()))
 Tco = jnp.asarray(np.asarray(data_atm.Tco, dtype=np.float64))
 p_bar = jnp.asarray(np.asarray(data_atm.pco, dtype=np.float64) / 1.0e6)
-b = jnp.asarray(ini_abun._element_vector())
+b = jnp.asarray(ini_abun._element_vector(cfg))
+seed = jax.jit(lambda T, p, b: ini_abun.eq_seed(T, p, b, cfg))
 
 # `_element_vector` needs the element order, so drop the setup again: the
 # first seed CALL has to be the traced one, so the lazy setup is built inside
 # that trace.
 ini_abun._SEED.clear()
-y = np.asarray(jax.jit(ini_abun.eq_seed)(Tco, p_bar, b))
+y = np.asarray(seed(Tco, p_bar, b))
 assert np.isfinite(y).all()
-fm = ini_abun._seed()[0].formula_matrix
+fm = ini_abun._seed(bool(cfg.use_photo))[0].formula_matrix
 assert not isinstance(fm, jax.core.Tracer), f"formula_matrix is a {type(fm)}"
 
 # Anything later must be able to reuse the cached setup: another trace at
@@ -204,8 +207,8 @@ assert not isinstance(fm, jax.core.Tracer), f"formula_matrix is a {type(fm)}"
 # (the formula matrix, or the NASA-9 coefficients the hvector closure holds)
 # raises UnexpectedTracerError here.
 k = 40
-np.asarray(jax.jit(ini_abun.eq_seed)(Tco[:k], p_bar[:k], b))
-np.asarray(ini_abun.eq_seed(Tco, p_bar, b))
+np.asarray(seed(Tco[:k], p_bar[:k], b))
+np.asarray(ini_abun.eq_seed(Tco, p_bar, b, cfg))
 print("TRACER_PROBE_OK")
 """
 
@@ -310,21 +313,23 @@ def test_seed_reproduces_its_element_vector_and_normalisation(Tiso) -> None:
     import jax.numpy as jnp
 
     from vulcan3 import composition, ini_abun
+    from vulcan3.config import default_config
 
+    cfg = default_config()
     Tco, p_bar = _hd189_column()
     if Tiso is not None:
         Tco = np.full_like(Tco, Tiso)
-    b = ini_abun._element_vector()
-    ymix = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b)))
+    b = ini_abun._element_vector(cfg)
+    ymix = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b), cfg))
 
     assert np.isfinite(ymix).all()
-    seed_idx = set(ini_abun._seed()[1].tolist())
+    seed_idx = set(ini_abun._seed(bool(cfg.use_photo))[1].tolist())
     excluded = [i for i in range(len(composition.species)) if i not in seed_idx]
     assert np.all(ymix[:, excluded] == 0.0)
     np.testing.assert_allclose(ymix.sum(axis=1), 1.0, rtol=1e-12, atol=0.0)
 
     counts = np.asarray(composition.compo_array)
-    elements = ini_abun.seed_elements()
+    elements = ini_abun.seed_elements(cfg)
     cols = [composition.atom_list.index(e) for e in elements]
     got = ymix @ counts[:, cols]  # (nz, E)
     got = got / got[:, [elements.index("H")]]
@@ -350,36 +355,38 @@ def test_ratios_path_matches_the_config_path_and_moves_carbon() -> None:
     # and the two would agree only to the preset's four-decimal dex.
     cfg.use_solar = False
     try:
-        b_cfg = ini_abun._element_vector()
-        np.testing.assert_array_equal(ini_abun._element_vector(ratios), b_cfg)
-        idx = ini_abun.ratio_indices(elements)
+        b_cfg = ini_abun._element_vector(cfg)
+        np.testing.assert_array_equal(ini_abun._element_vector(cfg, ratios), b_cfg)
+        idx = ini_abun.ratio_indices(elements, cfg)
         np.testing.assert_array_equal(
-            np.asarray(ini_abun.element_vector(jnp.asarray([ratios[a] for a in elements]), idx)),
+            np.asarray(ini_abun.element_vector(jnp.asarray([ratios[a] for a in elements]), idx, cfg)),
             b_cfg,
         )
         # No-override case, both branches of `use_solar`: the traced path
         # must read the same vector the host path reads, preset or <X>_H.
-        empty = ini_abun.ratio_indices([])
-        np.testing.assert_array_equal(np.asarray(ini_abun.element_vector(jnp.zeros(0), empty)), b_cfg)
-        b_c2 = ini_abun._element_vector({**ratios, "C": 2.0 * ratios["C"]})
+        empty = ini_abun.ratio_indices([], cfg)
+        np.testing.assert_array_equal(np.asarray(ini_abun.element_vector(jnp.zeros(0), empty, cfg)), b_cfg)
+        b_c2 = ini_abun._element_vector(cfg, {**ratios, "C": 2.0 * ratios["C"]})
     finally:
         cfg.use_solar = True
 
     np.testing.assert_array_equal(
-        np.asarray(ini_abun.element_vector(jnp.zeros(0), empty)),
-        ini_abun._element_vector(),
+        np.asarray(ini_abun.element_vector(jnp.zeros(0), empty, cfg)),
+        ini_abun._element_vector(cfg),
     )
     # A partial override under use_solar=True (the retrieval's case): elements
     # it does not name keep the preset on both paths.
     c_only = {"C": 2.0 * ratios["C"]}
     np.testing.assert_array_equal(
-        np.asarray(ini_abun.element_vector(jnp.asarray(list(c_only.values())), ini_abun.ratio_indices(list(c_only)))),
-        ini_abun._element_vector(c_only),
+        np.asarray(
+            ini_abun.element_vector(jnp.asarray(list(c_only.values())), ini_abun.ratio_indices(list(c_only), cfg), cfg)
+        ),
+        ini_abun._element_vector(cfg, c_only),
     )
 
     Tco, p_bar = _hd189_column()
-    y_cfg = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b_cfg)))
-    y_c2 = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b_c2)))
+    y_cfg = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b_cfg), cfg))
+    y_c2 = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b_c2), cfg))
     sp = composition.species
     assert np.all(y_c2[:, sp.index("CH4")] > y_cfg[:, sp.index("CH4")])
     np.testing.assert_allclose(y_c2[:, sp.index("He")], y_cfg[:, sp.index("He")], rtol=2e-2)
@@ -396,14 +403,14 @@ def test_solver_controls_force_a_retrace() -> None:
     from vulcan3 import ini_abun
     from vulcan3.config import default_config
 
+    cfg = default_config()
     Tco, p_bar = _hd189_column()
-    b = ini_abun._element_vector()
+    b = ini_abun._element_vector(cfg)
     args = (jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b))
 
     def seed_jit():
-        return ini_abun._seed_controls(*ini_abun._seed_key())[1]
+        return ini_abun._seed_fns(*ini_abun._seed_key(cfg))[2]
 
-    cfg = default_config()
     warm = np.asarray(seed_jit()(*args))
     assert np.isfinite(warm).all(), "the shipped controls must converge"
 
@@ -413,9 +420,9 @@ def test_solver_controls_force_a_retrace() -> None:
         one = np.asarray(seed_jit()(*args))
     finally:
         cfg.fastchem_newton_max_iter = keep
-        ini_abun._seed_controls.cache_clear()
+        ini_abun._seed_fns.cache_clear()
 
-    seeded = ini_abun._seed()[1]
+    seeded = ini_abun._seed(bool(cfg.use_photo))[1]
     assert np.isnan(one[:, seeded]).all(), (
         "max_iter=1 reused the converged trace: the config's solver controls "
         "are baked in at trace time and a new key must retrace"
@@ -447,12 +454,17 @@ def test_seed_lane_is_bitwise_the_solo_seed_at_any_batch_width() -> None:
     import jax.numpy as jnp
 
     from vulcan3 import ini_abun
+    from vulcan3.config import default_config
 
+    cfg = default_config()
     Tco, p_bar = _hd189_column()
     p = jnp.asarray(p_bar)
     T = jnp.asarray(Tco) * jnp.asarray([1.0, 1.05, 0.95, 1.10, 0.90])[:, None]
-    B = jnp.tile(jnp.asarray(ini_abun._element_vector()), (5, 1))
-    seed = ini_abun.eq_seed
+    B = jnp.tile(jnp.asarray(ini_abun._element_vector(cfg)), (5, 1))
+
+    def seed(T, p, b):
+        return ini_abun.eq_seed(T, p, b, cfg)
+
     lanes = jax.vmap(seed, in_axes=(0, None, 0))  # vulcan-forward's pattern
 
     def lane_1(tree):
@@ -511,16 +523,19 @@ os.environ["VULCAN3_NETWORK"] = network
 
 import jax.numpy as jnp
 
-from vulcan3 import chem_funs, ini_abun
+from vulcan3 import chem_funs, ini_abun, make_config
 from vulcan3.atm_setup import Atm
 from vulcan3.config import default_config
 from vulcan3.state import _AtmData
 
-default_config().use_photo = use_photo
+# The process default keeps the shipped use_photo, as after a consumer's setup: the seed follows the run's config.
+assert default_config().use_photo is True
+cfg = make_config(use_photo=use_photo)
 data_atm = Atm().load_TPK(Atm().f_pico(_AtmData()))
 Tco = jnp.asarray(np.asarray(data_atm.Tco, dtype=np.float64))
 p_bar = jnp.asarray(np.asarray(data_atm.pco, dtype=np.float64) / 1.0e6)
-y = ini_abun.eq_seed(Tco, p_bar, jnp.asarray(ini_abun._element_vector()))
+b = ini_abun.element_vector(jnp.zeros(0), ini_abun.ratio_indices([], cfg), cfg)
+y = ini_abun.eq_seed(Tco, p_bar, b, cfg)
 np.savez(out_npz, y=np.asarray(y), species=np.array(chem_funs.spec_list))
 """
 
@@ -548,23 +563,25 @@ def test_photo_off_seed_leaves_out_the_photolysis_only_species(tmp_path) -> None
     np.testing.assert_array_equal(a["y"][:, : len(sp_kept)], b["y"])
 
 
-def test_oxygen_sequestration_scales_only_the_seed_oxygen(monkeypatch) -> None:
-    """`O_sequestered_frac` f leaves (1 - f) of the bulk O to the gas, on both element-vector paths, after overrides."""
+def test_oxygen_sequestration_scales_only_the_seed_oxygen() -> None:
+    """`O_sequestered_frac` f leaves (1 - f) of the bulk O to the gas, on both element-vector paths, after overrides.
+
+    The fraction is the run's, not the process default's: a consumer traces the seed after setup.
+    """
     import jax.numpy as jnp
 
-    from vulcan3 import composition, ini_abun
+    from vulcan3 import composition, ini_abun, make_config
 
     Tco, p_bar = _hd189_column()
-    elements = ini_abun.seed_elements()
+    elements = ini_abun.seed_elements(make_config())
     o = elements.index("O")
-    idx = ini_abun.ratio_indices(["O", "C"])
     ratios = jnp.asarray([5.0e-4, 3.0e-4])
 
     def seed_and_vectors(frac: float):
-        monkeypatch.setattr(ini_abun._CFG, "O_sequestered_frac", frac, raising=False)
-        b = ini_abun._element_vector()
-        b_arr = np.asarray(ini_abun.element_vector(ratios, idx))
-        ymix = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b)))
+        cfg = make_config(O_sequestered_frac=frac)
+        b = ini_abun._element_vector(cfg)
+        b_arr = np.asarray(ini_abun.element_vector(ratios, ini_abun.ratio_indices(["O", "C"], cfg), cfg))
+        ymix = np.asarray(ini_abun.eq_seed(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b), cfg))
         return b, b_arr, ymix
 
     b0, arr0, y0 = seed_and_vectors(0.0)

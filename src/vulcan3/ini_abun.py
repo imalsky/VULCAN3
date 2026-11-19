@@ -27,6 +27,8 @@ if TYPE_CHECKING:  # the exogibbs imports are function-local (pandas at import)
     from exogibbs.api.gas import EquilibriumOptions
     from exogibbs.thermo.models import ChemicalSetup
 
+    from .config import Config
+
 from . import chem_funs, gibbs, rates_jax
 from ._paths import resolve_data_path
 from .composition import (
@@ -60,13 +62,14 @@ _CFG = default_config()
 
 # --- the equilibrium seed ---------------------------------------------------
 # Network-frozen inputs (species, elements, NASA-9 coefficients) are resolved
-# once, on first use (`_seed`); everything the config owns is read at call
-# time, because `state._cfg_overlay` rewrites `_CFG` per run.
+# once, on first use (`_seed`). Everything the config owns is read from the
+# config each function is given: a consumer traces the seed after setup has
+# restored `_CFG` to the process default, so it passes the run's own config.
 
 
-def _abundance_path() -> Path:
+def _abundance_path(cfg: Config) -> Path:
     """Return the configured elemental-abundance preset file."""
-    return resolve_data_path(str(_CFG.fastchem_solar_abundance_file))
+    return resolve_data_path(str(cfg.fastchem_solar_abundance_file))
 
 
 def _charged_species() -> list[str]:
@@ -162,21 +165,20 @@ def _build_seed_setup(use_photo: bool) -> tuple[ChemicalSetup, np.ndarray, tuple
 _SEED: dict[bool, tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]] = {}
 
 
-def _seed() -> tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]:
+def _seed(use_photo: bool) -> tuple[ChemicalSetup, np.ndarray, tuple[str, ...]]:
     """Return `(setup, seed species indices, element names)`, built once per `use_photo` on first use.
 
     Lazy: it reads one `thermo/NASA9/<sp>.txt` per species, and a
     run with any other `ini_mix` must not pay for that at import.
     """
-    use_photo = bool(_CFG.use_photo)
     if use_photo not in _SEED:
         _SEED[use_photo] = _build_seed_setup(use_photo)
     return _SEED[use_photo]
 
 
-def seed_elements() -> tuple[str, ...]:
-    """Elements the seed solves for, in the order `b` is indexed."""
-    return _seed()[2]
+def seed_elements(cfg: Config) -> tuple[str, ...]:
+    """Elements the seed of a run with config `cfg` solves for, in the order `b` is indexed."""
+    return _seed(bool(cfg.use_photo))[2]
 
 
 # Sequential warm start, layer by layer. ExoGibbs's name: it flips the
@@ -186,39 +188,18 @@ def seed_elements() -> tuple[str, ...]:
 _SEED_METHOD = "scan_hot_from_bottom"
 
 
-def _seed_key() -> tuple[float, int, bool]:
-    """Return the config's solver controls and `use_photo`, read at call time (`_cfg_overlay`)."""
-    return (float(_CFG.fastchem_newton_tol), int(_CFG.fastchem_newton_max_iter), bool(_CFG.use_photo))
+def _seed_key(cfg: Config) -> tuple[float, int, bool]:
+    """Return the run's solver controls and `use_photo`, the key the seed functions are built on."""
+    return (float(cfg.fastchem_newton_tol), int(cfg.fastchem_newton_max_iter), bool(cfg.use_photo))
 
 
-@functools.cache
-def _seed_controls(
-    tol: float, max_iter: int, use_photo: bool
-) -> tuple[EquilibriumOptions, Callable[[jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray]]:
-    """`(options, eq_seed jitted)` for one set of solver controls and one `use_photo`, interned.
-
-    ExoGibbs keys its scan-body cache on `id(options)`, so a fresh dataclass
-    per call would rebuild the profile scan every time. `eq_seed` reads the
-    tolerance and the iteration cap at trace time, and JAX keys its trace
-    cache on the traced function plus the argument shapes -- not on our key
-    -- so `jax.jit(eq_seed)` under a new key would reuse the trace that baked
-    in the old controls. A fresh closure per key is a fresh cache entry.
-    Without the jit the host path re-traces the scan on every call.
-    """
-    from exogibbs.api.gas import EquilibriumOptions
-
-    del use_photo  # a key only: the trace reads the seed species through `_seed`
-    options = EquilibriumOptions(epsilon_crit=tol, max_iter=max_iter, method=_SEED_METHOD)
-    return options, jax.jit(lambda Tco, p_bar, b: eq_seed(Tco, p_bar, b))  # noqa: PLW0108 (a fresh closure)
-
-
-@jax.custom_jvp
-def eq_seed(Tco: jnp.ndarray, p_bar: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+def eq_seed(Tco: jnp.ndarray, p_bar: jnp.ndarray, b: jnp.ndarray, cfg: Config) -> jnp.ndarray:
     """Equilibrium mixing ratios of one column.
 
-    Species outside the seed (condensates, ions) are exactly
-    zero. A column with an unconverged layer is NaN in every seed species, so
-    no caller can use half a solution. The tangent is zero: the seed is an initial condition.
+    Species outside the seed (condensates, ions, and with `use_photo` off the
+    photolysis-only species) are exactly zero. A column with an unconverged
+    layer is NaN in every seed species, so no caller can use half a solution.
+    The tangent is zero: the seed is an initial condition.
 
     The inputs are cast to float64: a float32 caller would otherwise give the
     minimizer a mixed-dtype loop carry.
@@ -230,70 +211,96 @@ def eq_seed(Tco: jnp.ndarray, p_bar: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray
     p_bar : jnp.ndarray [nz]
         Layer pressure, bar.
     b : jnp.ndarray [n_elements]
-        Elemental abundances in `seed_elements()` order; only their ratios matter.
+        Elemental abundances in `seed_elements(cfg)` order; only their ratios matter.
+    cfg : Config
+        The run's config: `use_photo`, `fastchem_newton_tol` and `fastchem_newton_max_iter`, read at trace time.
 
     Returns
     -------
     jnp.ndarray [nz, ni]
         Mixing ratios.
     """
-    y: jnp.ndarray = _eq_seed_column(Tco, p_bar, b)
+    y: jnp.ndarray = _seed_fns(*_seed_key(cfg))[1](Tco, p_bar, b)
     return y
 
 
-def _solve_profile(Tco: np.ndarray | jnp.ndarray, p_bar: np.ndarray | jnp.ndarray, b: np.ndarray | jnp.ndarray) -> Any:
+@functools.cache
+def _seed_fns(
+    tol: float, max_iter: int, use_photo: bool
+) -> tuple[EquilibriumOptions, Callable[..., jnp.ndarray], Callable[..., jnp.ndarray]]:
+    """`(options, seed, seed jitted)` for one set of solver controls and one `use_photo`, interned.
+
+    Each function closes over its key, so a new key is a new function and a fresh trace: JAX keys its trace cache on
+    the function and the argument shapes, not on the key. ExoGibbs keys its scan-body cache on `id(options)`, so the
+    options are built once per key. Without the jit the host path re-traces the scan on every call.
+    """
+    from exogibbs.api.gas import EquilibriumOptions
+
+    options = EquilibriumOptions(epsilon_crit=tol, max_iter=max_iter, method=_SEED_METHOD)
+
+    @jax.custom_batching.custom_vmap
+    def column(Tco: jnp.ndarray, p_bar: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+        res, diag = _solve_profile(options, use_photo, Tco, p_bar, b)
+        seed_idx = _seed(use_photo)[1]
+        ok = jnp.all(diag["converged"]) & jnp.all(jnp.isfinite(res.x))
+        y = jnp.zeros((Tco.shape[0], chem_funs.ni), dtype=jnp.float64)
+        return y.at[:, jnp.asarray(seed_idx)].set(jnp.where(ok, res.x, jnp.nan))
+
+    @column.def_vmap
+    def lanes(axis_size: int, in_batched: list[bool], Tco: jnp.ndarray, p_bar: jnp.ndarray, b: jnp.ndarray) -> Any:
+        """Batched seed: the unbatched program once per lane, in a `lax.map`.
+
+        A vmapped minimizer computes a lane in another order than the solo one,
+        so a lane's seed would depend on how many lanes are seeded with it, and
+        the solver amplifies that to the convergence scale. The map calls the wrapped
+        function, so a nested `vmap` also runs lane by lane.
+        """
+        args = tuple(
+            x if batched else jnp.broadcast_to(x, (axis_size, *jnp.shape(x)))
+            for x, batched in zip((Tco, p_bar, b), in_batched, strict=False)
+        )
+        return jax.lax.map(lambda a: column(*a), args), True
+
+    @jax.custom_jvp
+    def seed(Tco: jnp.ndarray, p_bar: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+        y: jnp.ndarray = column(Tco, p_bar, b)
+        return y
+
+    @seed.defjvp
+    def seed_jvp(
+        primals: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray], tangents: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """Zero tangent: the seed is an initial condition, not a model output.
+
+        ExoGibbs's kernel carries a `custom_vjp` and no forward rule, so a jvp
+        must never reach it.
+        """
+        del tangents
+        primal = seed(*primals)
+        return primal, jnp.zeros_like(primal)
+
+    return options, seed, jax.jit(seed)
+
+
+def _solve_profile(
+    options: EquilibriumOptions,
+    use_photo: bool,
+    Tco: np.ndarray | jnp.ndarray,
+    p_bar: np.ndarray | jnp.ndarray,
+    b: np.ndarray | jnp.ndarray,
+) -> Any:
     """ExoGibbs `solve_profile` on one column: `(result, per-layer diagnostics)`."""
     from exogibbs.api.gas import solve_profile
 
     return solve_profile(
-        _seed()[0],
+        _seed(use_photo)[0],
         jnp.asarray(Tco, dtype=jnp.float64),
         jnp.asarray(p_bar, dtype=jnp.float64),
         jnp.asarray(b, dtype=jnp.float64),
         Pref=1.0,
-        options=_seed_controls(*_seed_key())[0],
+        options=options,
         return_diagnostics=True,
     )
-
-
-@jax.custom_batching.custom_vmap
-def _eq_seed_column(Tco: jnp.ndarray, p_bar: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
-    """`eq_seed` on one column; under `vmap`, `_eq_seed_lanes`."""
-    res, diag = _solve_profile(Tco, p_bar, b)
-    seed_idx = _seed()[1]
-    ok = jnp.all(diag["converged"]) & jnp.all(jnp.isfinite(res.x))
-    y = jnp.zeros((Tco.shape[0], chem_funs.ni), dtype=jnp.float64)
-    return y.at[:, jnp.asarray(seed_idx)].set(jnp.where(ok, res.x, jnp.nan))
-
-
-@_eq_seed_column.def_vmap
-def _eq_seed_lanes(axis_size: int, in_batched: list[bool], Tco: jnp.ndarray, p_bar: jnp.ndarray, b: jnp.ndarray) -> Any:
-    """Batched seed: the unbatched program once per lane, in a `lax.map`.
-
-    A vmapped minimizer computes a lane in another order than the solo one,
-    so a lane's seed would depend on how many lanes are seeded with it, and
-    the solver amplifies that to the convergence scale. The map calls the wrapped
-    function, so a nested `vmap` also runs lane by lane.
-    """
-    args = tuple(
-        x if batched else jnp.broadcast_to(x, (axis_size, *jnp.shape(x)))
-        for x, batched in zip((Tco, p_bar, b), in_batched, strict=False)
-    )
-    return jax.lax.map(lambda a: _eq_seed_column(*a), args), True
-
-
-@eq_seed.defjvp
-def _eq_seed_jvp(
-    primals: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray], tangents: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]
-) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Zero tangent: the seed is an initial condition, not a model output.
-
-    ExoGibbs's kernel carries a `custom_vjp` and no forward rule, so a jvp
-    must never reach it.
-    """
-    del tangents
-    primal = eq_seed(*primals)
-    return primal, jnp.zeros_like(primal)
 
 
 def read_abundances(path: Path) -> dict[str, float]:
@@ -328,36 +335,37 @@ def read_abundances(path: Path) -> dict[str, float]:
     return {sp: 10.0 ** (value - dex["H"]) for sp, value in dex.items()}
 
 
-def _preset_vector() -> np.ndarray:
+def _preset_vector(cfg: Config) -> np.ndarray:
     """`b` (E,) straight from the configured preset file."""
-    path = _abundance_path()
+    path = _abundance_path(cfg)
     preset = read_abundances(path)
-    absent = [sp for sp in seed_elements() if sp not in preset]
+    elements = seed_elements(cfg)
+    absent = [sp for sp in elements if sp not in preset]
     if absent:
         raise RuntimeError(
             f"{path} has no row for {', '.join(absent)}, which the "
-            f"{_CFG.network!r} network needs. Every element of the loaded "
+            f"{cfg.network!r} network needs. Every element of the loaded "
             "network must be in the abundance preset."
         )
-    return np.array([preset[sp] for sp in seed_elements()], dtype=np.float64)
+    return np.array([preset[sp] for sp in elements], dtype=np.float64)
 
 
-def _base_vector() -> np.ndarray:
+def _base_vector(cfg: Config) -> np.ndarray:
     """`b` (E,) with the config's `<X>_H` applied on top of the preset.
 
     Only elements of `cfg.atom_list` other than H that the network carries
     are overridden. Helium comes from the file for every shipped atom list
     (`He_H` is a `const_lowT` knob).
     """
-    b = _preset_vector()
-    elements = seed_elements()
-    for atom in _CFG.atom_list:
+    b = _preset_vector(cfg)
+    elements = seed_elements(cfg)
+    for atom in cfg.atom_list:
         if atom != "H" and atom in elements:
-            b[elements.index(atom)] = float(getattr(_CFG, atom + "_H"))
+            b[elements.index(atom)] = float(getattr(cfg, atom + "_H"))
     return b
 
 
-def ratio_indices(names: Sequence[str]) -> jnp.ndarray:
+def ratio_indices(names: Sequence[str], cfg: Config) -> jnp.ndarray:
     """Positions of `names` in the seed's element vector, resolved once.
 
     The array path (`element_vector`) takes these so a batched caller never
@@ -367,18 +375,20 @@ def ratio_indices(names: Sequence[str]) -> jnp.ndarray:
     ----------
     names : sequence of str [n]
         Element symbols.
+    cfg : Config
+        The run's config (`use_photo` selects the seed species).
 
     Returns
     -------
     jnp.ndarray [n]
-        int32 positions in `seed_elements()`.
+        int32 positions in `seed_elements(cfg)`.
 
     Raises
     ------
     KeyError
         If a name is not an element of the loaded network.
     """
-    elements = seed_elements()
+    elements = seed_elements(cfg)
     unknown = [sp for sp in names if sp not in elements]
     if unknown:
         raise KeyError(
@@ -387,12 +397,12 @@ def ratio_indices(names: Sequence[str]) -> jnp.ndarray:
     return jnp.asarray([elements.index(sp) for sp in names], dtype=jnp.int32)
 
 
-def element_vector(ratios: jnp.ndarray, idx: jnp.ndarray) -> jnp.ndarray:
+def element_vector(ratios: jnp.ndarray, idx: jnp.ndarray, cfg: Config) -> jnp.ndarray:
     """Return the elemental abundance vector with the elements at `idx` replaced by `ratios`. Traceable.
 
-    Starts from `_element_vector()`, the host path's own no-override vector,
+    Starts from `_element_vector(cfg)`, the host path's own no-override vector,
     so `use_solar` and the `cfg.<X>_H` overrides have the same precedence on
-    both paths, and it is bit-identical to `_element_vector({name: value,
+    both paths, and it is bit-identical to `_element_vector(cfg, {name: value,
     ...})` for the same elements: a replaced O also loses `O_sequestered_frac`.
 
     Parameters
@@ -401,38 +411,40 @@ def element_vector(ratios: jnp.ndarray, idx: jnp.ndarray) -> jnp.ndarray:
         Abundances relative to H.
     idx : jnp.ndarray [n]
         Their positions, from `ratio_indices`.
+    cfg : Config
+        The run's config: the preset, `use_solar`, `<X>_H`, `O_sequestered_frac` and `use_photo`.
 
     Returns
     -------
     jnp.ndarray [n_elements]
-        `b` in `seed_elements()` order, relative to H.
+        `b` in `seed_elements(cfg)` order, relative to H.
     """
-    scaled = jnp.asarray(ratios, dtype=jnp.float64) * jnp.asarray(_o_scale())[idx]
-    return jnp.asarray(_element_vector()).at[idx].set(scaled)
+    scaled = jnp.asarray(ratios, dtype=jnp.float64) * jnp.asarray(_o_scale(cfg))[idx]
+    return jnp.asarray(_element_vector(cfg)).at[idx].set(scaled)
 
 
-def _element_vector(ratios: dict | None = None) -> np.ndarray:
-    """`b` (E,) for the current config, host-side.
+def _element_vector(cfg: Config, ratios: dict | None = None) -> np.ndarray:
+    """`b` (E,) for the config `cfg`, host-side.
 
     The base is the same on both paths -- the preset when `use_solar` is
     true, else the preset with `cfg.<X>_H` applied -- and `ratios` replaces
     entries on top of it, exactly as `element_vector` does with `idx`. Last, O
     is scaled by 1 - `O_sequestered_frac`.
     """
-    b = _preset_vector() if _CFG.use_solar is True else _base_vector()
+    b = _preset_vector(cfg) if cfg.use_solar is True else _base_vector(cfg)
     if ratios:
-        elements = seed_elements()
+        elements = seed_elements(cfg)
         for sp, value in ratios.items():
             if sp not in elements:
                 raise KeyError(f"ratios[{sp!r}] is not an element of the loaded network ({', '.join(elements)}).")
             b[elements.index(sp)] = float(value)
-    sequestered: np.ndarray = b * _o_scale()
+    sequestered: np.ndarray = b * _o_scale(cfg)
     return sequestered
 
 
-def _o_sequestered_frac() -> float:
+def _o_sequestered_frac(cfg: Config) -> float:
     """Return `cfg.O_sequestered_frac`, the fraction of bulk O held in condensates outside the network."""
-    frac = float(_CFG.O_sequestered_frac)
+    frac = float(cfg.O_sequestered_frac)
     if not 0.0 <= frac < 1.0:
         raise ValueError(
             f"O_sequestered_frac={frac!r} is outside [0, 1): it is the fraction of the bulk O removed from the gas. "
@@ -441,16 +453,17 @@ def _o_sequestered_frac() -> float:
     return frac
 
 
-def _o_scale() -> np.ndarray:
+def _o_scale(cfg: Config) -> np.ndarray:
     """`(E,)` factor on the bulk elemental vector: 1 - `O_sequestered_frac` on O, 1 elsewhere."""
-    scale = np.ones(len(seed_elements()), dtype=np.float64)
-    frac = _o_sequestered_frac()
-    if frac > 0.0 and "O" not in seed_elements():
+    elements = seed_elements(cfg)
+    scale = np.ones(len(elements), dtype=np.float64)
+    frac = _o_sequestered_frac(cfg)
+    if frac > 0.0 and "O" not in elements:
         raise ValueError(
-            f"O_sequestered_frac={frac!r} has no effect: the {_CFG.network!r} network carries no O. Set it to 0."
+            f"O_sequestered_frac={frac!r} has no effect: the {cfg.network!r} network carries no O. Set it to 0."
         )
-    if "O" in seed_elements():
-        scale[seed_elements().index("O")] = 1.0 - frac
+    if "O" in elements:
+        scale[elements.index("O")] = 1.0 - frac
     return scale
 
 
@@ -608,20 +621,20 @@ def eq_column(pco: np.ndarray | jnp.ndarray, Tco: np.ndarray | jnp.ndarray, M: n
             "is gas-phase and neutral, with no electron balance. Initialize an "
             "ionized run with ini_mix='const_mix' or 'vulcan_ini'."
         )
-    b = _element_vector()
+    b = _element_vector(_CFG)
+    elements = seed_elements(_CFG)
     Tco = np.asarray(Tco, dtype=np.float64)
     p_bar = np.asarray(pco, dtype=np.float64) / BAR_CGS
     logger.info(
         "Equilibrium seed from %s: %s",
-        _abundance_path(),
-        ", ".join(
-            f"{sp}/H={b[seed_elements().index(sp)]:.8g}" for sp in ("He", "C", "N", "O", "S") if sp in seed_elements()
-        ),
+        _abundance_path(_CFG),
+        ", ".join(f"{sp}/H={b[elements.index(sp)]:.8g}" for sp in ("He", "C", "N", "O", "S") if sp in elements),
     )
-    seed_jit = _seed_controls(*_seed_key())[1]
+    key = _seed_key(_CFG)
+    options, _, seed_jit = _seed_fns(*key)
     ymix = np.asarray(seed_jit(jnp.asarray(Tco), jnp.asarray(p_bar), jnp.asarray(b)))
     if not np.isfinite(ymix).all():
-        diag = _solve_profile(Tco, p_bar, b)[1]
+        diag = _solve_profile(options, key[2], Tco, p_bar, b)[1]
         conv = np.asarray(diag["converged"])
         bad = np.flatnonzero(~conv)
         # A layer that stopped before the cap broke down (NaN residual), which
@@ -827,7 +840,7 @@ def compute_initial_abundance(data_atm: types.SimpleNamespace) -> IniAbunOutputs
     mix = _CFG.ini_mix
     if mix not in _MODE_DISPATCH:
         raise ValueError(f"ini_mix={mix!r} is not a mode; choose one of {sorted(_MODE_DISPATCH)}.")
-    if _o_sequestered_frac() > 0.0 and mix != "EQ":
+    if _o_sequestered_frac(_CFG) > 0.0 and mix != "EQ":
         raise ValueError(
             f"O_sequestered_frac={_CFG.O_sequestered_frac!r} acts only on the elemental abundances of ini_mix='EQ', "
             f"and ini_mix={mix!r} does not read them. Set it to 0 or use ini_mix='EQ'."
