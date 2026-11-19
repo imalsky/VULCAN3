@@ -9,7 +9,8 @@ Self-contained: isothermal TP + const_mix init, no photo, no EQ seed.
 Checks: (1) settling velocities are downward for each condensate column and
 exactly zero for gas species; (2) a short H2O-relaxation run stays finite and
 actually moves mass into `H2O_l_s` (full runner conden path); (3)
-`use_sat_surfaceH2O` reaches the runner's bottom pin on both config paths.
+`use_sat_surfaceH2O` reaches the runner's bottom pin on both config paths; (4) a frozen species keeps its
+frozen value at a bottom pin.
 """
 
 from __future__ import annotations
@@ -115,6 +116,27 @@ for c in (cfg, copy.deepcopy(cfg)):
     assert st.use_fix_sp_bot and pins == {"H2O": want}, (pins, want)
     assert c.use_fix_sp_bot == {} and default_config().use_fix_sp_bot == {}
 print("SAT_SURFACE_OK")
+
+# ---- Check 4: a species both bottom-pinned and frozen keeps its frozen value at the surface ----
+# VULCAN 2 sets the bottom pin, then the fix_species freeze overwrites the frozen levels (op.py:2945-2946, :2960-2968).
+import jax.numpy as jnp
+c = copy.deepcopy(cfg)
+c.use_sat_surfaceH2O = False; c.use_relax = []
+c.fix_species = ["H2O"]; c.fix_species_from_coldtrap_lev = False
+c.count_max = 3; c.count_min = 1
+i = sl.index("H2O")
+frozen = c.const_mix["H2O"]  # the start density over n_0; the run rebalances each layer to n_0
+# 0.1 % off the frozen value: a step that pins it is still accepted, and the two orders stay apart.
+c.use_fix_sp_bot = {"H2O": 1.001 * frozen}
+integ = outer_loop.OuterLoop(op_jax.Ros2JAX(), op.Output(cfg=c), cfg=c)
+state, atm_static = integ.prepare_runstate(RunState.with_pre_loop_setup(c))
+state = state._replace(
+    fix_species_started=jnp.bool_(True), fix_y=state.y, fix_mask=jnp.zeros_like(state.fix_mask).at[:, i].set(True)
+)
+final = integ._runner(state, atm_static)
+assert int(final.accept_count) == 4 and int(final.force_accept_count) == 0
+assert abs(float(final.ymix[0, i]) / frozen - 1.0) < 1e-4, float(final.ymix[0, i]) / frozen
+print("FREEZE_OVER_PIN_OK")
 print("PASS")
 """
 
@@ -124,4 +146,5 @@ def test_condensation_runtime_subprocess():
     assert "SETTLING_OK" in res.stdout, res.stdout
     assert "CONDEN_OK" in res.stdout, res.stdout
     assert "SAT_SURFACE_OK" in res.stdout, res.stdout
+    assert "FREEZE_OVER_PIN_OK" in res.stdout, res.stdout
     assert res.stdout.strip().endswith("PASS")

@@ -115,10 +115,7 @@ def _ros2_solve(
     sol, delta_arr = jax_ros2_step(s.y, s.k_arr, s.dt, atm_step, net, fix_mask=step_mask, matrix_free=matrix_free)
     if statics.use_ion:
         delta_arr = jnp.where(step_mask, 0.0, delta_arr)  # type: ignore[arg-type]  # set whenever use_ion
-        if statics.use_fix_species:
-            sol = jnp.where(s.fix_mask, s.fix_y, sol)
     elif statics.use_fix_species:
-        sol = jnp.where(s.fix_mask, s.fix_y, sol)
         delta_arr = jnp.where(s.fix_mask, 0.0, delta_arr)
     return sol, delta_arr
 
@@ -187,6 +184,10 @@ def _trial(env: RunnerEnv, s: JaxIntegState, atm_static_: AtmStatic, matrix_free
     atm_step = _splice_step_atm(atm_static_, s, statics.use_vm_mol, env.refresh_static.kb, env.refresh_static.Navo)
     sol, delta_arr = _ros2_solve(env, s, atm_step, matrix_free)
     sol, h2he_pinned_next, h2he_mix_next, zero_bot_dyn = _bottom_pins(statics, s, sol)
+    if statics.use_fix_species:
+        # The freeze overwrites the frozen levels after the bottom pins, so a species in both keeps its frozen value at
+        # the surface (op.py:2945-2946, then :2960-2968).
+        sol = jnp.where(s.fix_mask, s.fix_y, sol)
     if statics.use_ion:
         # Zero net charge per layer, set before the clip as VULCAN 2 does (op.py:2998-3004): `charge_arr[i]` is
         # compo[i]['e'] for a charged species and 0 for 'e'. The later hydrostatic rebalance scales every gas alike, so
