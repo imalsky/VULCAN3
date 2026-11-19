@@ -35,6 +35,7 @@ _CONSUMED = {
         "surface_gravity",
     ],
     "vulcan3.chem_funs": ["NETWORK", "NET_JAX"],
+    "vulcan3.diagnose": ["reaction_rates"],
     "vulcan3.composition": ["atom_list", "compo", "compo_array", "compo_row"],
     "vulcan3.conden": ["build_conden_profile", "make_conden_spec"],
     "vulcan3.gibbs": ["load_nasa9"],

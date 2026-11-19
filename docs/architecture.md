@@ -31,6 +31,7 @@ writes a `.vul` pickle from a `RunState` only.
 | `conden`, `ini_abun` | condensation kernels and profile builder; initial-abundance setup |
 | `atm_jax`, `atm_refresh` | on-graph molecular-diffusion inputs; atmosphere-refresh kernels (mu, dz, g, Hp, diffusion-limited escape) |
 | `cli`, `legacy_io` | the driver (`cli_main`): build `RunState`, integrate, write `.vul`; the legacy I/O surface |
+| `diagnose` | ranks the reactions that make and destroy a species in a saved `.vul` |
 | `phy_const` | physical constants in CGS |
 
 ## Import order

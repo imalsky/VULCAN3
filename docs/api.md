@@ -40,6 +40,26 @@ One row per name in `vulcan3.__all__`.
 
 `conv_normal` is defined in `_convergence.py` and `make_config` in `__init__.py`. The source splits the parameters of `raise_if_frozen` over several lines.
 
+## Run analysis
+
+`vulcan3.diagnose` is not exported at the top level; import it from its module. It ports VULCAN 2's `diagnose.py`.
+
+```python
+from vulcan3.diagnose import reaction_rates
+
+r = reaction_rates("output/HD189.vul", "CH4", slice(25, -1), top=10)
+r.loss.equation[0], r.loss.flux.max(axis=1)[0]
+```
+
+`reaction_rates(vul, species, layers=None, top=20, *, network=None) -> SpeciesRates` takes a `.vul` path or its loaded dict.
+It returns `production` and `loss`, each a `ReactionSet` of `slot`, `equation`, `stoich`, `rate` and `flux`, ranked by the
+maximum of `flux` over the layers. Rates are in cm^-3 s^-1, shape `[reactions, layers]`. A reverse slot reads
+"<forward text> (reverse)". The rate of a slot is `k * prod(y ** stoich)`, times the total density `n_0` for a row that carries M;
+this is the term of the chemistry RHS, so `production.flux - loss.flux` summed over all reactions is the chemistry tendency of
+the species (`tests/test_diagnose.py`). Unlike VULCAN 2, the condensate `S8_l_s` is not skipped. The network is the default
+config's unless `network=` names the file the run used. A species or reaction text that differs from the run's raises `ValueError`.
+The `.vul` is a pickle: open only files you trust.
+
 ## Internals behind a public name
 
 These are the objects' own attributes and modules, not aliases, and may change. Read the public name.
