@@ -184,7 +184,9 @@ Transport
   from Tsai et al. 2021 appendix A in the factors' signs and coverage and in the CO2 fit (2.15e17 T^0.750 against the
   paper's 7.51e16 T^0.759) [I, read]. No shipped config uses a CO2 base.
 - `high_temp_cut` treats the bottom pressure the opposite way from upstream's VULCAN 3 branch (`_tp_kzz.py:352`,
-  `_transport_setup.py:251`) [I, read]; off by default and in every shipped config.
+  `_transport_setup.py:251`) [I, read]; off by default and in every shipped config. After a cut, the analytical T-P
+  takes `Pb` from the re-gridded `pco[0]` (`_tp_kzz.py:351`) where that branch keeps the config's `P_b`
+  (`build_atm.py:556` there) [M, read]; VULCAN 2 has no cut. Resolve both before shipping the cut on by default.
 
 Inputs and data
 - `thermo/solar_element_abundances.dat` replaced in ccc40f7, still the default:
@@ -939,6 +941,9 @@ packaged default's load) and is never refused.
 
 ## Known and deliberately untracked
 
+- Two solo runs on one `OuterLoop` with condensation and `use_sat_surfaceH2O` reuse the first profile's surface H2O
+  pin: the runner is built once (`outer_loop.ensure_runner`). Batches and queues of several profiles refuse it; build
+  a new `OuterLoop` per T-P profile.
 - `vulcan3` is unclaimed on PyPI while the README installs put TestPyPI first, so a TestPyPI package can shadow its
   PyPI namesake (the maintainer decided not to track it).
 - Never run (no shipped claim rests on them): HPC chunked-Jacobian peak at 512
