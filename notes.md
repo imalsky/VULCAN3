@@ -763,6 +763,11 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   association runs at the collision ceiling (NASA-9 reaction enthalpy 163-166 kJ/mol above E_inf 138 kJ/mol gives it
   an activation energy near -3000 K), and CH3SCH2 has no attack by H, O or O2 and no photolysis in the network. The
   row's k0 (2.16e-16, no T dependence) acts only at the bottom layer; kinf = 4.4e13 exp(-16600/T) s^-1.
+- `thermo/NASA9/CH3SCH2.txt` (vendored, as in both pinned clones) holds Burcat's ethylthiyl radical CH3CH2S, not
+  CH3SCH2: its 200-1000 K block is the `C2H5S ethyl thio radical CH3CH2S* HF298=23.324 kcal` entry of the clones'
+  `new_nasa9.TXT` (97.6 kJ/mol) [M, read]; the bundled Burcat files have no CH3SCH2 entry. An outside review gives
+  CH3SCH2 137.9 +- 1.4 kJ/mol from ATcT [unverified: the ATcT page refuses automated reads]. Every reverse rate through
+  CH3SCH2 (its decomposition and the H-abstraction rows that make DMS from it) then rests on the wrong isomer.
 
 ## Design records
 
