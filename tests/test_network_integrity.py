@@ -252,6 +252,19 @@ def test_a_photolysis_branch_gap_is_refused(tmp_path):
         netmod.parse_network(f)
 
 
+def test_a_repeated_photolysis_branch_number_is_refused(tmp_path):
+    """VULCAN 2 keeps only the later row's J (`op.py:245`), leaving the earlier one at rate 0; both must be named."""
+    from vulcan3 import network as netmod
+
+    f = tmp_path / "net.txt"
+    f.write_text(
+        "1  [ H + OH -> H2O ]  1.0E-10  0.0  0.0\n# reverse stops\n# photo\n"
+        "3  [ H2O -> H + OH ]  H2O  1\n5  [ H2O -> H + H + O ]  H2O  1\n"
+    )
+    with pytest.raises(ValueError, match=r"H2O -> H \+ H \+ O.*H2O branch 1.*H2O -> H \+ OH"):
+        netmod.parse_network(f)
+
+
 def test_duplicate_reactions_refuse_naming_the_equations():
     """TiSNCHO's three upstream duplicates must refuse by default, warn on opt-in."""
     from vulcan3 import network as netmod

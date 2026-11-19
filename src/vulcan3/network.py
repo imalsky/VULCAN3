@@ -365,6 +365,12 @@ def _read_reaction(st: _ParseState, file_id_str: str, eq: str, tail: str) -> Non
         target_sp, branch = photo_meta
         if target_sp not in sp_list:
             sp_list.append(target_sp)
+        # VULCAN 2 overwrites the index (`op.py:245`), so the earlier row would keep rate 0.
+        if photo_meta in rate_index:
+            raise ValueError(
+                f"{eq!r} is {target_sp} branch {branch}, which {st.Rf_text[rate_index[photo_meta]]!r} already is. "
+                "Give each branch of a species its own number, 1..n."
+            )
         rate_index[photo_meta] = parser_i
         n_br[target_sp] = max(n_br.get(target_sp, 0), branch)
 
