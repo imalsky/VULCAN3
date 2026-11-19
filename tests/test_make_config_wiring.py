@@ -180,6 +180,19 @@ def test_save_cfg_serializes_active_cfg(tmp_path, monkeypatch):
     assert "custom.vul" in content
 
 
+def test_saved_cfg_carries_the_surface_gravity_vulcan2_plot_tools_read(tmp_path):
+    """VULCAN 2's plot_py/prt_spectrum.py imports the saved cfg text as Python and reads `cfg.gs` (cm s^-2)."""
+    import vulcan3
+    from vulcan3 import legacy_io
+    from vulcan3._tp_kzz import surface_gravity
+
+    cfg = vulcan3.make_config(out_name="g.vul")
+    legacy_io.Output(cfg=cfg).save_cfg(str(tmp_path))
+    saved: dict = {}
+    exec((tmp_path / cfg.output_dir / "cfg_g.txt").read_text(), saved)
+    assert saved["gs"] == surface_gravity(cfg)
+
+
 def test_clip_fn_degenerate_layer_stays_finite():
     """An all-zero (or all-negative) gas layer must not produce NaN/inf ymix, with or without the gas mask."""
     import jax.numpy as jnp

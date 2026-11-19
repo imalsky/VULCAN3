@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from . import chem_funs, photo as _photo_mod
+from ._tp_kzz import surface_gravity
 from .chem_funs import ni, nr
 from .config import default_config
 from .op_jax import Ros2JAX
@@ -303,7 +304,7 @@ class Output:
         logger.info(str(para.delta_count))
 
     def save_cfg(self, dname: str) -> None:
-        """Write a repr snapshot of the active cfg, make_config overrides included.
+        """Write a repr snapshot of the active cfg, make_config overrides included, and the derived `gs`.
 
         Goes to `cfg_<out_name stem>.txt` under `dname/output_dir`, skipping private, callable, type and module
         attributes so it re-reads as Python.
@@ -321,6 +322,8 @@ class Output:
             if callable(val) or isinstance(val, type) or hasattr(val, "__loader__"):
                 continue
             lines.append(f"{key} = {val!r}")
+        # VULCAN 2's plot_py/prt_spectrum.py reads cfg.gs (cm s^-2), which VULCAN 3 derives from Mp and Rp.
+        lines.append(f"gs = {surface_gravity(self._cfg)!r}")
         out_path = target_dir / ("cfg_" + out_name[:-3] + "txt")
         with out_path.open("w") as f:
             f.write("\n".join(lines) + "\n")
