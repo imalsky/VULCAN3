@@ -239,8 +239,9 @@ class Output:
         # Pair with OuterLoop(cfg=cfg).
         self._cfg = cfg if cfg is not None else default_config()
 
+        # The CLI writes `Path(dname) / output_dir / out_name` with dname the cwd (`save_out`).
         output_dir, out_name = self._cfg.output_dir, self._cfg.out_name
-        if Path(output_dir + out_name).is_file():
+        if (Path(output_dir) / out_name).is_file():
             warnings.warn("The output file: " + str(out_name) + " already exists.", stacklevel=2)
 
     def print_prog(self, var: types.SimpleNamespace, para: types.SimpleNamespace) -> None:

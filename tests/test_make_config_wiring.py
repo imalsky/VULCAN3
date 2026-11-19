@@ -193,6 +193,24 @@ def test_saved_cfg_carries_the_surface_gravity_vulcan2_plot_tools_read(tmp_path)
     assert saved["gs"] == surface_gravity(cfg)
 
 
+def test_output_warns_on_the_file_it_will_overwrite(tmp_path, monkeypatch):
+    """The overwrite warning checks `output_dir / out_name`, the file the CLI writes, even with no trailing slash."""
+    import warnings
+
+    import vulcan3
+    from vulcan3 import legacy_io
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "out").mkdir()
+    (tmp_path / "out" / "a.vul").write_bytes(b"")
+    (tmp_path / "outb.vul").write_bytes(b"")  # what `output_dir + out_name` names for out_name b.vul
+    with pytest.warns(UserWarning, match="a.vul already exists"):
+        legacy_io.Output(cfg=vulcan3.make_config(output_dir="out", out_name="a.vul"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        legacy_io.Output(cfg=vulcan3.make_config(output_dir="out", out_name="b.vul"))
+
+
 def test_clip_fn_degenerate_layer_stays_finite():
     """An all-zero (or all-negative) gas layer must not produce NaN/inf ymix, with or without the gas mask."""
     import jax.numpy as jnp
