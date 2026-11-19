@@ -235,6 +235,10 @@ Refused or not ported (no physics change)
   thermo, SNCHO_2024, PHO_full, Venus), atm files (Venus, wasp63b, Teq_500, HD189_ter, Mars BCs, Jupiter_deep_top),
   six stellar spectra, 174 of 300 NASA-9 files and the cross sections of non-network elements. NASA-9 data is read
   beside the network file, so a network path into a VULCAN 2 tree sets up [M, PHO_full].
+- Non-network elements: upstream's `use_other_ele` + `fastchem_met_scale` (gas-only FastChem, then the species outside
+  the network dropped layer by layer) is not ported. The opt-in `sequestered_frac` (e.g. `{O: 0.2, S: 0.1}`, default `{}`)
+  removes a fixed fraction of a network element from the EQ seed's elemental vector instead: silicates take O, FeS takes
+  S in cool planets. Conserved and differentiable; it reaches vulcan-forward's per-run seed.
 - Not adopted from upstream's VULCAN 3 branch: its C4 NASA-9 fit (`thermo/NASA9/C4.txt`) and four C4H2 photolysis
   branches, which need branch data the branch lacks.
 - NASA-9 data is required only for species in reversible rows (`rates_jax.py:516-545`); VULCAN 2 loads it for every
@@ -829,7 +833,7 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   `inspect.getsource` of both emitters; emit 2.7 to 3.6 ms on 86 to 93 species [M]. No file is written.
 - The public seed functions (`eq_seed`, `element_vector`, `ratio_indices`, `seed_elements`) take the run config:
   a consumer traces them after setup's config overlay is gone, so a process default would win (`use_photo`,
-  `O_sequestered_frac`). `validate_overrides` returns the overrides with 0/1 flags as bools; a consumer applies that copy.
+  `sequestered_frac`). `validate_overrides` returns the overrides with 0/1 flags as bools; a consumer applies that copy.
 - `parse_network` raises on within-section, reversed and cross-section duplicates (`duplicates_ok=True`
   warns) and on any non-comment row that fails to parse; `composition.py` raises
   on a species with no `all_compose.txt` row and on disagreeing duplicates except
