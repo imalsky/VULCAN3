@@ -62,6 +62,14 @@ def test_configured_networks_have_no_duplicate_reactions(net_rel):
     assert not net.stale_ids, net.stale_ids
 
 
+@pytest.mark.parametrize("net_rel", _configured_networks(), ids=os.path.basename)
+def test_configured_networks_write_m_on_both_sides_or_neither(net_rel):
+    """A row with M on one side only gives its reverse no M factor (notes "Parity ledger"), so no shipped one loads."""
+    net, _ = _parse_quietly(net_rel)
+    one_sided = [net.Rf[i] for i in np.flatnonzero(net.is_forward) if net.is_three_body[i] != net.is_three_body[i + 1]]
+    assert not one_sided, f"{net_rel}: M on one side only in {one_sided}; write M on both sides"
+
+
 _SHIPPED_NETWORKS = sorted(glob.glob("src/vulcan3/thermo/*network*.txt"))
 # Every vendored network except the C3 one, whose C3, C3H and C4 have no composition row (it cannot load; counted by
 # hand its rows balance).

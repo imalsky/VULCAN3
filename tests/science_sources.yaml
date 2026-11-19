@@ -106,19 +106,23 @@ supported_inputs:
       it needs no ch2cn_falloff entry.
 
   thermo/SNCHO_full_photo_network.txt:
-    sha256: 4030260882c9aaad0e2f7b288c0d58cce1c3bf8b60fefd348301c885fb6e0ff7
+    sha256: 043b597e0737902a2d0998aa1cdc02532e327e70c8549e1728218517acd4b572
     oracle: vulcan2_ncho
+    diverges: [one_sided_m]
     note: >-
-      The vulcan2_ncho revision's file, unchanged, for Earth.yaml (VULCAN 2's
-      Earth example). It keeps `NH3 + CH -> NH2 + CH2`; Earth.yaml removes it
-      and its reverse by position (remove_list 315, 316), as the example does.
+      The vulcan2_ncho revision's file with `HNCO + M -> H + NCO + M`
+      (one_sided_m), for Earth.yaml (VULCAN 2's Earth example). It keeps
+      `NH3 + CH -> NH2 + CH2`; Earth.yaml removes it and its reverse by
+      position (remove_list 315, 316), as the example does.
 
   thermo/SNCHO_DMS_photo_network_2025.txt:
-    sha256: d26efea2b9abac84b2ec2d5cd0cf77910aa63945c6da5d3c227ff045e01b190a
+    sha256: 0ae3646b7dc45200813fcb83c7c3f56cfc645dba0e5cfc7016afb22749b8a5cc
     oracle: null
+    diverges: [one_sided_m]
     note: >-
-      An external user's network for K2-18b.yaml, as received: the 2025 sulfur
-      network plus dimethyl sulfide and C2H5SH chemistry. In no pinned clone,
+      An external user's network for K2-18b.yaml, as received except for
+      one_sided_m: the 2025 sulfur network plus dimethyl sulfide and C2H5SH
+      chemistry. In no pinned clone,
       so the hash pin is the whole guard. K2-18b.yaml removes `S + CN -> N + CS`
       and its reverse by position (remove_list 891, 892), as the user's config does.
 
@@ -301,6 +305,19 @@ intentional_divergences:
       gas (removing them moved up to 1.9 dex in maxichem's tests), and the
       collision limit on rates (C30) bounds their low-T reverses. A model choice,
       not a measured correction, for the rows upstream left in place.
+    recorded_in: tools/audit_master_parity.py::KNOWN_THERMO_DIVERGENCES; tests/oracle.py::ORACLE_DATA_DELTAS
+
+  one_sided_m:
+    files:
+      - thermo/SNCHO_full_photo_network.txt
+      - thermo/SNCHO_DMS_photo_network_2025.txt
+    reactions:
+      - "HNCO + M -> H + NCO + M: product M added (upstream a68d715), both files"
+      - "CH3SCH2 + M -> H2CS + CH3 + M: product M added, SNCHO_DMS_photo_network_2025 only"
+    reason: >-
+      With M on the reactant side only, the reverse rate has no M factor. The
+      same correction as HNCO + M in low_t_reverse_rates, in the two files
+      that still carried such rows.
     recorded_in: tools/audit_master_parity.py::KNOWN_THERMO_DIVERGENCES; tests/oracle.py::ORACLE_DATA_DELTAS
 
   n2d_thermo:

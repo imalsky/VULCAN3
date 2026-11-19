@@ -66,6 +66,7 @@ KNOWN_THERMO_DIVERGENCES: dict[str, tuple[str, ...]] = {
     "SNCHO_photo_network_C3.txt": ("CH2CN + H + M -> CH3CN + M", *_LOW_T_REVERSE_ROWS),
     "SNCHO_DMS_photo_network_Tsai2024.txt": ("CH2CN + H + M -> CH3CN + M", *_LOW_T_REVERSE_ROWS),
     "NCHO_photo_network.txt": _LOW_T_REVERSE_ROWS,
+    "SNCHO_full_photo_network.txt": ("HNCO + M -> H + NCO",),  # one_sided_m
 }
 
 # eps Eri flux: master's sflux-epseri.txt is low by R_star^4 because the formula
