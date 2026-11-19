@@ -129,6 +129,9 @@ Convergence and certificate
   upstream's `vulcan_cfg.py:153`; equivalent on the gates. `mtol_conv` 1e-20
   equals that example (:139). Against master's W39b example (exoclime c870b1a,
   not on daw) the NAS audit lists "HC3N not ignored" and `mtol_conv` 1e-20 as stricter.
+- The loose branch (`yconv_min` 0.1 with `slope_min`, `op.py:1027-1067`, `_convergence._branches`) is VULCAN 2's
+  and certifies every shipped run; Tsai et al. 2017 state only the tight one (`yconv_cri` 0.01), 10x stricter in
+  `longdy` [I, read]. Its effect on the converged abundances is unmeasured.
 - Removed JAX-only rules: the stall rule and the Gustafsson controller ("Superseded
   designs"), c957288's accept test on the adapted rtol, bf01cd6's W39b default with
   `wall_clock_max` 1800 s, 9c2bb75's `conver_ignore` (now `[]`), `use_vm_mol` true in W39b.
@@ -169,6 +172,19 @@ Integrator
   clones use 0.75 (`op.py:839`). It acts only under `use_adapt_rtol`: K2-18b and HD189_vulcan3 among shipped configs.
   `use_ini_cold_trap` and `use_sat_surfaceH2O` default false (root true), kept: upstream's Earth and Jupiter examples
   set the second false and vulcan-forward refuses it under `use_condense`; the first would move the JWST tool's S8 runs.
+- `default.yaml` also follows that example, not the root `vulcan_cfg.py`, in `nz` 150 (root 120, `:72`), `diff_esc: []`
+  (root `['H']`, `:101`) and an `atom_list` without He (root `:6` lists it) [M, read].
+
+Transport
+- `use_vm_mol` drift: interface-centred, shape (nz-1, ni), refreshed in-loop, as upstream's VULCAN 3 branch ("Molecular
+  diffusion and the hybrid scheme"). VULCAN 2 builds it once at cell centres, shape (nz, ni), with the top temperature
+  difference wrapped by `np.roll` (`build_atm.py:737-744`). It reaches HD189_vulcan3 and K2-18b; the saved `vm` is one
+  row shorter.
+- The thermal-diffusion factors and the CO2-base Dzz fit are VULCAN 2's (`build_atm.py:692`, `:713`), which differ
+  from Tsai et al. 2021 appendix A in the factors' signs and coverage and in the CO2 fit (2.15e17 T^0.750 against the
+  paper's 7.51e16 T^0.759) [I, read]. No shipped config uses a CO2 base.
+- `high_temp_cut` treats the bottom pressure the opposite way from upstream's VULCAN 3 branch (`_tp_kzz.py:352`,
+  `_transport_setup.py:251`) [I, read]; off by default and in every shipped config.
 
 Inputs and data
 - `thermo/solar_element_abundances.dat` replaced in ccc40f7, still the default:
@@ -199,6 +215,27 @@ Refused or not ported (no physics change)
   `photo_setup._build_photo_static_dense`), non-Ros2 solvers, byte-identical
   pickles, gradients through raw readers, FastChem internals, in-process network
   hot-swap, `use_print_delta`, `fix_species_time`, `gs`, `wall_clock_max`.
+- Not ported, output: the `.vul` keeps every field `plot_py/` reads, but `cross_J` lacks the branch keys of
+  T-dependent species, `aflux_change` is absent with photochemistry off, `conden_min_lev` is empty, `conden_status`,
+  `min_sat`, `sflux_raw` and `fix_e_indx` are not written, and `ion_wavelen` is empty. The saved config is `key =
+  repr(value)` plus a YAML file, and a VULCAN 2 `.py` config cannot be read. Display-only keys (`config._IGNORED_KEYS`,
+  `output_humanread` among them, which writes a text dump in VULCAN 2) warn and are dropped. `diagnose.py`,
+  `tools/make_mix_table.py`, `print_actinic_flux.py` and the spectrum converters have no counterpart.
+- Stricter than VULCAN 2, on values it runs with [M, make_config and setup probes at `e9cee8b`]: `humidity` above 1
+  (VULCAN 2 multiplies it into the saturation, `build_atm.py:226`), `fix_species` with condensation off (inert there,
+  `op.py:2896`, `:2922`), a stellar file with non-increasing wavelengths or negative flux (`interp1d` sorts it,
+  `build_atm.py:632`), an atm file with Kzz below 0 or under 2 rows, and a network element the EQ abundance preset
+  lacks (VULCAN 2 seeds it at 0 with a print, `build_atm.py:160-163`). VULCAN 2's root `vulcan_cfg.py` and its Earth
+  and Jupiter examples carry 7 refused keys (`gs`, `ode_solver`, `nega_cut`, `gibbs_text`, `fastchem_met_scale`,
+  `use_print_delta`, `fix_species_time`; the last is never read by VULCAN 2) and 13 display-only keys.
+- Not vendored (only what a config, test or consumer reads): VULCAN 2's other networks (NCHO_earth, oxidising, CHO
+  thermo, SNCHO_2024, PHO_full, Venus), atm files (Venus, wasp63b, Teq_500, HD189_ter, Mars BCs, Jupiter_deep_top),
+  six stellar spectra, 174 of 300 NASA-9 files and the cross sections of non-network elements. NASA-9 data is read
+  beside the network file, so a network path into a VULCAN 2 tree sets up [M, PHO_full].
+- Not adopted from upstream's VULCAN 3 branch: its C4 NASA-9 fit (`thermo/NASA9/C4.txt`) and four C4H2 photolysis
+  branches, which need branch data the branch lacks.
+- NASA-9 data is required only for species in reversible rows (`rates_jax.py:516-545`); VULCAN 2 loads it for every
+  species. No result changes.
 - Refused where upstream is silent or fails late: an unknown condensate (a silent no-op upstream), `dbin_12trans`
   outside the bin range (C15b), duplicate reactions, unparsable or radiative network rows, an `atom_list` element no
   species carries (C13), a non-network `const_mix` key, a `conver_ignore` or `diff_esc` name the network lacks, and a
@@ -206,6 +243,18 @@ Refused or not ported (no physics change)
   Condensation settings upstream accepts and ignores: a condensate outside `non_gas_sp` (it diffuses as a gas), a
   `remove_list` id on a live condensation row (the rate update rewrites it), a `condense_sp` entry nothing acts on.
   A `use_relax` gas whose condensate the network lacks is refused too: it was a bare `KeyError` at setup.
+- Refused as VULCAN 2 refuses them (VULCAN 3 had accepted them silently): a rate row with missing or non-numeric
+  coefficients, an unknown special reaction, a network with no reverse-stops line, a reaction repeated in reverse or
+  across sections (VULCAN 2 warns), `2*M` or `M + M`, a photolysis or ionisation row without its species and branch
+  columns, a branch-number gap, an ion branch missing from its ratio file, a `T_cross_sp` species with no
+  T-dependent files or no photolysis row, `conv_step` below 2 (a one-slot history passes the test against itself), a
+  `use_relax` gas outside `condense_sp`, a settling `non_gas_sp` name the network lacks, a `use_fix_sp_bot` species
+  the network lacks, and a species listed twice in a boundary file (`BC_bot_Earth.txt`'s dead H2SO4 7e8 row, which
+  both codes overwrote with the later 0 row, is deleted; the flux arrays are bitwise unchanged [M]).
+- Flags given as 0 or 1 load as booleans, as VULCAN 2 reads them (`== True`); any other non-bool flag is refused.
+  A photolysis-only species is left out of the equilibrium seed when `use_photo` is off, so it stays at 0 as in
+  VULCAN 2, which drops it from the network (`make_chem_funs.py:74`); the species list keeps it (38 against 36 on
+  `CHO_photo_network_lowT`), because the list is fixed at import.
 - The command exits 1 when a run ends without converging, after saving it (upstream ends normally). The resolved
   config it writes omits a derived key that follows from the others, so an edit to `runtime` or `para_warm` takes effect.
 
@@ -305,7 +354,7 @@ A. Upstream errors corrected in the port
 | C19 | Ros2 stage vectors leak element content at large dt (only guard `loss_eps`) | `op.py:2914,2929`; `:2490`; `vulcan_cfg.py:136` | `jax_step._repair_stage` + `config.DT_MAX_S` (a larger `dt_max` raises); cap declared, repair silent | upstream fails the same column (S +32%); gates unchanged | no |
 | C20 | `OH + CH3 + M` Troe width in ln, not log10 | `op.py:204-205` | `rates_jax._troe_OH_CH3`; both sides via `ORACLE_CODE_DELTAS`; `test_troe_oh_ch3_is_visscher_moses_eq14` | rate 1.19-1.21x at Pr 0.1; max 0.111 ln VMR (HD189 CH4); gates unchanged | no |
 | C25 | low-T reverse rates above the collision limit: NH3 + CH removed; NCO + HCN and S + CN rewritten in the exothermic direction (CN + HNCO 2.50E-11, Tsang 1992; N + CS 3.80E-11 (T/300)^0.5 exp(-1160/T), UMIST RATE22); CH + M and C2H + M first removed, then kept under C30 (removing them moved up to 1.9 dex in hot gas) | NCHO, CHO, SNCHO, TiSNCHO network rows | `low_t_reverse_rates`; declared (`KNOWN_THERMO_DIVERGENCES`, `ORACLE_DATA_DELTAS`) | reverse at 300 K, 1 bar up to 2e5x collision; NH3 + CH alone moves no scored gas in maxichem's 395,114-row 0-D yardstick; on the sulfur survey's nominal columns (cold solves, daw CPU, `ae17ec8`, each rewrite against upstream's row) the N + CS rewrite moves HCN by up to 1.8 dex above 1e-4 bar and the R = 100 transit depth by 0.10 ppm (W39b) and 7.5 ppm at 3.03 um (W107b); the CN + HNCO rewrite moves the depth by at most 0.014 ppm [M] | NH3 + CH only (39f1906) |
-| C26 | (was P8) `HNCO + M -> H + NCO` carries M on the reactant side only | 9 network files | product M added (as a68d7151); declared | 1.3e-5 / 5.0e-5 / 6.0e-4 ln VMR on the gates (P8's measurement) | a68d7151, 6 files |
+| C26 | (was P8) `HNCO + M -> H + NCO` carries M on the reactant side only | 9 network files; also `SNCHO_full_photo_network.txt` (Earth) and `SNCHO_DMS_photo_network_2025.txt` (K2-18b, with `CH3SCH2 + M -> H2CS + CH3`) | product M added (as a68d7151); declared (`one_sided_m`) | 1.3e-5 / 5.0e-5 / 6.0e-4 ln VMR on the gates (P8's measurement); Earth and K2-18b owed | a68d7151, 6 files; a9b238d |
 | C27 | (was the first P10) N(2D) NASA-9 thermo is a molecule's (Cp/R near 4, S 69.8 J/mol/K above N) | `thermo/NASA9/N_2D.txt` | rebuilt from N: Cp 2.5 R, H(N) + 230.017 kJ/mol, S(N) + R ln(10/4); `n2d_thermo`, declared | K_eq 1.6e3-1.5e4x; HD209 1211 -> 1206 (the first P10's measurement) | no |
 | C28 | CS, CS2, COS, first HCS masses inconsistent with the file's own atomic masses | `thermo/all_compose.txt:133-136` | 44.071 / 76.131 / 60.071 / 45.079; `sulfur_compose_masses`, declared | mean mass, moldiff only | no |
 | C30 | no rate may exceed collision rates: a rate fit extrapolated far from its range (the reverse of CH + M -> C + H + M is ~6e-5 cm3/s at 300 K, 1 bar), or a dissociation reverse from K_eq (S4 + M -> S2 + S2 + M 8.6e-7 cm3/s at 2620 K) | `rates_jax.build_rate_array` | `apply_collision_limit`: each thermal pair scaled by c = min(1, 1e-9 cm3/s / q), q the larger direction's bimolecular-equivalent rate k M^three-body M^(molecules - 2), counted where molecules + three-body >= 2 (M is a collision partner, so q = k for A + M); a first-order direction (s^-1) does not count; `remove_list` is applied first, so a removed slot does not scale its partner (master's `rev_rate` zeroes a removed reverse before the oracle copy's limit); both directions scaled, so K_eq and the equilibrium are kept; `tests/test_collision_limit.py` (value, tangent and removal order) and the oracle copy through `ORACLE_CODE_DELTAS`, whose agreement `test_gibbs` checks on the slots its HD189 column caps | two-body: in NCHO the CH + M and C2H + M reverses (CH below ~560-650 K, C2H below ~900 K at 1 bar, ~1830 K at 100 bar), NH + M (<= 4x, <= 351 K), the forward fits of NCO + NH2 (<= 2x, >= 1880 K) and CN + C2H6 (<= 1.2x, >= 2890 K); SNCHO adds SH + O2 and S + CS + M, TiSNCHO C + SH and Ti + CN. Dissociations, 4-9 slots per network on a 300-3500 K, 1e-4-100 bar grid: S4 + M from ~1100 K (2.3e3x at 3500 K), C4H3 + M in CHO_photo_network_lowT from ~1100 K (6.5e4x), and above ~2000 K the reverses of C2H2 + C4H3, C3H3 + C3H3, CH2 + C2H2, C2H2 + C2H3, H + C2H4, CH3 + SH, S4 + S4 (up to 5e4x at 3500 K, 1e-4 bar). Gates HD189 / HD209 / W39b keep 1495 / 1206 / 1084 on `fast` and `reference`; y moves at most 4.8e-7 / 4.8e-5 / 3.0e-6 relative above 1 cm^-3 (HD209 at its 2754 K bottom, hydrocarbons up to 2.4e-5 above vmr 1e-12) [M]; the limit 1e-9 is a regularization ceiling, not a measured rate | no |
@@ -371,7 +420,8 @@ Master-only defects, already better here (do not "restore parity")
   U ion_sp` with T-dependent cross sections while `compute_flux`'s `w0` uses the
   T-independent table (`op.py` ~2621-2672); the port builds both from one
   `PhotoData`. 0 shipped; with `T_cross_sp = [SO2, H2S, H2O, CO2]` column J moves
-  up to 24.6%: quote no parity result for such a run.
+  up to 24.6%; on HD189 with `T_cross_sp = [CO2, H2O, NH3]` J differs by up to 93% in some bins [M, port audit at
+  `e9cee8b`]: quote no parity result for such a run.
 - Not inherited: FastChem's shared I/O filenames (`build_atm.py:128,131,153,169`);
   `np.nanmax` on an empty selection for a dark column (`op.py:2737`); `S4` absent
   from `sat_sp_list` (`build_atm.py:787` vs `:832`); kinetic NH3 condensation
@@ -753,7 +803,7 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   `use_sat_surfaceH2O` bottom pin is built in `_build_statics.build_statics` from `sat_mix`.
 - The codegen RHS source is emitted in every process and held in a per-process memo keyed on network content +
   `inspect.getsource` of both emitters; emit 2.7 to 3.6 ms on 86 to 93 species [M]. No file is written.
-- `parse_network` raises on within-section duplicates (`duplicates_ok=True`
+- `parse_network` raises on within-section, reversed and cross-section duplicates (`duplicates_ok=True`
   warns) and on any non-comment row that fails to parse; `composition.py` raises
   on a species with no `all_compose.txt` row and on disagreeing duplicates except
   `_PARITY_DUPLICATES` (P11).
