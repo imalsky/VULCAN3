@@ -507,9 +507,8 @@ def parse_network(network_path: str | Path, *, duplicates_ok: bool = False) -> N
     ValueError
         If a reaction is duplicated or written in reverse (its contribution would be double-counted;
         `duplicates_ok` downgrades this to a RuntimeWarning), the file has no `# reverse stops` line, a photo or ion
-        species skips a branch number, or a row cannot
-        be read (a thermal row short of numeric rate coefficients, an unknown special row, a coefficient on M),
-        naming the file and line.
+        species skips a branch number, or a row cannot be read (a thermal row short of numeric rate coefficients, an
+        unknown special row, a coefficient on M), naming the file and line.
     """
     from ._paths import resolve_data_path
 

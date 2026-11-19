@@ -3,7 +3,7 @@
 Setup and gradients run the same code: the forward forms (modified Arrhenius, Lindemann falloff with k_inf, bare 3-body,
 and the one hardcoded Troe expression for `OH + CH3 + M -> CH3OH + M`), the Moses+2005 low-T caps, and the NASA-9 Gibbs
 reverse-rate path. Photo, conden and ion slots are zero here and filled at runtime; the 3-body [M] factor is applied in
-the chemistry RHS (it depends on the time-evolving sum(y)).
+the chemistry RHS, with M = p / (k_B T) fixed at setup, as in VULCAN 2.
 
 Output is `k[nr+1, nz]` with 1-based reaction indexing (row 0 unused).
 :func:`setup_var_k` freezes it to NumPy on `var.k_arr`; a gradient calls
