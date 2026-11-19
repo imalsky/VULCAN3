@@ -20,7 +20,14 @@ def vul() -> dict:
     from vulcan3.config import default_config
     from vulcan3.network import parse_network
 
-    state = np.load(ROOT / "tests" / "data" / "state_hd209.npz")
+    saved = ROOT / "tests" / "data" / "state_hd209.npz"
+    if not saved.exists():
+        # conftest refuses a missing fixture unless VULCAN3_ALLOW_MISSING_FIXTURES=1
+        pytest.skip(
+            f"{saved.name} missing (VULCAN3_ALLOW_MISSING_FIXTURES=1); build it "
+            "with `python tests/gen_fixtures.py --only hd209`"
+        )
+    state = np.load(saved)
     net = parse_network(default_config().network)
     if list(state["species"]) != list(net.species):
         pytest.fail("state_hd209.npz does not match the default network; rebuild it with gen_fixtures.py --force")
