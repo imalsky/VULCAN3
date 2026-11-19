@@ -90,9 +90,6 @@ def thermo_dir(network_file: str) -> Path:
     return Path(__file__).resolve().parent / "thermo"
 
 
-_thermo_dir = thermo_dir  # deprecated (docs/api.md)
-
-
 def _arrhenius(a: jnp.ndarray, n: jnp.ndarray, E: jnp.ndarray, T: jnp.ndarray) -> jnp.ndarray:
     return a * T**n * jnp.exp(-E / T)
 

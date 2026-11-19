@@ -16,7 +16,6 @@ _CFG = default_config()
 
 NETWORK = _network.parse_network(str(resolve_data_path(_CFG.network)))
 NET_JAX = _chem.to_jax(NETWORK)
-_NETWORK, _NET_JAX = NETWORK, NET_JAX  # deprecated (docs/api.md)
 
 # The production RHS (the integrator binds it), built or reloaded from cache.
 # Memoised in `_make_chem_funs._BUILD_CACHE`.

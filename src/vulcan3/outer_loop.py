@@ -56,7 +56,6 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-_ATM_STATIC_BATCH_AXES = ATM_STATIC_BATCH_AXES  # deprecated (docs/api.md)
 
 _TRACED_CHECK = (
     "A runner is traced under an outer jit or vmap, so it cannot raise DtMinFrozenError. Unless the caller already "
@@ -400,11 +399,6 @@ class OuterLoop:
                 "counts as drift. For a column with strong escape set "
                 "element_budget_tol: .inf to stop on VULCAN 2's criteria."
             )
-
-    # Deprecated (docs/api.md).
-    _ensure_runner = ensure_runner
-    _pack_state_from_runstate = pack_state
-    _build_refresh_static = build_refresh_static
 
     @property
     def runner(self) -> Callable[[JaxIntegState, AtmStatic], JaxIntegState] | None:

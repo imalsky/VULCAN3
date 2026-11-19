@@ -23,11 +23,10 @@ _CONSUMED = {
     ],
     "vulcan3.paths": ["resolve_data_path"],
     "vulcan3._paths": ["resolve_data_path"],
-    "vulcan3.atm_jax": ["make_physical_inputs", "mol_diff", "_mol_diff"],
+    "vulcan3.atm_jax": ["make_physical_inputs", "mol_diff"],
     "vulcan3.atm_refresh": ["update_mu_dz_jax"],
     "vulcan3.atm_setup": [
         "VISCOSITY_TABLE",
-        "_VISCOSITY_TABLE",
         "compute_mu_dz_g",
         "compute_pico",
         "sat_p_jax",
@@ -35,7 +34,7 @@ _CONSUMED = {
         "kzz_profile_jax",
         "surface_gravity",
     ],
-    "vulcan3.chem_funs": ["NETWORK", "NET_JAX", "_NETWORK", "_NET_JAX"],
+    "vulcan3.chem_funs": ["NETWORK", "NET_JAX"],
     "vulcan3.composition": ["atom_list", "compo", "compo_array", "compo_row"],
     "vulcan3.conden": ["build_conden_profile", "make_conden_spec"],
     "vulcan3.gibbs": ["load_nasa9"],
@@ -47,12 +46,11 @@ _CONSUMED = {
     "vulcan3.outer_loop": [
         "OuterLoop",
         "ATM_STATIC_BATCH_AXES",
-        "_ATM_STATIC_BATCH_AXES",
         "conv_normal",
         "certificate_failures",
     ],
     "vulcan3.phy_const": ["G_grav", "kb"],
-    "vulcan3.rates_jax": ["build_rate_array", "thermo_dir", "_thermo_dir"],
+    "vulcan3.rates_jax": ["build_rate_array", "thermo_dir"],
     "vulcan3.runtime_validation": ["rate_temp_range_exposure"],
     "vulcan3.state": ["RunState", "legacy_view"],
     "vulcan3.steady_state_grad": [
@@ -77,9 +75,6 @@ _OUTER_LOOP_ATTRS = [
     "compo_arr",
     "photo_static",
     "statics",
-    "_ensure_runner",
-    "_pack_state_from_runstate",
-    "_build_refresh_static",
 ]
 
 # Internals that consumers read: vulcan-retrieval's `_statics` (retrieval_forward.py:57, until it moves to `statics`),
@@ -116,14 +111,3 @@ def test_outer_loop_and_solver_attributes():
     solver.photo_static = 1
     assert solver._photo_static == 1
     assert hasattr(solver, "naming_solver")
-
-
-def test_private_aliases_are_the_public_objects():
-    from vulcan3 import atm_jax, atm_setup, chem_funs, outer_loop, rates_jax
-
-    assert chem_funs.NETWORK is chem_funs._NETWORK
-    assert chem_funs.NET_JAX is chem_funs._NET_JAX
-    assert outer_loop.ATM_STATIC_BATCH_AXES is outer_loop._ATM_STATIC_BATCH_AXES
-    assert atm_setup.VISCOSITY_TABLE is atm_setup._VISCOSITY_TABLE
-    assert atm_jax.mol_diff is atm_jax._mol_diff
-    assert rates_jax.thermo_dir is rates_jax._thermo_dir

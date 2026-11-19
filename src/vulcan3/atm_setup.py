@@ -47,7 +47,6 @@ from .phy_const import BAR_CGS
 if TYPE_CHECKING:
     import types
 
-_VISCOSITY_TABLE = VISCOSITY_TABLE  # deprecated (docs/api.md)
 
 __all__ = [
     "VISCOSITY_TABLE",

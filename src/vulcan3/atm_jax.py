@@ -115,9 +115,6 @@ def mol_diff(
     )
 
 
-_mol_diff = mol_diff  # deprecated (docs/api.md)
-
-
 def make_physical_inputs(
     cfg: Config, var: types.SimpleNamespace, atm: types.SimpleNamespace, species_list: list[str]
 ) -> tuple[PhysicalInputs, AtmSpec]:

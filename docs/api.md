@@ -40,22 +40,6 @@ One row per name in `vulcan3.__all__`.
 
 `conv_normal` is defined in `_convergence.py` and `make_config` in `__init__.py`. The source splits the parameters of `raise_if_frozen` over several lines.
 
-## Deprecated names
-
-The packages at their main branches use the public names. Released versions of vulcan-forward and jwst-transit-authority,
-which floor `vulcan3>=0.18.0`, read the old ones, so these aliases stay for one more release. No warning is raised.
-
-| Deprecated alias | Use |
-|---|---|
-| `OuterLoop._ensure_runner` | `OuterLoop.ensure_runner` |
-| `OuterLoop._pack_state_from_runstate` | `OuterLoop.pack_state` |
-| `OuterLoop._build_refresh_static` | `OuterLoop.build_refresh_static` |
-| `chem_funs._NETWORK`, `_NET_JAX` | `chem_funs.NETWORK`, `NET_JAX` |
-| `outer_loop._ATM_STATIC_BATCH_AXES` | `outer_loop.ATM_STATIC_BATCH_AXES` |
-| `atm_setup._VISCOSITY_TABLE` | `atm_setup.VISCOSITY_TABLE` |
-| `atm_jax._mol_diff` | `atm_jax.mol_diff` |
-| `rates_jax._thermo_dir` | `rates_jax.thermo_dir` |
-
 ## Internals behind a public name
 
 These are the objects' own attributes and modules, not aliases, and may change. Read the public name.
