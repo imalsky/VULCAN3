@@ -128,11 +128,12 @@ supported_inputs:
       chemistry. In no pinned clone,
       so the hash pin is the whole guard. K2-18b.yaml removes `S + CN -> N + CS`
       and its reverse by position (remove_list 891, 892), as the user's config does.
-      Kept as received, with known limits: thermo/NASA9/CH3SCH2.txt and
-      CH3SO.txt (the pinned clones' files) hold the CH3CH2S and HOCH2S
-      isomers' data, CH3SCH2 has no sink but its own decomposition, and the
-      network has no ozone formation or photolysis. K2-18b.yaml is a numerics
-      case; its sulfur and dimethyl sulfide abundances are not results.
+      Otherwise kept as received, with known limits: thermo/NASA9/CH3SCH2.txt
+      and CH3SO.txt (the pinned clones' files) hold the CH3CH2S and HOCH2S
+      isomers' data, CH3SCH2 is destroyed only by its own decomposition and
+      the reverses of the rows that form it, and the network has no ozone
+      formation row or ozone photolysis. K2-18b.yaml is a numerics case; its
+      sulfur and dimethyl sulfide abundances are not results.
 
   thermo/NCHO_photo_network_lowT_Jupiter.txt:
     sha256: ae4fca01dc2e3a87850ea4e853150b71ef141a347e0661a2269d7c211058e6be
@@ -141,8 +142,9 @@ supported_inputs:
     note: >-
       The vulcan2_ncho revision's file with `CN + HNCO -> HCN + NCO` and
       `HNCO + M -> H + NCO + M` (low_t_reverse_rates; the file never carried
-      `NH3 + CH -> NH2 + CH2`); every other row is identical. VULCAN 2's
-      Jupiter example reads it; no shipped config selects it.
+      `NH3 + CH -> NH2 + CH2`), the id column rewritten to parser positions
+      and one added history comment line; every other row is identical.
+      VULCAN 2's Jupiter example reads it; no shipped config selects it.
 
   atm/BC_top_Jupiter.txt:
     sha256: 0d5da84809357b48fcb95a79f0d249be313424962daadc079a02fee49c472d9b
@@ -495,12 +497,13 @@ intentional_divergences:
   atom_conservation_projection:
     reason: >-
       XLA reorders the floating-point sums of the chemistry right-hand side,
-      which leaves a per-layer atom residual of about 5e-13 per step that
-      VULCAN 2's NumPy sums do not have. VULCAN-JAX projects the chemistry
-      right-hand side and Jacobian onto fixed reservoirs (H2, H2O, CO, N2,
-      H2S) so each step conserves atoms. Default-on whenever the network
-      carries the reservoirs (every shipped config); it changes the solution
-      at the 1e-5 level. Notes "Differences from VULCAN master", Integrator.
+      which leaves a per-layer atom residual of about 5e-13 per step.
+      VULCAN-JAX projects the chemistry right-hand side and Jacobian onto
+      fixed reservoirs (H2, H2O, CO, N2, H2S), which removes that residual
+      from the chemistry terms. Default-on whenever the network carries the
+      reservoirs (every shipped config), and it changes the solution: HD189's
+      median difference to upstream is 7.3e-6 with it and 3.9e-4 without.
+      Notes "Differences from VULCAN master", Integrator.
     recorded_in: src/vulcan3/jax_step.py::_project_chem_rhs, _project_chem_jac; tests/test_atom_conservation_projection.py
 
   ros2_stage_repair:
@@ -517,10 +520,10 @@ intentional_divergences:
     reason: >-
       VULCAN 2 stops on chemistry and actinic flux alone. VULCAN-JAX keeps
       every VULCAN 2 stopping test and adds two terms, both inert below
-      `count_min`. Geometry (`geom_conv_tol`): mu and dz are refreshed on
-      every certificate candidate and must have stopped moving; upstream
-      refreshes them every `update_frq` steps and certified an HD209 column
-      with mu 26.3% off. Element budget (`element_budget_tol`): the
+      `count_min`. Geometry (`geom_conv_tol`): the hydrostatic structure is
+      refreshed on every certificate candidate and mu, g, Hp, dzi and Hpi
+      must have stopped moving; upstream refreshes it every `update_frq`
+      steps and certified an HD209 column with mu 26.3% off. Element budget (`element_budget_tol`): the
       cumulative column drift of each element relative to H must stay under
       the tolerance; `loss_eps` bounds only the per-step change, and a W39b
       column certified having lost 21% of its sulfur. An open column sets

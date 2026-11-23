@@ -10,10 +10,11 @@
 # sections from the MPI-Mainz atlas, with assumptions (tests/science_sources.yaml). Upwind molecular diffusion only:
 # the hybrid scheme's central phase does not reconverge on this column in either code (notes "Earth and K2-18b").
 #
-# A numerics case (condensation, upwind diffusion), not a science result for sulfur: the network and thermodynamic
-# files are kept as received, and the CH3SCH2 and CH3SO NASA-9 files hold other isomers' data, CH3SCH2 has no sink
-# but its own decomposition, and the network lacks ozone formation and photolysis. Do not quote its sulfur
-# partitioning or dimethyl sulfide abundance.
+# A numerics case (condensation, upwind diffusion), not a science result for sulfur: apart from two product-side M
+# corrections the network and thermodynamic files are kept as received, and the CH3SCH2 and CH3SO NASA-9 files hold
+# other isomers' data, CH3SCH2 is destroyed only by its own decomposition and the reverses of the rows that form
+# it, and the network has no ozone formation row or ozone photolysis. Do not quote its sulfur partitioning or
+# dimethyl sulfide abundance.
 
 # ====== Setting up the elements included in the network ======
 atom_list:

@@ -206,7 +206,10 @@ Inputs and data
   with layers down to 263 K, gives CO 1.5e-6 and N2 2.1e-5; in the whole column CO 5.0e-54 and N2 8.7e-22, with
   `converged` true, one iteration and residual 2e-15, so the non-finite refusal does not fire; layers 0-59 and 0-119
   give NaN there; the column in reversed order gives the right value. Whole column against each layer alone, worst
-  |dlog10| above 1e-20: K2-18b (199-1763 K) 0.73 at a 210 K layer, HD189 and W39b 4e-9.
+  |dlog10| above 1e-20: K2-18b (199-1763 K) 0.73 at a 210 K layer, HD189 and W39b 4e-9. The route [I, read]: the
+  seed is ExoGibbs's sequential warm start (`ini_abun._SEED_METHOD`), which on VULCAN's grid starts at the cold top
+  and hands each layer the last one's log amounts (`exogibbs/equilibrium/gas/profile.py`), and its stationarity
+  residual is abundance-weighted, so a species left depleted by a cold layer adds little to it.
 - Data corrections: C1 (= e841d77, SNCHO reaction 949 k0 1e-20 -> 1e-29, which
   upstream also fixed), C4, C5, C6, C7, C12, C14 (networks renumbered), C20 (both
   sides), P18, C25-C28 (low-T reverse rows, HNCO + M, N(2D), sulfur masses; the
@@ -468,8 +471,9 @@ ledger" or the named repo's notes.
 - vulcan3, measured unreachable: `K_eq_array` clips only the exp() argument (`rates_jax._EXP_ARG_MAX` 709), not log K;
   the largest delta_n < 0 log K over 100-6000 K is 433.6; NCHO and SNCHO overflow only below 58 K. Fix only if a
   config below ~60 K ships (clip the whole log K, re-run the gates).
-- vulcan3, K2-18b inputs kept as received: the CH3SCH2 and CH3SO NASA-9 files hold other isomers' data, CH3SCH2 has
-  no sink but its own decomposition, and the network lacks O3 formation and photolysis; the config is a numerics case
+- vulcan3, K2-18b inputs kept as received: the CH3SCH2 and CH3SO NASA-9 files hold other isomers' data, CH3SCH2 is
+  destroyed only by its own decomposition and the reverses of the rows that form it, and the network lacks an O3
+  formation row and O3 photolysis; the config is a numerics case
   ("Earth and K2-18b").
 - vulcan-forward: `ckd.overlap` random-overlap jumps at sort crossings (accepted); the photolysis-cadence switch
   ignores a profile's `yconv_min` override (timing only).
@@ -789,7 +793,7 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   `thermo/NASA9/CH3SO.txt` is the HOCH2S isomer too (Hf298 -33.85 kJ/mol; methylsulfinyl is -69.9, Resende & Ornellas
   2002), as in the pinned clones; it feeds the reverses of CH3SO's three formation rows, and CH3SO holds 6e-12 of the
   sulfur on the shipped column [M, daw, `f3e82fd`]. The network keeps O3 only in `CH3SO + O3 -> CH3S + O2 + O2`, and
-  NO3 and HNO3 only in `CH3SCH3 + NO3 -> HNO3 + CH3SCH2`, so those rows never run; upstream's Tsai 2024 file carries
+  NO3 and HNO3 only in `CH3SCH3 + NO3 -> HNO3 + CH3SCH2`, so those rows have no other source of O3 or NO3 than their own reverses; upstream's Tsai 2024 file carries
   O3 formation and photolysis.
 - Jupiter (VULCAN 2's example, not shipped) [M, daw CPU, one core, `5cf7093` plus the config, `scratch/jupiter/`
   there and on the laptop]: vulcan3 certifies in 9141 steps (t 1.44e18 s, longdy 0.098, 338 s); the pinned clone with
@@ -798,6 +802,7 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   (deep), CO 0.16, NH3 0.88 at 0.07 bar, the two condensates 1.1-1.5, worst 1.52, and the counts are 59% apart. The
   seeds already differ: deep H2O 5.20e-4 against 3.35e-4 (FastChem holds 36% of the O in species the network
   drops), He 0.144 against 0.163 (the seed file's He), and vulcan3's deep CO and N2 are the spoiled values above.
+  How much of the final difference each one makes is not measured.
   The config is not shipped. `atm/BC_top_Jupiter.txt` and the low-T Jupiter network stay vendored and are now pinned.
 - K2-18b, decided: the network and thermo files stay as received (they equal the pinned clones' and the external
   user's), and the config ships as a numerics case (condensation, upwind diffusion). Its sulfur partitioning and DMS
