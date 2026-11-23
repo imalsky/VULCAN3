@@ -1,8 +1,8 @@
 """Validate the NumPy diffusion reference against op.diffdf and op.lhs_jac_tot.
 
 The central operator and its Jacobian assembly are compared on master's own
-pre-loop state. The vm / settling / settling_vm variants run on the port's pre-loop state with synthetic
-vm/vs populated.
+pre-loop state. The vertical-advection and vm / settling / settling_vm variants run on the port's pre-loop state
+with a synthetic vz, or vm/vs, populated.
 """
 
 from __future__ import annotations
@@ -119,6 +119,15 @@ def main() -> None:
     # so settling_vm is compared on rows 1.. and the j=0 gap is pinned to
     # that exact term below.
     odes_p = op_v.ODESolver()
+
+    # Vertical advection (use_vz): a mixed-sign wind (cm/s) on the central scheme, so both upwind branches of every
+    # row fire, the two boundary rows included. Setup leaves atm.vz all-zero with use_vz off.
+    atm_p.vz = np.random.default_rng(2).standard_normal(nzp - 1) * 100.0
+    ref = np.asarray(odes_p.diffdf(yp, atm_p), dtype=np.float64)
+    got = diff_mod.apply_diffusion(yp, diff_mod.build_diffusion_coeffs(yp, atm_p, cfg_jax, mode="gravity"))
+    scores["diffdf with vz"] = (relerr(got, ref, floor=FLOOR_FRAC * np.abs(ref).max()), OP_RTOL)
+    atm_p.vz = np.zeros(nzp - 1)
+
     for mode, upstream, label, rows, bound in (
         ("vm", odes_p.diffdf_vm, "diffdf_vm", slice(None), 1e-3),
         ("settling", odes_p.diffdf_settling, "diffdf_settling", slice(None), 1e-5),
