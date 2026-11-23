@@ -18,11 +18,12 @@ OP_RTOL = 1e-4  # the operator is a small residue of large cancellations (floor 
 OP_FLOOR = 1e-12  # absolute and peak-relative floor for significant operator cells
 
 
-@pytest.mark.parametrize("mode", ["gravity", "vm", "vz"])
+@pytest.mark.parametrize("mode", ["gravity", "vm", "vz", "-vz"])
 def test_production_kernel_matches_reference(mode):
     """The 'vm' case pins the hot-path upwind (`use_vm_mol`) with a nonzero mixed-sign interface drift, (nz-1, ni).
 
-    The 'vz' case pins vertical advection (`use_vz`) with a mixed-sign wind, (nz-1,), on the central scheme.
+    The 'vz' cases pin vertical advection (`use_vz`) with a mixed-sign wind, (nz-1,), on the central scheme, in both
+    signs: each boundary row has one term per wind direction.
     """
     import diffusion_numpy_ref as diff_ref
     import jax.numpy as jnp
@@ -47,9 +48,9 @@ def test_production_kernel_matches_reference(mode):
         rng = np.random.default_rng(1)
         data_atm.vm = (rng.standard_normal((nz - 1, ni)) * 50.0).astype(np.float64)
         vulcan_cfg.use_vm_mol = True
-    if mode == "vz":
-        # A mixed-sign wind (cm/s) so both upwind branches of every row fire, the two boundary rows included.
-        data_atm.vz = np.random.default_rng(2).standard_normal(nz - 1) * 100.0
+    if mode in ("vz", "-vz"):
+        # A mixed-sign wind (cm/s) so both upwind branches of every interior row fire.
+        data_atm.vz = np.random.default_rng(2).standard_normal(nz - 1) * (100.0 if mode == "vz" else -100.0)
         mode = "gravity"
 
     # Production kernel

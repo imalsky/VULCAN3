@@ -120,13 +120,28 @@ def main() -> None:
     # that exact term below.
     odes_p = op_v.ODESolver()
 
-    # Vertical advection (use_vz): a mixed-sign wind (cm/s) on the central scheme, so both upwind branches of every
-    # row fire, the two boundary rows included. Setup leaves atm.vz all-zero with use_vz off.
-    atm_p.vz = np.random.default_rng(2).standard_normal(nzp - 1) * 100.0
-    ref = np.asarray(odes_p.diffdf(yp, atm_p), dtype=np.float64)
-    got = diff_mod.apply_diffusion(yp, diff_mod.build_diffusion_coeffs(yp, atm_p, cfg_jax, mode="gravity"))
-    scores["diffdf with vz"] = (relerr(got, ref, floor=FLOOR_FRAC * np.abs(ref).max()), OP_RTOL)
-    atm_p.vz = np.zeros(nzp - 1)
+    # Vertical advection (use_vz): a mixed-sign wind (cm/s) on the central scheme, in both signs (each boundary row
+    # has one term per wind direction). The wind's own contribution is compared, wind on minus wind off, so the
+    # floor is a fraction of the advection and not of the whole operator. Setup leaves atm.vz all-zero.
+    wind = np.random.default_rng(2).standard_normal(nzp - 1) * 100.0
+    still = np.zeros(nzp - 1)
+    for sign in (1.0, -1.0):
+        adv = {}
+        for label, op in (
+            ("ref", lambda: odes_p.diffdf(yp, atm_p)),
+            (
+                "got",
+                lambda: diff_mod.apply_diffusion(yp, diff_mod.build_diffusion_coeffs(yp, atm_p, cfg_jax, "gravity")),
+            ),
+        ):
+            atm_p.vz = sign * wind
+            on = np.asarray(op(), dtype=np.float64)
+            atm_p.vz = still
+            adv[label] = on - np.asarray(op(), dtype=np.float64)
+        scores[f"diffdf advection, vz x {sign:+.0f}"] = (
+            relerr(adv["got"], adv["ref"], floor=FLOOR_FRAC * np.abs(adv["ref"]).max()),
+            OP_RTOL,
+        )
 
     for mode, upstream, label, rows, bound in (
         ("vm", odes_p.diffdf_vm, "diffdf_vm", slice(None), 1e-3),
