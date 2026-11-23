@@ -97,13 +97,16 @@ supported_inputs:
     oracle: null
     diverges: [renumber_2025_reaction_index_gap, low_t_reverse_rates]
     note: >-
-      Upstream's file at a68d715 (unchanged at c870b1a), which is NEWER than
-      every pinned oracle, so `oracle` is null and the audit's oracle
-      comparison does not cover it; the hash pin above is the whole guard.
-      Against the vulcan2_ncho copy it drops `NH3 + CH -> NH2 + CH2` (39f1906)
-      and writes `HNCO + M -> H + NCO + M` (a68d715). 93 species; selected by
-      W39b.yaml. Already carries upstream's own 10.2025 CH2CN falloff fix, so
-      it needs no ch2cn_falloff entry.
+      Upstream's file at a68d715 (unchanged at c870b1a) with the id column
+      rewritten (renumber_2025_reaction_index_gap), the two rewritten rows of
+      low_t_reverse_rates (`CN + HNCO -> HCN + NCO`, `N + CS -> S + CN`) and
+      one added history comment line; every other row is identical. That
+      revision is NEWER than every pinned oracle, so `oracle` is null and the
+      audit's oracle comparison does not cover it; the hash pin above is the
+      whole guard. Upstream's file already drops `NH3 + CH -> NH2 + CH2`
+      (39f1906), writes `HNCO + M -> H + NCO + M` (a68d715) and carries its
+      own 10.2025 CH2CN falloff fix, so it needs no ch2cn_falloff entry.
+      93 species; selected by W39b.yaml.
 
   thermo/SNCHO_full_photo_network.txt:
     sha256: 043b597e0737902a2d0998aa1cdc02532e327e70c8549e1728218517acd4b572
@@ -380,9 +383,10 @@ intentional_divergences:
       Upstream's id column is not positional: rows carry 1039 and 1131 out of
       sequence, and after the removed NH3 + CH row all 61 photolysis ids are
       off by one row, which the parser refuses as stale. VULCAN-JAX writes
-      every row's parser position as its id. Stripping the leading index
-      makes the file byte-identical to upstream's a68d715 file: rates,
-      reactions and references are unchanged.
+      every row's parser position as its id. The renumbering changes no rate,
+      reaction or reference; the file's other differences from upstream's
+      a68d715 file are the two rewritten rows of low_t_reverse_rates and one
+      history comment line.
     recorded_in: supported_inputs sha256 pin (this file)
 
   ch2cn_falloff:
@@ -455,6 +459,53 @@ intentional_divergences:
       audit compares only keys both configs set; the shared keys that differ
       on purpose are listed in INTENTIONAL_JAX_DELTAS.
     recorded_in: tools/audit_master_parity.py
+
+  collision_limit:
+    reason: >-
+      A rate fit extrapolated far from its range, or a dissociation reverse
+      built from the equilibrium constant, can exceed the gas-kinetic
+      collision rate (the reverse of CH + M -> C + H + M is about 6e-5 cm3/s
+      at 300 K and 1 bar). VULCAN-JAX scales each thermal pair so neither
+      direction exceeds 1e-9 cm3/s in bimolecular-equivalent form; both
+      directions take the same factor, so the equilibrium constant is kept.
+      Default-on, with no VULCAN 2 counterpart; the disposable oracle copy
+      gets the same limit. Notes "Parity ledger", C30.
+    recorded_in: src/vulcan3/rates_jax.py::apply_collision_limit; tests/oracle.py::ORACLE_CODE_DELTAS; tests/test_collision_limit.py
+
+  atom_conservation_projection:
+    reason: >-
+      XLA reorders the floating-point sums of the chemistry right-hand side,
+      which leaves a per-layer atom residual of about 5e-13 per step that
+      VULCAN 2's NumPy sums do not have. VULCAN-JAX projects the chemistry
+      right-hand side and Jacobian onto fixed reservoirs (H2, H2O, CO, N2,
+      H2S) so each step conserves atoms. Default-on whenever the network
+      carries the reservoirs (every shipped config); it changes the solution
+      at the 1e-5 level. Notes "Differences from VULCAN master", Integrator.
+    recorded_in: src/vulcan3/jax_step.py::_project_chem_rhs, _project_chem_jac; tests/test_atom_conservation_projection.py
+
+  ros2_stage_repair:
+    reason: >-
+      At large dt the Ros2 stage vectors leak element content, and VULCAN 2's
+      only guard is the per-step `loss_eps` (pinned upstream fails the same
+      column, S +32%). VULCAN-JAX repairs the stage vectors and caps `dt_max`
+      at 1e15 s where upstream's is runtime*1e-5 = 1e17 s; a larger value
+      raises. Default-on, no knob. Notes "Parity ledger", C19, and "Stage
+      repair and element budget".
+    recorded_in: src/vulcan3/jax_step.py::_repair_stage; src/vulcan3/config.py::DT_MAX_S; tests/test_stage_repair_guard.py
+
+  certificate_terms:
+    reason: >-
+      VULCAN 2 stops on chemistry and actinic flux alone. VULCAN-JAX keeps
+      every VULCAN 2 stopping test and adds two terms, both inert below
+      `count_min`. Geometry (`geom_conv_tol`): mu and dz are refreshed on
+      every certificate candidate and must have stopped moving; upstream
+      refreshes them every `update_frq` steps and certified an HD209 column
+      with mu 26.3% off. Element budget (`element_budget_tol`): the
+      cumulative column drift of each element relative to H must stay under
+      the tolerance; `loss_eps` bounds only the per-step change, and a W39b
+      column certified having lost 21% of its sulfur. An open column sets
+      `element_budget_tol: .inf`. Notes "Parity ledger", C21 and C23.
+    recorded_in: src/vulcan3/_loop_body.py::_refresh_geometry, body_fn; src/vulcan3/_convergence.py::_certified; tests/test_geometry_certificate.py; tests/test_element_budget_certificate.py
 
 # ---------------------------------------------------------------------------
 # Explicitly NOT in this release.
