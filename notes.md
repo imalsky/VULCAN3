@@ -200,7 +200,13 @@ Inputs and data
   to ~1e-6 dex (HO2 aside); seeded from either, HD189 and W39b keep 1495 / 1202 steps
   and agree to <= 3e-3 dex, median 4e-5 [M]. The gap is upstream's input rounding. It
   converges 225-6000 K; below, it breaks down (NaN residual, not the cap) at scattered T
-  on every network, where FastChem converges 150-300 K, fails at 100 K [M]; untracked.
+  on every network, where FastChem converges 150-300 K, fails at 100 K [M].
+- EQ seed, cold layers spoil the column (todo) [M, laptop CPU, `2e6637c`]: a layer's seed depends on the other layers
+  in the call once one is below about 225 K. Jupiter (109-2020 K): the bottom layer (2020 K, 5000 bar) alone, or
+  with layers down to 263 K, gives CO 1.5e-6 and N2 2.1e-5; in the whole column CO 5.0e-54 and N2 8.7e-22, with
+  `converged` true, one iteration and residual 2e-15, so the non-finite refusal does not fire; layers 0-59 and 0-119
+  give NaN there; the column in reversed order gives the right value. Whole column against each layer alone, worst
+  |dlog10| above 1e-20: K2-18b (199-1763 K) 0.73 at a 210 K layer, HD189 and W39b 4e-9.
 - Data corrections: C1 (= e841d77, SNCHO reaction 949 k0 1e-20 -> 1e-29, which
   upstream also fixed), C4, C5, C6, C7, C12, C14 (networks renumbered), C20 (both
   sides), P18, C25-C28 (low-T reverse rows, HNCO + M, N(2D), sulfur masses; the
@@ -785,6 +791,14 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   sulfur on the shipped column [M, daw, `f3e82fd`]. The network keeps O3 only in `CH3SO + O3 -> CH3S + O2 + O2`, and
   NO3 and HNO3 only in `CH3SCH3 + NO3 -> HNO3 + CH3SCH2`, so those rows never run; upstream's Tsai 2024 file carries
   O3 formation and photolysis.
+- Jupiter (VULCAN 2's example, not shipped) [M, daw CPU, one core, `5cf7093` plus the config, `scratch/jupiter/`
+  there and on the laptop]: vulcan3 certifies in 9141 steps (t 1.44e18 s, longdy 0.098, 338 s); the pinned clone with
+  the oracle deltas, the corrected network and the four keys its example lacks (`conver_ignore` [], `use_adapt_rtol`
+  false, `rtol_min`, `S_H`) in 5746 (t 8.41e14 s, longdy 0.085, 1636 s). The columns do not agree: H2O 0.19 dex
+  (deep), CO 0.16, NH3 0.88 at 0.07 bar, the two condensates 1.1-1.5, worst 1.52, and the counts are 59% apart. The
+  seeds already differ: deep H2O 5.20e-4 against 3.35e-4 (FastChem holds 36% of the O in species the network
+  drops), He 0.144 against 0.163 (the seed file's He), and vulcan3's deep CO and N2 are the spoiled values above.
+  The config is not shipped. `atm/BC_top_Jupiter.txt` and the low-T Jupiter network stay vendored and are now pinned.
 - K2-18b, decided: the network and thermo files stay as received (they equal the pinned clones' and the external
   user's), and the config ships as a numerics case (condensation, upwind diffusion). Its sulfur partitioning and DMS
   are not results and are quoted nowhere outside this section; the config header and `tests/science_sources.yaml`
