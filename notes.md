@@ -210,6 +210,12 @@ Inputs and data
   seed is ExoGibbs's sequential warm start (`ini_abun._SEED_METHOD`), which on VULCAN's grid starts at the cold top
   and hands each layer the last one's log amounts (`exogibbs/equilibrium/gas/profile.py`), and its stationarity
   residual is abundance-weighted, so a species left depleted by a cold layer adds little to it.
+  ExoGibbs's other two column methods on the same columns [M, laptop CPU, `468bd1f`]: `scan_hot_from_top` (on
+  VULCAN's grid it starts at the hot bottom) gives Jupiter's bottom layer the right CO and N2, with every layer
+  finite and converged, but its cold layers differ from `vmap_cold` by up to 29 dex above 1e-20 (249 K: N2 7.9e-14
+  against 2.4e-17); `vmap_cold` (each layer from a cold start) is not finite on 35 Jupiter layers (109-212 K). On
+  HD189 and W39b the three agree to 4e-9; on K2-18b both scans are 0.70-0.73 dex from `vmap_cold` at the cold
+  layers. No method is right at every layer below about 225 K.
 - Data corrections: C1 (= e841d77, SNCHO reaction 949 k0 1e-20 -> 1e-29, which
   upstream also fixed), C4, C5, C6, C7, C12, C14 (networks renumbered), C20 (both
   sides), P18, C25-C28 (low-T reverse rows, HNCO + M, N(2D), sulfur masses; the
