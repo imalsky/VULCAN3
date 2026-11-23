@@ -462,6 +462,9 @@ ledger" or the named repo's notes.
 - vulcan3, measured unreachable: `K_eq_array` clips only the exp() argument (`rates_jax._EXP_ARG_MAX` 709), not log K;
   the largest delta_n < 0 log K over 100-6000 K is 433.6; NCHO and SNCHO overflow only below 58 K. Fix only if a
   config below ~60 K ships (clip the whole log K, re-run the gates).
+- vulcan3, K2-18b inputs kept as received: the CH3SCH2 and CH3SO NASA-9 files hold other isomers' data, CH3SCH2 has
+  no sink but its own decomposition, and the network lacks O3 formation and photolysis; the config is a numerics case
+  ("Earth and K2-18b").
 - vulcan-forward: `ckd.overlap` random-overlap jumps at sort crossings (accepted); the photolysis-cadence switch
   ignores a profile's `yconv_min` override (timing only).
 - jwst-transit-authority: the mixed-segment bin.
@@ -777,6 +780,16 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   `new_nasa9.TXT` (97.6 kJ/mol) [M, read]; the bundled Burcat files have no CH3SCH2 entry. An outside review gives
   CH3SCH2 137.9 +- 1.4 kJ/mol from ATcT [unverified: the ATcT page refuses automated reads]. Every reverse rate through
   CH3SCH2 (its decomposition and the H-abstraction rows that make DMS from it) then rests on the wrong isomer.
+  `thermo/NASA9/CH3SO.txt` is the HOCH2S isomer too (Hf298 -33.85 kJ/mol; methylsulfinyl is -69.9, Resende & Ornellas
+  2002), as in the pinned clones; it feeds the reverses of CH3SO's three formation rows, and CH3SO holds 6e-12 of the
+  sulfur on the shipped column [M, daw, `f3e82fd`]. The network keeps O3 only in `CH3SO + O3 -> CH3S + O2 + O2`, and
+  NO3 and HNO3 only in `CH3SCH3 + NO3 -> HNO3 + CH3SCH2`, so those rows never run; upstream's Tsai 2024 file carries
+  O3 formation and photolysis.
+- K2-18b, decided: the network and thermo files stay as received (they equal the pinned clones' and the external
+  user's), and the config ships as a numerics case (condensation, upwind diffusion). Its sulfur partitioning and DMS
+  are not results and are quoted nowhere outside this section; the config header and `tests/science_sources.yaml`
+  say so. Not done: correct-isomer NASA-9 fits (no published fit; an enthalpy shift keeps the wrong Cp and S), added
+  CH3SCH2 sinks or O3 chemistry (no sourced rates). Telling the network's author is the maintainer's call.
 
 ## Design records
 

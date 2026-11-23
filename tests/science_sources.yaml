@@ -128,6 +128,11 @@ supported_inputs:
       chemistry. In no pinned clone,
       so the hash pin is the whole guard. K2-18b.yaml removes `S + CN -> N + CS`
       and its reverse by position (remove_list 891, 892), as the user's config does.
+      Kept as received, with known limits: thermo/NASA9/CH3SCH2.txt and
+      CH3SO.txt (the pinned clones' files) hold the CH3CH2S and HOCH2S
+      isomers' data, CH3SCH2 has no sink but its own decomposition, and the
+      network has no ozone formation or photolysis. K2-18b.yaml is a numerics
+      case; its sulfur and dimethyl sulfide abundances are not results.
 
   atm/atm_Earth_Jan_Kzz.txt:
     sha256: 76c3fa44a6b8515b633d0c517b5e7d72a5abc8f7464417af8ed820752a955fe4
