@@ -870,7 +870,8 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   does not remove this. VULCAN 2 has the same code path, so the same sensitivity [I]; a perturbed VULCAN 2 run that
   shows its second state is owed (about 10 minutes). Fixed by C34 ("Differences from VULCAN master", Integrator): the NH3 level is the relaxation's condensation top.
   With it the laptop takes level 58 at `stop_conden_time` 5e7, 8e7, 1e8, 1.2e8 and 2e8 s, certifies each (8621, 7261,
-  7251, 7246, 9211 steps) and gives NH3 at 0.097 bar within 0.03 dex of the pinned clone in all five [M, laptop]. The
+  7251, 7246, 9211 steps) and gives NH3 at 0.097 bar within 0.03 dex of the pinned clone in all five [M, laptop]. daw at 5e7, 1e8 and 2e8 s also takes level 58 and
+  certifies (7336, 7380, 7341 steps), 0.03 dex from the clone [M, one core each, `f61808b`]. The
   ice spread above the cloud top stays. Runs and the driver: `scratch/jupiter_pin/`.
   `atm/BC_top_Jupiter.txt` and the low-T Jupiter network stay vendored and are pinned.
 - K2-18b, decided: the network and thermo files stay as received (they equal the pinned clones' and the external
