@@ -8,8 +8,7 @@
 # VULCAN 2's Jupiter example (cfg_examples/vulcan_cfg_Jupiter.py of the pinned clones): a deep column with water and
 # ammonia clouds and a top inflow of H, H2O, CO and CO2. Network, atm, top-flux and stellar files are the pinned
 # clones' (tests/science_sources.yaml).
-# The seed is the ExoGibbs one, so deep H2O sits above the example's FastChem value, and the trace ammonia ice above
-# the cloud top is whatever the pin step froze (notes "Earth and K2-18b", the Jupiter entry).
+# The trace ice at the cloud edges is whatever the pin step froze (notes "Earth and K2-18b", the Jupiter entry).
 
 # ====== Setting up paths and filenames for the input and output files ======
 network: thermo/NCHO_photo_network_lowT_Jupiter.txt
@@ -25,6 +24,11 @@ O_H: 0.00030309
 C_H: 0.00119
 N_H: 0.00022755134
 He_H: 0.0785
+# The example's FastChem seed: its abundance table, and the 35.7% of the oxygen FastChem holds in species this
+# network does not carry.
+fastchem_solar_abundance_file: thermo/solar_element_abundances_lodders2009.dat
+sequestered_frac:
+  O: 0.357
 
 # ====== Setting up photochemistry ======
 r_star: 1

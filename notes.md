@@ -843,13 +843,27 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   sulfur on the shipped column [M, daw, `f3e82fd`]. The network keeps O3 only in `CH3SO + O3 -> CH3S + O2 + O2`, and
   NO3 and HNO3 only in `CH3SCH3 + NO3 -> HNO3 + CH3SCH2`, so those rows have no other source of O3 or NO3 than their own reverses; upstream's Tsai 2024 file carries
   O3 formation and photolysis.
-- Jupiter (VULCAN 2's example, shipped as `Jupiter.yaml` with the ExoGibbs seed): `vulcan3 -c Jupiter` certifies in
-  7251 steps on the laptop (t 1.88e17 s, longdy 0.084) and 7380 on daw (t 2.28e17 s, longdy 0.097) [M, one core
-  each]. The count follows the machine and is not gated, and it is 26% and 28% above the pinned clone's 5746 (the
-  10% bar of `oracle.md` is not met; cause inferred, below). Against the clone at this seed deep H2O is 0.19 dex
-  high, CO2 0.37 and water ice 1.52 at 4.3 bar (the seed difference, below; a matched seed gives 0.07 dex). The two
-  columns agree to 0.09 dex for every gas above 1e-12 and differ by 1.18 dex in NH3 ice at layer 59
-  (below). Before C34 the ammonia cloud had two certified states, and the level the `fix_species` pin takes for NH3
+- Jupiter (VULCAN 2's example, shipped as `Jupiter.yaml` with the example's seed: the Lodders 2009 table and
+  `sequestered_frac: {O: 0.357}`): `vulcan3 -c Jupiter` certifies in 7156 steps on the laptop (t 1.93e17 s, longdy
+  0.080) and 8835 on daw (longdy 0.0998) [M, one core each, `8cbc28a` plus the seed keys]. Against the pinned clone
+  (5746 steps) every gas above 1e-12 agrees to 0.04 dex on daw and 0.09 on the laptop (H2O at layer 40, the water
+  cloud base); the frozen ice at the cloud edges does not (NH3 ice 0.73 dex at layer 47 on daw and 1.17 at layer 59 on
+  the laptop, water ice 1.05 at layer 39 on the laptop; "Known bugs, all repos"). With the default seed the count
+  was 7251 and 7380, and deep H2O 0.19 dex, CO2 0.37 and water ice 1.52 from the clone (the seed difference, below).
+  Step count, cause [M, every trial of both codes traced: laptop for vulcan3, daw for the clone;
+  `scratch/jupiter_pin/trace_an.py`]: C29. Accepted steps to 1e3, 1e4, 1e5, 1e6, 1e7 and 1e8 s: the clone 170, 191,
+  1547, 1323, 569, 549 (4349); vulcan3 173, 785, 2234, 1630, 612, 527 (5961); vulcan3 with C29's two rules switched
+  back in a scratch driver (the estimate masked on the pre-step ymix alone, and no rejection for a populated gas
+  driven negative) 169, 212, 1523, 1321, 612, 527 (4364). vulcan3 rejects 681 trials whose error is under `rtol`,
+  the clone none; rejections on the error are 1723 against 2059 over the whole run. Why a rejection costs so much here: in both codes
+  about a third of those steps (34% and 30%) sit at an error of 0.0398 set by benzene in the top 20 layers, which
+  does not fall with dt, so dt regrows by 0.9% a step (`0.9 * sqrt(0.05 / 0.0398)`) and one halving costs up to 79
+  steps. After 1e8 s vulcan3 is not slower: 958 steps to 1e10 s against the clone's 941, then 45 to 8.5e14 s against
+  456. The clone stops there (7.7e14 s); vulcan3 does not certify yet (the actinic-flux term, below) and adds a tail at
+  the `DT_MAX_S` cap whose length follows how marginal the certificate is: 192, 309 and 1508 steps in three laptop
+  runs (plain, one rule back, both back). The laptop-daw spread is this tail [I]. The count therefore follows the machine and is not gated, and it is
+  25% (laptop) and 54% (daw) above the clone's: outside the 10% bar of `oracle.md`, as the cost of a declared
+  correction. Before C34 the ammonia cloud had two certified states, and the level the `fix_species` pin takes for NH3
   picked one (measured, end of this entry). Same code (`d24dc50`, the bottom-up seed, the draft config) [M, one core on daw; the laptop arm64]: daw
   certifies in 7380 steps (t 2.28e17 s, longdy 0.097), the laptop in 9146 (t 1.94e18 s, longdy 0.086), and the two
   columns differ by 0.77 dex in NH3 at 0.07 bar, 1.18 in NH3 ice, 1.21 in N2H4, 0.67 in NH2 and 0.27 in H, with H2O
