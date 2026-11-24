@@ -181,11 +181,12 @@ def seed_elements(cfg: Config) -> tuple[str, ...]:
     return _seed(bool(cfg.use_photo))[2]
 
 
-# Sequential warm start, layer by layer. ExoGibbs's name: it flips the
-# arrays, so on VULCAN's grid (index 0 = bottom) the scan starts at the cold
-# top. `scan_hot_from_top` shifts the seed past the HD189_vulcan3 gate's step
-# cap.
-_SEED_METHOD = "scan_hot_from_bottom"
+# Sequential warm start, layer by layer, in index order. ExoGibbs names its
+# methods for top-first arrays; on VULCAN's grid (index 0 = bottom) this one
+# starts at the hot bottom. Started at the cold top, a layer near or below
+# 225 K hands on a depleted state that the hot layers keep while the residual
+# reports convergence (notes "Differences from VULCAN master", Inputs and data).
+_SEED_METHOD = "scan_hot_from_top"
 
 
 def _seed_key(cfg: Config) -> tuple[float, int, bool]:

@@ -441,6 +441,33 @@ def test_seed_setup_survives_being_built_inside_a_trace() -> None:
     _run(_TRACER_PROBE, PACKAGE_ROOT)
 
 
+@pytest.mark.parametrize("t_top", [110.0, 215.0])
+def test_hot_layers_do_not_depend_on_the_cold_layers_above(t_top: float) -> None:
+    """In a column from 2000 K down to `t_top`, each layer at 400 K or more seeds as it does alone.
+
+    The warm start runs from the hot bottom up. Run from the cold top it hands the hot layers a depleted state:
+    with a 215 K top they stay finite and are wrong by many dex, with a 110 K top they are NaN.
+    """
+    import jax.numpy as jnp
+
+    from vulcan3 import ini_abun
+    from vulcan3.config import default_config
+
+    cfg = default_config()
+    p_bar = np.logspace(3, -6, 60)
+    T = np.interp(np.log10(p_bar), [-6.0, -1.0, 3.0], [t_top, t_top + 20.0, 2000.0])
+    _, _, seed = ini_abun._seed_fns(*ini_abun._seed_key(cfg))
+    b = jnp.asarray(ini_abun._element_vector(cfg))
+    column = np.asarray(seed(jnp.asarray(T), jnp.asarray(p_bar), b))
+    assert np.isfinite(column).all()
+    floor = 1e-20  # mixing ratio; below it the comparison is of round-off
+    for j in np.flatnonzero(T >= 400.0):
+        alone = np.asarray(seed(jnp.asarray(T[j : j + 1]), jnp.asarray(p_bar[j : j + 1]), b))[0]
+        seen = (alone > floor) | (column[j] > floor)
+        dex = np.abs(np.log10(np.maximum(column[j][seen], 1e-300) / np.maximum(alone[seen], 1e-300)))
+        assert dex.max() < 1e-6, f"layer {j} (T = {T[j]:.0f} K): {dex.max():.3g} dex from the layer alone"
+
+
 def test_seed_lane_is_bitwise_the_solo_seed_at_any_batch_width() -> None:
     """A lane's seed is the solo seed bit for bit at any `vmap` width, nested or under `jvp` (tangent exactly zero).
 
