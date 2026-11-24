@@ -33,7 +33,9 @@ and step counts move by small amounts. A correct run is inside the tolerances se
   a declared departure or a failure.
 - **Step counts.** Run freely to convergence, vulcan3 does not have to take VULCAN 2's number of
   steps: the two round differently, and VULCAN 2's own count moves by about 1 % from run to run.
-  The count is within 10 % of VULCAN 2's on the same case. Against itself vulcan3 is exact: HD189,
+  The count is within 10 % of VULCAN 2's on the same case, except where a declared step-control
+  correction is measured to be the cause (notes "Parity ledger"; the case and its measurement are
+  named in notes). Against itself vulcan3 is exact: HD189,
   HD209 and W39b certify at their pinned counts (`tests/test_step_count_gates.py`, full tier),
   because the same code gives the same count on every machine. That pin is an alarm for an
   unintended change, not a comparison with VULCAN 2; a moved count is explained in notes or it is a

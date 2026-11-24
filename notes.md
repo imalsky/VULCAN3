@@ -862,8 +862,8 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   456. The clone stops there (7.7e14 s); vulcan3 does not certify yet (the actinic-flux term, below) and adds a tail at
   the `DT_MAX_S` cap whose length follows how marginal the certificate is: 192, 309 and 1508 steps in three laptop
   runs (plain, one rule back, both back). The laptop-daw spread is this tail [I]. The count therefore follows the machine and is not gated, and it is
-  25% (laptop) and 54% (daw) above the clone's: outside the 10% bar of `oracle.md`, as the cost of a declared
-  correction. Before C34 the ammonia cloud had two certified states, and the level the `fix_species` pin takes for NH3
+  25% (laptop) and 54% (daw) above the clone's: outside the 10% bar of `oracle.md`, under its exception for a declared
+  step-control correction measured to be the cause (the maintainer decided; C29 stays). Before C34 the ammonia cloud had two certified states, and the level the `fix_species` pin takes for NH3
   picked one (measured, end of this entry). Same code (`d24dc50`, the bottom-up seed, the draft config) [M, one core on daw; the laptop arm64]: daw
   certifies in 7380 steps (t 2.28e17 s, longdy 0.097), the laptop in 9146 (t 1.94e18 s, longdy 0.086), and the two
   columns differ by 0.77 dex in NH3 at 0.07 bar, 1.18 in NH3 ice, 1.21 in N2H4, 0.67 in NH2 and 0.27 in H, with H2O
