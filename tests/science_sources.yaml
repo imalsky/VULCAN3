@@ -516,6 +516,17 @@ intentional_divergences:
       repair and element budget".
     recorded_in: src/vulcan3/jax_step.py::_repair_stage; src/vulcan3/config.py::DT_MAX_S; tests/test_stage_repair_guard.py
 
+  nh3_pin_level:
+    reason: >-
+      VULCAN 2 takes the cold-trap level of the `fix_species` pin from a
+      one-step test, `y >= n_0 * sat_mix`. For NH3 under `use_relax` the
+      relaxation holds the saturation-minimum layer within a few percent of
+      saturation, so the test lands on either side and the Jupiter column has
+      two steady states. VULCAN-JAX takes the level the NH3 relaxation
+      condenses up to. Default-on, no knob; other pinned gases keep the
+      upstream test. Notes "Parity ledger", C34.
+    recorded_in: src/vulcan3/_loop_body.py::activate_fix_species; tests/test_fix_species_level.py
+
   certificate_terms:
     reason: >-
       VULCAN 2 stops on chemistry and actinic flux alone. VULCAN-JAX keeps

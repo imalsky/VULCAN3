@@ -107,6 +107,11 @@ $$\mathrm{rate}_{r,z} = D_{g,r,z} \frac{m_r}{\rho_{p,r} r_{p,r}^2} (y_{z,\mathrm
 `apply_h2o_relax_jax` and `apply_nh3_relax_jax` run an implicit-Euler cold-trap relaxation toward saturation. NH3 also limits
 the condensation region to layers at or below `nh3_conden_top`.
 
+After `stop_conden_time` the `fix_species` pin freezes each listed gas below its cold-trap level and each listed condensate
+through the whole column. The level is the saturation minimum among the layers at or above saturation at the step the pin
+fires, as in VULCAN 2. Relaxed NH3 is the exception: its level is `nh3_conden_top`, because the relaxation keeps that layer
+too close to saturation for the one-step test to decide.
+
 `make_conden_spec` (host, once per config) extracts the temperature-independent metadata. `build_conden_profile` (pure JAX)
 rebuilds every array that depends on temperature or structure, so a caller with a live T(P) can regenerate the `ProfileVars`
 `c_*` fields and splice them into the runner carry. `_build_statics.build_conden_static` delegates to it, so host and on-graph

@@ -52,11 +52,13 @@ def activate_fix_species(statics: _Statics, s_in: JaxIntegState) -> JaxIntegStat
         masked_sat = jnp.where(cond_status, s_in.pv.fix_species_sat_mix, jnp.inf)
         coldtrap_idx = jnp.argmin(masked_sat, axis=1).astype(jnp.int32)
         has_cond = jnp.any(cond_status, axis=1)
-        coldtrap_idx = jnp.where(
-            statics.fix_species_wholecol,
-            jnp.int32(nz_fix - 1),
-            jnp.where(has_cond, coldtrap_idx, jnp.int32(0)),
-        )
+        coldtrap_idx = jnp.where(has_cond, coldtrap_idx, jnp.int32(0))
+        # Relaxed NH3 that condenses takes the level its relaxation condenses up to. The snapshot test is undecided
+        # there: the relaxation holds that layer within a few percent of saturation (notes "Differences from VULCAN
+        # master", Integrator).
+        relax_top = statics.fix_species_use_relax_top & has_cond
+        coldtrap_idx = jnp.where(relax_top, s_in.pv.c_nh3_conden_top, coldtrap_idx)
+        coldtrap_idx = jnp.where(statics.fix_species_wholecol, jnp.int32(nz_fix - 1), coldtrap_idx)
         layer_idx = jnp.arange(nz_fix, dtype=jnp.int32)[:, None]
         fix_cols_mask = layer_idx < coldtrap_idx[None, :]
         fix_pfix_idx = coldtrap_idx

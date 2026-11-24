@@ -175,6 +175,13 @@ Integrator
   set the second false and vulcan-forward refuses it under `use_condense`; the first would move the JWST tool's S8 runs.
 - `default.yaml` also follows that example, not the root `vulcan_cfg.py`, in `nz` 150 (root 120, `:72`), `diff_esc: []`
   (root `['H']`, `:101`) and an `atom_list` without He (root `:6` lists it) [M, read].
+- NH3 pin level C34 (`_loop_body.activate_fix_species`): for NH3 under `use_relax`, the `fix_species` pin takes
+  `nh3_conden_top`, the saturation minimum the NH3 relaxation already condenses up to (`op.py:1377`), when NH3 is
+  saturated anywhere; upstream takes the saturation minimum among the layers that pass `y >= n_0 * sat_mix` at the one
+  step the pin fires (`op.py:882-889`). Reason: the relaxation holds that layer within a few percent of saturation, so
+  upstream's test lands on either side and the column has two certified states ("Earth and K2-18b", the Jupiter entry).
+  Every other pinned gas keeps upstream's test. No shipped config pins NH3, so no shipped number moves [M, grep of
+  `configs/*.yaml` for `fix_species` and `use_relax`]. `tests/test_fix_species_level.py`.
 
 Transport
 - `use_vm_mol` drift: interface-centred, shape (nz-1, ni), refreshed in-loop, as upstream's VULCAN 3 branch ("Molecular
@@ -419,6 +426,7 @@ Port defects fixed back to parity, and JAX-only additions
 | C22 | JAX-only | none | `OuterLoop.run_jvp` (`_make_runner_jvp`); vulcan-forward `converged_y_jvp` | see "Certificates" |
 | C23 | JAX-only | unweighted per-step loss only (`op.py:2485-2490`) | `budget_ok_next` + `real_terminate`; `test_element_budget_certificate.py`; vulcan-forward seeds `budget_ref`/`budget_err` per theta | see "Stage repair and element budget" |
 | C24 | port defect | `fix_y` snapshot before the relaxation (`op.py:871-873` before `:898-902`) | `activate_fix_species` before the `conden_branch` cond; `test_conden_fix_species_pin_matches_master` | H2O_l_s column max cell relerr 1.0 -> 5.2e-15; 0 shipped |
+| C34 | JAX-only | NH3 pin level from the one-step test `y >= n_0 * sat_mix` (`op.py:882-889`) | `activate_fix_species`: `nh3_conden_top` for NH3 under `use_relax`; `test_fix_species_level.py` | Jupiter NH3 at 0.097 bar 0.77 dex between two certified states -> one; 0 shipped |
 
 B. Found in upstream, kept at parity
 
@@ -860,10 +868,10 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   value at the pin, and at layers 58 to 60 it spreads by about 1 dex across these runs (layer 58: 1.2e-9 on daw,
   3.5e-9 to 1.3e-8 on the laptop) while the cloud body (layers 50 to 56, up to 1.2e-4) agrees to 1%; a fixed level
   does not remove this. VULCAN 2 has the same code path, so the same sensitivity [I]; a perturbed VULCAN 2 run that
-  shows its second state is owed (about 10 minutes). Candidate fixes, none applied, each a departure from VULCAN 2:
-  take the level as the saturation minimum, which the relaxation already uses as its condensation top
-  (`op.py:1377`); or a tolerance on the test. A fix must give one level across the `stop_conden_time` sweep and on
-  both platforms. Runs and the driver: `scratch/jupiter_pin/`.
+  shows its second state is owed (about 10 minutes). Fixed by C34 ("Differences from VULCAN master", Integrator): the NH3 level is the relaxation's condensation top.
+  With it the laptop takes level 58 at `stop_conden_time` 5e7, 8e7, 1e8, 1.2e8 and 2e8 s, certifies each (8621, 7261,
+  7251, 7246, 9211 steps) and gives NH3 at 0.097 bar within 0.03 dex of the pinned clone in all five [M, laptop]. The
+  ice spread above the cloud top stays. Runs and the driver: `scratch/jupiter_pin/`.
   `atm/BC_top_Jupiter.txt` and the low-T Jupiter network stay vendored and are pinned.
 - K2-18b, decided: the network and thermo files stay as received (they equal the pinned clones' and the external
   user's), and the config ships as a numerics case (condensation, upwind diffusion). Its sulfur partitioning and DMS

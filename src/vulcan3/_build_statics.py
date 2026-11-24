@@ -103,6 +103,10 @@ def build_statics(integ: OuterLoop, var: types.SimpleNamespace, atm: types.Simpl
             [sp in _conden_mod.WHOLE_COLUMN_CONDENSATES for sp in fix_species_cfg],
             dtype=bool,
         )
+        fix_species_use_relax_top = np.asarray(
+            [sp == "NH3" and "NH3" in integ._cfg.use_relax for sp in fix_species_cfg],
+            dtype=bool,
+        )
         fix_species_sat_mix = np.zeros((len(fix_species_cfg), nz), dtype=np.float64)
         for i, sp in enumerate(fix_species_cfg):
             if sp in atm.sat_mix:
@@ -111,6 +115,7 @@ def build_statics(integ: OuterLoop, var: types.SimpleNamespace, atm: types.Simpl
         fix_species_idx = np.zeros((0,), dtype=np.int32)
         fix_species_sat_mix = np.zeros((0, nz), dtype=np.float64)
         fix_species_wholecol = np.zeros((0,), dtype=bool)
+        fix_species_use_relax_top = np.zeros((0,), dtype=bool)
 
     return _Statics(
         compo_arr=jnp.asarray(integ._compo_arr),
@@ -181,6 +186,7 @@ def build_statics(integ: OuterLoop, var: types.SimpleNamespace, atm: types.Simpl
         fix_species_idx=jnp.asarray(fix_species_idx),
         fix_species_sat_mix=jnp.asarray(fix_species_sat_mix),
         fix_species_wholecol=jnp.asarray(fix_species_wholecol),
+        fix_species_use_relax_top=jnp.asarray(fix_species_use_relax_top),
         save_evolution=capture_evo,
         save_evo_frq=int(integ._cfg.save_evo_frq),
         save_evo_n_max=(int(np.ceil(evo_steps / max(int(integ._cfg.save_evo_frq), 1))) + 1 if capture_evo else 1),

@@ -287,6 +287,7 @@ class _Statics(NamedTuple):
     fix_species_idx: jnp.ndarray  # (n_fix_species,) int32
     fix_species_sat_mix: jnp.ndarray  # (n_fix_species, nz)
     fix_species_wholecol: jnp.ndarray  # (n_fix_species,) bool
+    fix_species_use_relax_top: jnp.ndarray  # (n_fix_species,) bool, NH3 under use_relax
 
     # save_evolution capture. When on, the body writes (y, t) to the
     # ring every `save_evo_frq` accepted steps up to `save_evo_n_max`;
