@@ -831,8 +831,8 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   sulfur on the shipped column [M, daw, `f3e82fd`]. The network keeps O3 only in `CH3SO + O3 -> CH3S + O2 + O2`, and
   NO3 and HNO3 only in `CH3SCH3 + NO3 -> HNO3 + CH3SCH2`, so those rows have no other source of O3 or NO3 than their own reverses; upstream's Tsai 2024 file carries
   O3 formation and photolysis.
-- Jupiter (VULCAN 2's example, not shipped): the ammonia cloud has two certified states and the run picks one by
-  round-off. Same code (`d24dc50`, the bottom-up seed, the draft config) [M, one core on daw; the laptop arm64]: daw
+- Jupiter (VULCAN 2's example, not shipped): the ammonia cloud has two certified states, and the level the
+  `fix_species` pin takes for NH3 picks one (measured, end of this entry). Same code (`d24dc50`, the bottom-up seed, the draft config) [M, one core on daw; the laptop arm64]: daw
   certifies in 7380 steps (t 2.28e17 s, longdy 0.097), the laptop in 9146 (t 1.94e18 s, longdy 0.086), and the two
   columns differ by 0.77 dex in NH3 at 0.07 bar, 1.18 in NH3 ice, 1.21 in N2H4, 0.67 in NH2 and 0.27 in H, with H2O
   and its ice within 0.02. With the top-down seed daw gave the laptop's state (9141 steps), so the seed moved the
@@ -845,8 +845,25 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   0.07 dex (H2O 0.011, NH3 0.019, water ice 0.03), NH3 ice 0.73 off at 1.0 bar. Counts: vulcan3 falls behind before
   1e9 s (t 1.0e6 s at step 5000 against VULCAN 2's 1.8e9 s) with 1743 steps rejected on delta and 703 zeroed
   negatives, C29's step control [I]; capped at step 7200 the matched-seed run stops on the actinic-flux term alone,
-  0.103 against 0.1 (VULCAN 2 exits at 0.087). Not known: whether VULCAN 2 has the second ammonia state, and what
-  sets the choice (the `fix_species` pin is taken at `stop_conden_time` from a column still evolving [I]).
+  0.103 against 0.1 (VULCAN 2 exits at 0.087). Cause [M, laptop and one core on daw, `d86fb9b`]: the cold-trap
+  level of the pin. It is the saturation minimum among layers with `y >= n_0 * sat_mix`, read once from the solved
+  state at the first accepted step past `stop_conden_time`, before that step's relaxation (`activate_fix_species`,
+  upstream `op.py:876-893`). The NH3 saturation minimum is layer 58 (0.140 bar), and the relaxation holds that layer
+  within a few percent of saturation, so the test there goes either way: at the pin the ratio was 1.0256 on daw (step
+  6085, level 58) and 0.9984 on the laptop (step 6051, level 57). The laptop run with the level forced to 58 gives
+  daw's gas column (layer 57 at 1.007 of saturation, layer 58 at 0.144; 7251 steps; NH3 at 0.097 bar 0.03 dex from the
+  pinned clone), and forced to 57 it repeats the plain run. Laptop runs with `stop_conden_time` 5e7, 8e7, 9e7, 1.1e8,
+  1.2e8 and 2e8 s took levels 58, 57, 57, 57, 57, 57 with layer-58 ratios 0.9967 to 1.0004, and the 5e7 run alone
+  matches the pinned clone (NH3 0.02 dex); 1e9 s did not certify in 10000 steps. The pinned clone's own run printed
+  0.140 bar, level 58. So the two states are a snapshot of a cloud top that has not settled, on a step sequence that
+  differs by platform, and not round-off at the test. Second effect: NH3 ice is frozen through the whole column at its
+  value at the pin, and at layers 58 to 60 it spreads by about 1 dex across these runs (layer 58: 1.2e-9 on daw,
+  3.5e-9 to 1.3e-8 on the laptop) while the cloud body (layers 50 to 56, up to 1.2e-4) agrees to 1%; a fixed level
+  does not remove this. VULCAN 2 has the same code path, so the same sensitivity [I]; a perturbed VULCAN 2 run that
+  shows its second state is owed (about 10 minutes). Candidate fixes, none applied, each a departure from VULCAN 2:
+  take the level as the saturation minimum, which the relaxation already uses as its condensation top
+  (`op.py:1377`); or a tolerance on the test. A fix must give one level across the `stop_conden_time` sweep and on
+  both platforms. Runs and the driver: `scratch/jupiter_pin/`.
   `atm/BC_top_Jupiter.txt` and the low-T Jupiter network stay vendored and are pinned.
 - K2-18b, decided: the network and thermo files stay as received (they equal the pinned clones' and the external
   user's), and the config ships as a numerics case (condensation, upwind diffusion). Its sulfur partitioning and DMS
