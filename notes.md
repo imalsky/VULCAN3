@@ -294,7 +294,7 @@ departures above; their numbers are their own [M]. Their measurements are option
 - Atom-conservation projection: keep. On x86 the worst normalised defect went 8.7e-14 ->
   4.4e-16, but 126 of 360 individual residuals got worse.
 - Ros2 stage repair: keep. A 50%-of-carrier correction is inside the designed cap
-  (`_REPAIR_MAX_CELL_FRAC` 1.0). Optional for both: on/off on real columns.
+  (`_REPAIR_MAX_CELL_FRAC` 1.0). On/off and a swapped reservoir on real columns: "Stage repair and element budget".
 - `DT_MAX_S` 1e15: keep; a `dt_max` sweep 1e11..1e17 on difficult columns is optional.
 - Geometry and element-budget terms: both referees keep both. Each fixes a measured defect
   ("Certificates", "Stage repair and element budget"); the budget term polices the
@@ -622,6 +622,22 @@ only within a block, so on imposed large dt its relative residual blows up where
   conserve each element and the charge at load (`composition.refuse_unbalanced_rows`, VULCAN 2's
   `make_chem_funs.py:727-747`): an unbalanced row would otherwise load and the projection would hide it. All 13
   loadable vendored networks balance [M]. Gates unchanged on `fast` and `reference` [M].
+- Reservoir choice and the species split [M, daw CPU, one core, `776ca9b`, `scratch/repair_split/` there; the
+  projection kept on H2S, the repair's sulfur reservoir swapped, `element_budget_tol: .inf`, each run at its own
+  certified exit; worst |dlog10 VMR| over cells above 1e-12]. W39b config, photo off, against an unrepaired run at
+  `dt_max` 1e6 (509 steps; its own refinement error against `dt_max` 1e7 is 3e-4 dex): unrepaired at 1e11 loses 7.2%
+  of S/H and is off by 0.066 dex (sulfur carriers 0.033-0.065); repaired on H2S at 1e11 S/H +8.6e-6 and 0.004 dex
+  (sulfur carriers <= 0.0013, H2S 6e-5), at the 1e15 cap 0.03 dex (HNCO at the top; sulfur carriers <= 4e-4); on
+  atomic S 0.008 dex, in S itself, every other carrier <= 1.2e-4; on SO2 0.0012 dex, SO2 itself 5e-4. The JWST tool's
+  WASP-39 b photo-off column (nz 100, 459-step reference, refinement error 4e-4): H2S at 1e11 / 1e13 0.008 / 0.009
+  dex (SO2 at 7.6 bar; H2S <= 2e-4); atomic S 0.035 dex in S, others <= 1e-4; SO2 0.015 dex in SO2, others <= 5e-5.
+  Photo on (1084 steps), against the unrepaired run at the same steps: H2S 1.6e-6 dex, atomic S 4.8e-5 (in S); the
+  SO2 run takes another path (1540 steps) and ends 0.11 dex off in SO2 at 7.6 bar, inside the 0.19 dex by which two
+  unrepaired photo-on runs (`dt_max` 1e5 against the default) differ there. Reading: the bias lands on the reservoir
+  species and is largest where that species is a trace, so the main carrier is the right reservoir; with H2S the
+  split holds to 0.01 dex where the unrepaired step is 0.07 off. Not covered: a column that loses most of its
+  sulfur unrepaired (these lose 7%; today's tool column certifies in 122-459 steps, not the 5040 of the leak
+  record above), a count of applied and dropped corrections, any planet but WASP-39 b.
 - Not fixed by the repair: the moldiff boundary rows (P9, +6.6e-19 to +7.9e-18 /s
   of column gain); they set C23's tolerance floor.
 - C23 accumulates each accepted step's operator-weighted column change (`ini_abun.column_atoms`;
