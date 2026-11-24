@@ -213,7 +213,7 @@ Inputs and data
   K2-18b keeps 1876 and its converged column moves by at most 0.0075 dex, its warm layers above the 210 K minimum
   agreeing to 7e-11; HD189_vulcan3 certifies at 7924 steps, longdy 0.087 (4660 uncertified before). Jupiter's
   column also moves, but not because of the seed alone ("Earth and K2-18b").
-- EQ seed, layers below about 225 K are not settled (known limit) [M, laptop CPU]: there the bottom-up scan and a
+- EQ seed, cold layers are not settled, 249 K included (known limit; 225 K is where the solve breaks down, not where it becomes right) [M, laptop CPU]: there the bottom-up scan and a
   per-layer cold start (`vmap_cold`) differ by up to 29 dex above 1e-20 on Jupiter (249 K: N2 7.9e-14 against
   2.4e-17) and 0.70 dex on K2-18b, and the per-layer solve is not finite on 35 Jupiter layers (109-212 K). A layer
   depends on the layers below it, so a warm layer above a cold minimum follows the cold ones; K2-18b's do not move.
@@ -635,9 +635,16 @@ only within a block, so on imposed large dt its relative residual blows up where
   SO2 run takes another path (1540 steps) and ends 0.11 dex off in SO2 at 7.6 bar, inside the 0.19 dex by which two
   unrepaired photo-on runs (`dt_max` 1e5 against the default) differ there. Reading: the bias lands on the reservoir
   species and is largest where that species is a trace, so the main carrier is the right reservoir; with H2S the
-  split holds to 0.01 dex where the unrepaired step is 0.07 off. Not covered: a column that loses most of its
-  sulfur unrepaired (these lose 7%; today's tool column certifies in 122-459 steps, not the 5040 of the leak
-  record above), a count of applied and dropped corrections, any planet but WASP-39 b.
+  split holds to 0.01 dex where the unrepaired step is 0.07 off. The swapped runs do not test large steps: with a
+  trace reservoir the step stays small (atomic S and SO2 certify at 5e8 and 4e8 s in 206 and 1047 steps, whatever the
+  cap; H2S reaches 2e12 s in 121).
+- The repaired column does not depend on the step size where the unrepaired one loses all its sulfur [M, same
+  setup, W39b photo off, the stopping test held off, every run integrated to 1e13 s]: unrepaired at `dt_max` 1e9
+  S/H falls by 100% (10285 steps; sulfur carriers 8.6-17 dex low), at 1e11 by 15% (202 steps; 0.07-0.15 dex).
+  Repaired on H2S at 1e9, 1e10, 1e11 and 1e12 (11171, 1368, 202 and 115 steps) S/H ends +3.7e-5 to +4.1e-5, and
+  against the 1e9 run the others differ by at most 0.0014, 0.0015 and 0.0023 dex over all species (sulfur carriers
+  <= 0.0015, H2S <= 6e-5). Not covered: a count of applied and dropped corrections by layer, photo on at large
+  steps (it steps at 1e5-1e7 s), any planet but WASP-39 b.
 - Not fixed by the repair: the moldiff boundary rows (P9, +6.6e-19 to +7.9e-18 /s
   of column gain); they set C23's tolerance floor.
 - C23 accumulates each accepted step's operator-weighted column change (`ini_abun.column_atoms`;
