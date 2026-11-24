@@ -211,8 +211,8 @@ Inputs and data
   (`test_hot_layers_do_not_depend_on_the_cold_layers_above`). Effect of the change [M, daw CPU, one core,
   `d356d6b` plus the change]: HD189, HD209 and W39b keep 1495, 1206 and 1084 steps (seeds 4e-9 dex apart);
   K2-18b keeps 1876 and its converged column moves by at most 0.0075 dex, its warm layers above the 210 K minimum
-  agreeing to 7e-11; HD189_vulcan3 certifies at 7924 steps, longdy 0.087 (4660 uncertified before); Jupiter's
-  converged NH3 moves 0.83 dex ("Earth and K2-18b").
+  agreeing to 7e-11; HD189_vulcan3 certifies at 7924 steps, longdy 0.087 (4660 uncertified before). Jupiter's
+  column also moves, but not because of the seed alone ("Earth and K2-18b").
 - EQ seed, layers below about 225 K are not settled (known limit) [M, laptop CPU]: there the bottom-up scan and a
   per-layer cold start (`vmap_cold`) differ by up to 29 dex above 1e-20 on Jupiter (249 K: N2 7.9e-14 against
   2.4e-17) and 0.70 dex on K2-18b, and the per-layer solve is not finite on 35 Jupiter layers (109-212 K). A layer
@@ -808,18 +808,22 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   sulfur on the shipped column [M, daw, `f3e82fd`]. The network keeps O3 only in `CH3SO + O3 -> CH3S + O2 + O2`, and
   NO3 and HNO3 only in `CH3SCH3 + NO3 -> HNO3 + CH3SCH2`, so those rows have no other source of O3 or NO3 than their own reverses; upstream's Tsai 2024 file carries
   O3 formation and photolysis.
-- Jupiter (VULCAN 2's example, not shipped) [M, daw CPU, one core, `d356d6b` plus the bottom-up seed and the config,
-  `scratch/jupiter/` and `scratch/seed_hotfirst/` there]: vulcan3 certifies in 7380 steps (t 2.28e17 s, longdy
-  0.097); the pinned clone with the oracle deltas, the corrected network and the four keys its example lacks
-  (`conver_ignore` [], `use_adapt_rtol` false, `rtol_min`, `S_H`) in 5746 (t 8.41e14 s, longdy 0.085, 1636 s), 28%
-  apart. Columns: NH3 0.06 dex, NH3 ice 0.07, N2H4 0.08, CH4 0.05, H 0.10, N2 0.19, CO 0.19 and H2O 0.19 (deep), CO2
-  0.37, water ice 1.52 at 4.3 bar. With the top-down seed the run took 9141 steps and NH3, its ice and N2H4 were
-  0.88, 1.1 and 1.32 dex off: the spoiled seed reached the converged column through the cold-trap pin. What is left
-  is the declared seed difference: deep H2O 5.20e-4 against 3.35e-4 (FastChem holds 36% of the O in species the
-  network drops) and He 0.144 against 0.163 (the seed file's He). With `sequestered_frac: {O: 0.357}` and the
-  Lodders 2009 seed file the run certifies in 8835 steps (longdy 0.0998) and every gas above agrees to 0.07 dex or
-  better (H2O 0.011, CO 0.005, NH3 0.019, water ice 0.03); NH3 ice is 0.73 off at 1.0 bar. The step count stays 54%
-  from VULCAN 2's. The config is not shipped.
+- Jupiter (VULCAN 2's example, not shipped): the ammonia cloud has two certified states and the run picks one by
+  round-off. Same code (`d24dc50`, the bottom-up seed, the draft config) [M, one core on daw; the laptop arm64]: daw
+  certifies in 7380 steps (t 2.28e17 s, longdy 0.097), the laptop in 9146 (t 1.94e18 s, longdy 0.086), and the two
+  columns differ by 0.77 dex in NH3 at 0.07 bar, 1.18 in NH3 ice, 1.21 in N2H4, 0.67 in NH2 and 0.27 in H, with H2O
+  and its ice within 0.02. With the top-down seed daw gave the laptop's state (9141 steps), so the seed moved the
+  choice but does not decide it. Against the pinned clone (5746 steps, t 8.41e14 s, longdy 0.085; the oracle deltas,
+  the corrected network and the four keys its example lacks: `conver_ignore` [], `use_adapt_rtol` false, `rtol_min`,
+  `S_H`): daw's state has NH3 0.06 dex, NH3 ice 0.07, N2H4 0.08; the laptop's 0.82, 1.1 and 1.27. In both, deep H2O
+  is 0.19 dex high and water ice 1.52 at 4.3 bar, the declared seed difference: deep H2O 5.20e-4 against 3.35e-4
+  (FastChem holds 36% of the O in species the network drops) and He 0.144 against 0.163 (the seed file's He). With
+  `sequestered_frac: {O: 0.357}` and the Lodders 2009 seed file daw certifies in 8835 steps and every gas agrees to
+  0.07 dex (H2O 0.011, NH3 0.019, water ice 0.03), NH3 ice 0.73 off at 1.0 bar. Counts: vulcan3 falls behind before
+  1e9 s (t 1.0e6 s at step 5000 against VULCAN 2's 1.8e9 s) with 1743 steps rejected on delta and 703 zeroed
+  negatives, C29's step control [I]; capped at step 7200 the matched-seed run stops on the actinic-flux term alone,
+  0.103 against 0.1 (VULCAN 2 exits at 0.087). Not known: whether VULCAN 2 has the second ammonia state, and what
+  sets the choice (the `fix_species` pin is taken at `stop_conden_time` from a column still evolving [I]).
   `atm/BC_top_Jupiter.txt` and the low-T Jupiter network stay vendored and are pinned.
 - K2-18b, decided: the network and thermo files stay as received (they equal the pinned clones' and the external
   user's), and the config ships as a numerics case (condensation, upwind diffusion). Its sulfur partitioning and DMS
