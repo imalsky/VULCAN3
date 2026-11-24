@@ -17,9 +17,10 @@ name in parentheses is the entry of that name here or in vulcan-retrieval's note
   ran the 2021 file, ni 89; `ffi`, grouped RHS).
 - Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209 1206, W39b 1084 on x86-64 and
   on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test. It certified at 7601 accepted
-  steps up to `46bbac7` [M, daw, one core]; since C30 (`1c6afe1`, M as a collision partner) its upwind phase converges
-  near 2660 steps and the hybrid phase-1 budget (2000 steps, `op.py:1107-1108`) ends it at 4660 with longdy 0.58 [M,
-  bit-identical from `1c6afe1` to `32c6a95`]. The budget stays VULCAN 3's (the maintainer decided): a stated limit.
+  steps up to `46bbac7` [M, daw, one core]; from C30 (`1c6afe1`, M as a collision partner) to `d356d6b` its upwind
+  phase converged near 2660 steps and the hybrid phase-1 budget (2000 steps, `op.py:1107-1108`) ended it at 4660 with
+  longdy 0.58 [M]; with the bottom-up seed it certifies at 7924, longdy 0.087 [M, daw, one core]. The budget stays
+  VULCAN 3's (the maintainer decided): a stated limit.
 - `oracle.yml` is `workflow_dispatch` only; last green dispatch at `ae17ec8` (the oracle job 85 min, each step-count job under 13; at `ff73d93` the runner's step counts were HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084). At `ae17ec8` the full tier
   with the pinned clone gives 518 passed, 38 skipped on daw (x86-64, CPU) and 519 passed, 37 skipped on arm64 [M]; every
   skip is a GPU or arm64 case on daw and a CUDA case on arm64.
@@ -201,21 +202,21 @@ Inputs and data
   and agree to <= 3e-3 dex, median 4e-5 [M]. The gap is upstream's input rounding. It
   converges 225-6000 K; below, it breaks down (NaN residual, not the cap) at scattered T
   on every network, where FastChem converges 150-300 K, fails at 100 K [M].
-- EQ seed, cold layers spoil the column (todo) [M, laptop CPU, `2e6637c`]: a layer's seed depends on the other layers
-  in the call once one is below about 225 K. Jupiter (109-2020 K): the bottom layer (2020 K, 5000 bar) alone, or
-  with layers down to 263 K, gives CO 1.5e-6 and N2 2.1e-5; in the whole column CO 5.0e-54 and N2 8.7e-22, with
-  `converged` true, one iteration and residual 2e-15, so the non-finite refusal does not fire; layers 0-59 and 0-119
-  give NaN there; the column in reversed order gives the right value. Whole column against each layer alone, worst
-  |dlog10| above 1e-20: K2-18b (199-1763 K) 0.73 at a 210 K layer, HD189 and W39b 4e-9. The route [I, read]: the
-  seed is ExoGibbs's sequential warm start (`ini_abun._SEED_METHOD`), which on VULCAN's grid starts at the cold top
-  and hands each layer the last one's log amounts (`exogibbs/equilibrium/gas/profile.py`), and its stationarity
-  residual is abundance-weighted, so a species left depleted by a cold layer adds little to it.
-  ExoGibbs's other two column methods on the same columns [M, laptop CPU, `468bd1f`]: `scan_hot_from_top` (on
-  VULCAN's grid it starts at the hot bottom) gives Jupiter's bottom layer the right CO and N2, with every layer
-  finite and converged, but its cold layers differ from `vmap_cold` by up to 29 dex above 1e-20 (249 K: N2 7.9e-14
-  against 2.4e-17); `vmap_cold` (each layer from a cold start) is not finite on 35 Jupiter layers (109-212 K). On
-  HD189 and W39b the three agree to 4e-9; on K2-18b both scans are 0.70-0.73 dex from `vmap_cold` at the cold
-  layers. No method is right at every layer below about 225 K.
+- EQ seed, the warm start runs from the hot bottom up (`ini_abun._SEED_METHOD`, ExoGibbs's `scan_hot_from_top`: its
+  names assume top-first arrays). Run from the cold top, as it was up to `d356d6b`, a layer near or below 225 K
+  handed on a depleted state and the hot layers kept it with `converged` true [M, laptop CPU]: Jupiter's bottom
+  layer (2020 K, 5000 bar) had CO 5.0e-54 and N2 8.7e-22 against 1.5e-6 and 2.1e-5 alone; a synthetic 2000 K column
+  was NaN with a 110-200 K top and 130 and 36 dex off in its hot layers with a 215 and a 230 K top. From the bottom
+  up every such column is finite and its layers at 400 K or more match the layer alone to 4e-9 dex
+  (`test_hot_layers_do_not_depend_on_the_cold_layers_above`). Effect of the change [M, daw CPU, one core,
+  `d356d6b` plus the change]: HD189, HD209 and W39b keep 1495, 1206 and 1084 steps (seeds 4e-9 dex apart);
+  K2-18b keeps 1876 and its converged column moves by at most 0.0075 dex, its warm layers above the 210 K minimum
+  agreeing to 7e-11; HD189_vulcan3 certifies at 7924 steps, longdy 0.087 (4660 uncertified before); Jupiter's
+  converged NH3 moves 0.83 dex ("Earth and K2-18b").
+- EQ seed, layers below about 225 K are not settled (known limit) [M, laptop CPU]: there the bottom-up scan and a
+  per-layer cold start (`vmap_cold`) differ by up to 29 dex above 1e-20 on Jupiter (249 K: N2 7.9e-14 against
+  2.4e-17) and 0.70 dex on K2-18b, and the per-layer solve is not finite on 35 Jupiter layers (109-212 K). A layer
+  depends on the layers below it, so a warm layer above a cold minimum follows the cold ones; K2-18b's do not move.
 - Data corrections: C1 (= e841d77, SNCHO reaction 949 k0 1e-20 -> 1e-29, which
   upstream also fixed), C4, C5, C6, C7, C12, C14 (networks renumbered), C20 (both
   sides), P18, C25-C28 (low-T reverse rows, HNCO + M, N(2D), sulfur masses; the
@@ -481,6 +482,8 @@ ledger" or the named repo's notes.
   destroyed only by its own decomposition and the reverses of the rows that form it, and the network lacks an O3
   formation row and O3 photolysis; the config is a numerics case
   ("Earth and K2-18b").
+- vulcan3, the EQ seed below about 225 K: no column method is settled there ("Differences from VULCAN master",
+  Inputs and data); layers at 400 K or more are checked against the layer alone.
 - vulcan-forward: `ckd.overlap` random-overlap jumps at sort crossings (accepted); the photolysis-cadence switch
   ignores a profile's `yconv_min` override (timing only).
 - jwst-transit-authority: the mixed-segment bin.
@@ -496,6 +499,10 @@ ledger" or the named repo's notes.
   values in two processes.
 - daw's RTX 6000 Ada (FP64 at 1/64) is a development device: bitwise
   reproducible, W39b 207-213 s against 101 s on one CPU core.
+- On daw an HD189 CLI run given 12 cores stalls: over 10 min at 12 busy threads against 67 s on one core, with either
+  seed direction [M]; HD209 and W39b do not. Three full-tier HD189 subprocess tests timed out that way under `-n 6` on
+  12 cores. With `OMP_NUM_THREADS=1` and `XLA_FLAGS="--xla_cpu_multi_thread_eigen=false
+  intra_op_parallelism_threads=1"` the gate and matched-step tests pass in 10 min. Cause not found.
 - The `use_print_prog` progress block (`legacy_io.Output.print_prog`) goes through `logging` at INFO. The CLI configures
   logging to stdout, so it still prints there; a Python-API caller sees it only with a handler at INFO.
 
@@ -801,15 +808,19 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   sulfur on the shipped column [M, daw, `f3e82fd`]. The network keeps O3 only in `CH3SO + O3 -> CH3S + O2 + O2`, and
   NO3 and HNO3 only in `CH3SCH3 + NO3 -> HNO3 + CH3SCH2`, so those rows have no other source of O3 or NO3 than their own reverses; upstream's Tsai 2024 file carries
   O3 formation and photolysis.
-- Jupiter (VULCAN 2's example, not shipped) [M, daw CPU, one core, `5cf7093` plus the config, `scratch/jupiter/`
-  there and on the laptop]: vulcan3 certifies in 9141 steps (t 1.44e18 s, longdy 0.098, 338 s); the pinned clone with
-  the oracle deltas, the corrected network and the four keys its example lacks (`conver_ignore` [], `use_adapt_rtol`
-  false, `rtol_min`, `S_H`) in 5746 (t 8.41e14 s, longdy 0.085, 1636 s). The columns do not agree: H2O 0.19 dex
-  (deep), CO 0.16, NH3 0.88 at 0.07 bar, the two condensates 1.1-1.5, worst 1.52, and the counts are 59% apart. The
-  seeds already differ: deep H2O 5.20e-4 against 3.35e-4 (FastChem holds 36% of the O in species the network
-  drops), He 0.144 against 0.163 (the seed file's He), and vulcan3's deep CO and N2 are the spoiled values above.
-  How much of the final difference each one makes is not measured.
-  The config is not shipped. `atm/BC_top_Jupiter.txt` and the low-T Jupiter network stay vendored and are now pinned.
+- Jupiter (VULCAN 2's example, not shipped) [M, daw CPU, one core, `d356d6b` plus the bottom-up seed and the config,
+  `scratch/jupiter/` and `scratch/seed_hotfirst/` there]: vulcan3 certifies in 7380 steps (t 2.28e17 s, longdy
+  0.097); the pinned clone with the oracle deltas, the corrected network and the four keys its example lacks
+  (`conver_ignore` [], `use_adapt_rtol` false, `rtol_min`, `S_H`) in 5746 (t 8.41e14 s, longdy 0.085, 1636 s), 28%
+  apart. Columns: NH3 0.06 dex, NH3 ice 0.07, N2H4 0.08, CH4 0.05, H 0.10, N2 0.19, CO 0.19 and H2O 0.19 (deep), CO2
+  0.37, water ice 1.52 at 4.3 bar. With the top-down seed the run took 9141 steps and NH3, its ice and N2H4 were
+  0.88, 1.1 and 1.32 dex off: the spoiled seed reached the converged column through the cold-trap pin. What is left
+  is the declared seed difference: deep H2O 5.20e-4 against 3.35e-4 (FastChem holds 36% of the O in species the
+  network drops) and He 0.144 against 0.163 (the seed file's He). With `sequestered_frac: {O: 0.357}` and the
+  Lodders 2009 seed file the run certifies in 8835 steps (longdy 0.0998) and every gas above agrees to 0.07 dex or
+  better (H2O 0.011, CO 0.005, NH3 0.019, water ice 0.03); NH3 ice is 0.73 off at 1.0 bar. The step count stays 54%
+  from VULCAN 2's. The config is not shipped.
+  `atm/BC_top_Jupiter.txt` and the low-T Jupiter network stay vendored and are pinned.
 - K2-18b, decided: the network and thermo files stay as received (they equal the pinned clones' and the external
   user's), and the config ships as a numerics case (condensation, upwind diffusion). Its sulfur partitioning and DMS
   are not results and are quoted nowhere outside this section; the config header and `tests/science_sources.yaml`
@@ -1181,7 +1192,7 @@ Parity and data
 - Matched-step parity past ~step 145 at rtol >= 0.25 (FP amplification): compare converged states.
 - A higher-order vertical transport scheme: the shipped eddy and central moldiff kernels measure second order (1.95-2.00) on a 15x-stretched grid, and nz 150 is converged to about 1% at observable pressures.
 - Bit-moving refactors: folding atm_setup's mu/dz scans into `atm_refresh.hydrostatic_column` (1-2 ulp eager) or `update_mu_dz_jax` onto `atm_setup.mu_dz_g_jax` (`zco` 1 ulp on W39b under jit), one bin-weight contraction in `photo.compute_J_jax_flat`, the shared transport-kernel helpers (`c756201`, reverted `f3dfdf7`: vulcan-forward's `test_queue_is_differentiable` tangent 3.0e-4 -> 1.6e-2, then inside that test's bit-level noise [I], its notes "Batched routes (`converged_y_batch`, `converged_y_queue`)"). Transport-kernel refactors need that full-tier test.
-- ExoGibbs's bundled FastChem 3.1.3 tables as the seed's data (a second dataset, no excited states); exogibbs with its declared dependencies; `scan_hot_from_top` (cheaper, but moves the seed and HD189_vulcan3 misses its 20000-step cap).
+- ExoGibbs's bundled FastChem 3.1.3 tables as the seed's data (a second dataset, no excited states); exogibbs with its declared dependencies; the seed's warm start from the cold top (`scan_hot_from_bottom`: it spoils the hot layers of a column with a layer near or below 225 K, "Differences from VULCAN master").
 - Deselecting the `oracle.yml` HD209 codegen cases or pinning their arm64 FMA residual: they assert the platform-independent invariant since `ebcb780`.
 
 Process and environment
