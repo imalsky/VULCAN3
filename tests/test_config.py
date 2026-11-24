@@ -32,6 +32,8 @@ _EXPECTED_GS = {
     "Earth": 980.0,
     # G Mp / Rp^2 of the external user's Mp 5.162832e28 g and Rp 1.66433376e9 cm.
     "K2-18b": 1243.978491787375,
+    # VULCAN 2's example sets gs 2479; Mp is back-solved from it.
+    "Jupiter": 2479.0,
 }
 
 

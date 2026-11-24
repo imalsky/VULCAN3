@@ -144,12 +144,17 @@ supported_inputs:
       `HNCO + M -> H + NCO + M` (low_t_reverse_rates; the file never carried
       `NH3 + CH -> NH2 + CH2`), the id column rewritten to parser positions
       and one added history comment line; every other row is identical.
-      VULCAN 2's Jupiter example reads it; no shipped config selects it.
+      The Jupiter config reads it.
 
   atm/BC_top_Jupiter.txt:
     sha256: 0d5da84809357b48fcb95a79f0d249be313424962daadc079a02fee49c472d9b
     oracle: vulcan2_ncho
-    note: The top fluxes of VULCAN 2's Jupiter example; no shipped config reads it.
+    note: The top fluxes of VULCAN 2's Jupiter example.
+
+  atm/Jupiter_deep_top.txt:
+    sha256: 5ec489e6373840a9c20cfe2c00dbdef647b029c56865148c1b2723918b6a382c
+    oracle: vulcan2_ncho
+    note: The T-P and Kzz file of VULCAN 2's Jupiter example.
 
   atm/atm_Earth_Jan_Kzz.txt:
     sha256: 76c3fa44a6b8515b633d0c517b5e7d72a5abc8f7464417af8ed820752a955fe4

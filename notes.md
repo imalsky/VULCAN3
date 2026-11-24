@@ -180,8 +180,8 @@ Integrator
   saturated anywhere; upstream takes the saturation minimum among the layers that pass `y >= n_0 * sat_mix` at the one
   step the pin fires (`op.py:882-889`). Reason: the relaxation holds that layer within a few percent of saturation, so
   upstream's test lands on either side and the column has two certified states ("Earth and K2-18b", the Jupiter entry).
-  Every other pinned gas keeps upstream's test. No shipped config pins NH3, so no shipped number moves [M, grep of
-  `configs/*.yaml` for `fix_species` and `use_relax`]. `tests/test_fix_species_level.py`.
+  Every other pinned gas keeps upstream's test. `Jupiter.yaml` is the only shipped config on this path, and it shipped
+  after the change; no other shipped number moves [M, grep of `configs/*.yaml` for `fix_species` and `use_relax`]. `tests/test_fix_species_level.py`.
 
 Transport
 - `use_vm_mol` drift: interface-centred, shape (nz-1, ni), refreshed in-loop, as upstream's VULCAN 3 branch ("Molecular
@@ -255,7 +255,7 @@ Refused or not ported (no physics change)
   and Jupiter examples carry 7 refused keys (`gs`, `ode_solver`, `nega_cut`, `gibbs_text`, `fastchem_met_scale`,
   `use_print_delta`, `fix_species_time`; the last is never read by VULCAN 2) and 13 display-only keys.
 - Not vendored (only what a config, test or consumer reads): VULCAN 2's other networks (NCHO_earth, oxidising, CHO
-  thermo, SNCHO_2024, PHO_full, Venus), atm files (Venus, wasp63b, Teq_500, HD189_ter, Mars BCs, Jupiter_deep_top),
+  thermo, SNCHO_2024, PHO_full, Venus), atm files (Venus, wasp63b, Teq_500, HD189_ter, Mars BCs),
   six stellar spectra, 174 of 300 NASA-9 files and the cross sections of non-network elements. NASA-9 data is read
   beside the network file, so a network path into a VULCAN 2 tree sets up [M, PHO_full].
 - Non-network elements: upstream's `use_other_ele` + `fastchem_met_scale` (gas-only FastChem, then the species outside
@@ -426,7 +426,7 @@ Port defects fixed back to parity, and JAX-only additions
 | C22 | JAX-only | none | `OuterLoop.run_jvp` (`_make_runner_jvp`); vulcan-forward `converged_y_jvp` | see "Certificates" |
 | C23 | JAX-only | unweighted per-step loss only (`op.py:2485-2490`) | `budget_ok_next` + `real_terminate`; `test_element_budget_certificate.py`; vulcan-forward seeds `budget_ref`/`budget_err` per theta | see "Stage repair and element budget" |
 | C24 | port defect | `fix_y` snapshot before the relaxation (`op.py:871-873` before `:898-902`) | `activate_fix_species` before the `conden_branch` cond; `test_conden_fix_species_pin_matches_master` | H2O_l_s column max cell relerr 1.0 -> 5.2e-15; 0 shipped |
-| C34 | JAX-only | NH3 pin level from the one-step test `y >= n_0 * sat_mix` (`op.py:882-889`) | `activate_fix_species`: `nh3_conden_top` for NH3 under `use_relax`; `test_fix_species_level.py` | Jupiter NH3 at 0.097 bar 0.77 dex between two certified states -> one; 0 shipped |
+| C34 | JAX-only | NH3 pin level from the one-step test `y >= n_0 * sat_mix` (`op.py:882-889`) | `activate_fix_species`: `nh3_conden_top` for NH3 under `use_relax`; `test_fix_species_level.py` | Jupiter NH3 at 0.097 bar 0.77 dex between two certified states -> one; `Jupiter.yaml` only |
 
 B. Found in upstream, kept at parity
 
@@ -490,6 +490,10 @@ ledger" or the named repo's notes.
   destroyed only by its own decomposition and the reverses of the rows that form it, and the network lacks an O3
   formation row and O3 photolysis; the config is a numerics case
   ("Earth and K2-18b").
+- vulcan3, both codes [I for upstream], Jupiter: the `fix_species` pin freezes each condensate through the whole
+  column at its value at the pin step, so the trace ice above the cloud top (NH3 ice below 2e-8 at layers 58 to 60,
+  against 1.2e-4 in the cloud) is a snapshot of a transient: about 1 dex between machines and between pin times.
+  The gases and the cloud body are not affected ("Earth and K2-18b", the Jupiter entry).
 - vulcan3, the EQ seed below about 225 K: no column method is settled there ("Differences from VULCAN master",
   Inputs and data); layers at 400 K or more are checked against the layer alone.
 - vulcan-forward: `ckd.overlap` random-overlap jumps at sort crossings (accepted); the photolysis-cadence switch
@@ -839,8 +843,14 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   sulfur on the shipped column [M, daw, `f3e82fd`]. The network keeps O3 only in `CH3SO + O3 -> CH3S + O2 + O2`, and
   NO3 and HNO3 only in `CH3SCH3 + NO3 -> HNO3 + CH3SCH2`, so those rows have no other source of O3 or NO3 than their own reverses; upstream's Tsai 2024 file carries
   O3 formation and photolysis.
-- Jupiter (VULCAN 2's example, not shipped): the ammonia cloud has two certified states, and the level the
-  `fix_species` pin takes for NH3 picks one (measured, end of this entry). Same code (`d24dc50`, the bottom-up seed, the draft config) [M, one core on daw; the laptop arm64]: daw
+- Jupiter (VULCAN 2's example, shipped as `Jupiter.yaml` with the ExoGibbs seed): `vulcan3 -c Jupiter` certifies in
+  7251 steps on the laptop (t 1.88e17 s, longdy 0.084) and 7380 on daw (t 2.28e17 s, longdy 0.097) [M, one core
+  each]. The count follows the machine and is not gated, and it is 26% and 28% above the pinned clone's 5746 (the
+  10% bar of `oracle.md` is not met; cause inferred, below). Against the clone at this seed deep H2O is 0.19 dex
+  high, CO2 0.37 and water ice 1.52 at 4.3 bar (the seed difference, below; a matched seed gives 0.07 dex). The two
+  columns agree to 0.09 dex for every gas above 1e-12 and differ by 1.18 dex in NH3 ice at layer 59
+  (below). Before C34 the ammonia cloud had two certified states, and the level the `fix_species` pin takes for NH3
+  picked one (measured, end of this entry). Same code (`d24dc50`, the bottom-up seed, the draft config) [M, one core on daw; the laptop arm64]: daw
   certifies in 7380 steps (t 2.28e17 s, longdy 0.097), the laptop in 9146 (t 1.94e18 s, longdy 0.086), and the two
   columns differ by 0.77 dex in NH3 at 0.07 bar, 1.18 in NH3 ice, 1.21 in N2H4, 0.67 in NH2 and 0.27 in H, with H2O
   and its ice within 0.02. With the top-down seed daw gave the laptop's state (9141 steps), so the seed moved the
@@ -873,7 +883,7 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   7251, 7246, 9211 steps) and gives NH3 at 0.097 bar within 0.03 dex of the pinned clone in all five [M, laptop]. daw at 5e7, 1e8 and 2e8 s also takes level 58 and
   certifies (7336, 7380, 7341 steps), 0.03 dex from the clone [M, one core each, `f61808b`]. The
   ice spread above the cloud top stays. Runs and the driver: `scratch/jupiter_pin/`.
-  `atm/BC_top_Jupiter.txt` and the low-T Jupiter network stay vendored and are pinned.
+  The config's atm, top-flux and network files are the pinned clones' and are hash-pinned.
 - K2-18b, decided: the network and thermo files stay as received (they equal the pinned clones' and the external
   user's), and the config ships as a numerics case (condensation, upwind diffusion). Its sulfur partitioning and DMS
   are not results and are quoted nowhere outside this section; the config header and `tests/science_sources.yaml`
