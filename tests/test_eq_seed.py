@@ -614,7 +614,8 @@ from vulcan3.atm_setup import Atm
 from vulcan3.config import default_config, load_config
 from vulcan3.state import _AtmData
 
-cfg = load_config(config_name)
+# A config that ships a fraction (Jupiter) is probed with it cleared: the probe sets the fractions itself.
+cfg = load_config(config_name, sequestered_frac={})
 for key, value in vars(cfg).items():  # the process default is the run's config, as setup's overlay makes it
     setattr(default_config(), key, value)
 assert cfg.sequestered_frac == {}
