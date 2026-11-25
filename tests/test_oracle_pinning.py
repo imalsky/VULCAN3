@@ -47,7 +47,9 @@ def fake_oracle(tmp_path):
     # every declared code delta must find its OLD block exactly once
     for rel, deltas in orc.ORACLE_CODE_DELTAS.items():
         (repo / rel).parent.mkdir(parents=True, exist_ok=True)
-        (repo / rel).write_text("def read_rate():\n" + "".join(old for old, _new, _tag in deltas))
+        repeated = orc.ORACLE_CODE_DELTAS_REPEATED.get(rel, ())
+        blocks = [old for old, _new, _tag in deltas] + [old + "\n" for old, _new, _tag, n in repeated for _ in range(n)]
+        (repo / rel).write_text("def read_rate():\n" + "".join(blocks))
     (repo / "fastchem_vulcan" / "fastchem").write_text("built\n")  # so the copy does not build a FastChem
     _git_init = subprocess.run(["git", "init", "-q", str(repo)], capture_output=True, text=True, check=False)
     assert _git_init.returncode == 0, _git_init.stderr

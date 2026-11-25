@@ -184,6 +184,11 @@ Integrator
   after the change; no other shipped number moves [M, grep of `configs/*.yaml` for `fix_species` and `use_relax`]. `tests/test_fix_species_level.py`.
 
 Transport
+- Molecular-diffusion boundary rows C35 (`jax_step.compute_diff_grav`): the bottom row's `y[1]` coefficient takes
+  `g[1]` and the top row's `y[nz-2]` coefficient `g[-2]`, as the interior rows weigh each cell with its own gravity;
+  upstream uses the boundary cell's gravity for both (`op.py:1549-1558`). Reason: upstream's rows do not conserve the
+  column, and a trace element drifts by 16% over 1e15 s ("Stage repair and element budget"). Central gravity mode
+  only; the upwind rows already conserve.
 - `use_vm_mol` drift: interface-centred, shape (nz-1, ni), refreshed in-loop, as upstream's VULCAN 3 branch ("Molecular
   diffusion and the hybrid scheme"). VULCAN 2 builds it once at cell centres, shape (nz, ni), with the top temperature
   difference wrapped by `np.roll` (`build_atm.py:737-744`). It reaches HD189_vulcan3 and K2-18b; the saved `vm` is one
@@ -395,6 +400,7 @@ A. Upstream errors corrected in the port
 | C32 | HNO3 NASA-9 file holds three sets (below 200 K, 200-1000 K, 1000-6000 K); the readers take the first two as the T < 1000 / T >= 1000 K fits | `thermo/NASA9/HNO3.txt` | the below-200 K set dropped; `hno3_thermo`, declared | Cp/R at 500 K 19.8 -> 8.67; HNO3 K_eq against FastChem +7.6 dex at 999 K, -0.42 at 3000 K before, within 0.03 dex after (maxichem's end-to-end tests, 2026-11-05); NCHO_full_photo and SNCHO_DMS only; no column rerun | no (the three pinned clones carry the same file) |
 | C29 | Ros2 step control: the error estimate masks on the pre-step ymix only, so a species the step creates escapes it; the clip zeroes every negative, so the negativity test never fires; a retry keeps the rejected ymix; the dt_min force-accept keeps the rejected solve's ymix and the rebalance accepts that composition | `op.py:2949`, `:2459`, `:2524-2531`, `:2515-2520` | `_make_delta_ratio_fn` masks where the old and the pre-clip trial ymix are both < mtol; `_clip_prologue` zeroes every finite negative and counts it in `nega_y` (master's rule; Ros2 undershoots an empty cell by an amount that grows as dt^3 and with the layer density, so no absolute cut fits: K2-18b, "Earth and K2-18b"); `populated_negative` rejects a trial that drives a gas the estimate weighs below zero; -inf and NaN fail `all_nonneg`; only a real accept is a certificate candidate (a held step wrote copies of one state into the window, longdy 0, and certified a column that never stepped, `tests/test_dt_min_frozen.py::test_held_steps_never_certify_a_column`); `ymix_next` / `atom_loss_next` on accept only; force-accept keeps `s.ymix`, so a second force-accept at exactly `dt_min` with no real accept between ends the run (reason 4; `DtMinFrozenError`, or `raise_if_frozen` after an outer jit; `tests/test_dt_min_frozen.py`). Six shipped runs: 0 force-accepts [M]. 16 cold W39b draws at rtol 0.05 and `dt_min` 1e-14: 5 froze, all in stage 2 from its first step; one force-accepted once and recovered; none recovered after two or more [M]. Exact only between refreshes: a photolysis or geometry refresh can change a mid-run trial (none seen frozen mid-run), and dt held just above the floor (h in (1, 2), so adaptive rtol or a failure outside the estimate) never counts and idles to the cap as before. A column holding none of a conserved atom would read a NaN loss, so `MissingAtomError` refuses it at setup unless the atom is in `loss_ex`; a non-finite gas sum stays non-finite in the condensing clip; `_adjoint_core._clip_dead_mask` matches; `tests/test_step_control.py`; silent | a 0-D VULCAN run with these rules froze a 0.66-dex CH4 error (maxichem notes) | no |
 | C33 | a fixed step floor above the step the error estimate accepts on a fast species: once a force-accept keeps the state (C29), a trial failing there can only repeat | `vulcan_cfg.py:135` `dt_min` 1e-14 | `default.yaml` `dt_min` 1e-15; declared in `tools/audit_master_parity.py`; `tests/test_dt_min_frozen.py` | 5 of 16 cold W39b draws froze at rtol 0.05, measured before C30 counted M as a collision partner ("Differences from VULCAN master"); 6 of 6 shipped `.vul` bitwise [M] | no |
+| C35 | molecular-diffusion boundary rows weigh the neighbour cell with the boundary cell's gravity, so the first and last interface fluxes differ between their two sides and the column is not conserved (was P9) | `op.py:1549-1558` and the same rows in `diffdf_settling` and four Jacobian builders | `compute_diff_grav`: `g[1]` in the bottom row's `y[1]` coefficient, `g[-2]` in the top row's `y[nz-2]` coefficient; `test_closed_transport_conserves_the_weighted_column`; the oracle copy through `ORACLE_CODE_DELTAS_REPEATED` | closed trace-H Earth H/N +16% at 1.3e15 s -> -0.3% at 1.6e18 s; shipped columns <= 0.019 dex, gate counts unchanged ("Stage repair and element budget") | no |
 | L1 | `diffdf_settling_vm` drops the `vm` drift at the bottom interface | `op.py:1845-1848` | consistent; `test_diffusion`; silent | one cell, `use_settling` only | no |
 | L2 | vm_branch setup `vm` rolls a 2-D array without `axis=0` | `vulcan3_vm_branch/build_atm.py:803` | `axis=0`; silent | 5e-10 at step 2 | no |
 | P18 | `sflux-GJ1214.txt` pads 133.75-181.55 nm with 464 zero rows | `atm/stellar_flux/sflux-GJ1214.txt` | upstream's regenerated file, `gj1214_upstream_regenerated`; declared | 0 shipped; regeneration lowers every flux 1.392x | bb9255b1 |
@@ -438,7 +444,6 @@ B. Found in upstream, kept at parity
 | P4 | `atm_type='table'` stale `pico` for `dz` | `vulcan.py:118` -> `build_atm.py:406,530,554` | same | `dzi` up to 12%; not live | no |
 | P5 | `const_lowT` sum omits NH3, He as remainder | `build_atm.py:48`, `:213` | `ini_abun._load_const_lowT_y` | He/H 0.83% low at 10x N; not live | no |
 | P7 | photolysis quadrature skips the bin-grid join interval | `op.py:2771-2780` | `photo.compute_J_jax_flat` | HO2 J 0.06% (W39b) / 0.32% (HD189), others <= 0.05% | no |
-| P9 | moldiff boundary rows do not conserve the column | `op.py:1549-1558` | `bdry0_grav` / `bdry_top_grav` in `jax_step` | +6.6e-19 to +7.9e-18 /s; C23 bounds it at certification on a closed column with H in bulk; a closed trace-H Earth column held past it gains H/N +16% and S/N +4.1% by 1.3e15 s ("Stage repair and element budget") | no |
 | P10 | escape Jacobian entry `top_flux/y[-1]` too large by `dzi[-1]` | `op.py:2106-2107` vs RHS `:1689` | comment at the `diff_lim` term in `jax_ros2_step` | LHS only; HD209's `diff_esc` inert | no |
 | P11 | C2H4O, CH3NO2 listed twice with different masses (HCS's two rows agree since C28) | `all_compose.txt:76/158, 118/161` | `composition._PARITY_DUPLICATES` (first row kept) | moldiff 7e-5 | no |
 | P12 | H2SO4 mass inconsistent with the S row (the CS family corrected by C28) | `all_compose.txt:143` | same | ~0.2% on trace masses | no |
@@ -472,7 +477,7 @@ ledger" or the named repo's notes.
 
 - vulcan3, inherited from upstream and kept: P1 unweighted atom-conservation diagnostic; P2 two-stream pole; P3
   condensate mass in the gas mean molecular weight; P5 `const_lowT` initializer; P7 photolysis bin-grid join interval;
-  P9 diffusion boundary rows leak the column; P19 arithmetic layer-mean actinic flux.
+  P19 arithmetic layer-mean actinic flux.
 - vulcan3, steady-state adjoint audit (`audit_adjoint_scope`): fixed with the C29 rule change; the clip mask again
   excludes every finite negative, and the runner rejects only a populated gas going negative, which the scan covers.
 - vulcan3, measured nil: the tangent of a reverse rate with K_eq > ~1e154 reads 0 (JAX's `kf / K` tangent holds K**-2,
@@ -687,7 +692,7 @@ only within a block, so on imposed large dt its relative residual blows up where
   closer (7246 and 7241 steps). A shipped open column has no closed total, so only that comparison reads there.
   Reading: P9 is negligible for a bulk element and reaches 16% for a trace element over 1e15 s; shipped Earth stops
   at 1.4e11 s.
-- P9, cause and a fix that is not applied [M, daw, same setup, `4e20488`, the fix as a patch in the scratch driver;
+- P9, cause and fix (C35) [M, daw, same setup, `4e20488`, measured with the fix as a patch in the scratch driver;
   an outside review computed the same result on three atmospheres]. The gravity-mode interior rows weigh each cell's
   density with that cell's own `g`; the bottom row uses `g[0]` on `y[1]` and the top row `g[-1]` on `y[-2]`
   (`compute_diff_grav`; `op.py:1549-1558`), so the first and last interface fluxes differ between their two sides.
@@ -696,10 +701,9 @@ only within a block, so on imposed large dt its relative residual blows up where
   +7.2e-4, C/N +2.1e-4 at 1.6e18 s (unpatched +16%, +4.1%, +0.39% at 1.3e15 s); the remainder was not traced. Shipped
   configs with the patch, against without (worst cell above 1e-12): HD189 0.014 dex (O(1D), top layer), HD209 8e-4,
   W39b 2e-5, with the counts unchanged at 1495, 1206 and 1084; K2-18b bit for bit (upwind); Earth 0.019 dex and
-  11216 -> 11148 steps; Jupiter 7246 -> 7162 with the frozen ice moved. Adopting it is a declared departure and a
-  moved shipped column: the oracle copy needs the same patch, the numpy reference and three fixtures change, and
-  every consumer re-baselines. P9 stays at parity until the maintainer decides.
-- Not fixed by the repair: the moldiff boundary rows (P9, +6.6e-19 to +7.9e-18 /s
+  11216 -> 11148 steps; Jupiter 7246 -> 7162 with the frozen ice moved. Adopted as C35: the oracle copy takes the same
+  correction, and the numpy reference and the fixtures follow.
+- Not fixed by the repair, and corrected since (C35): the moldiff boundary rows (P9, +6.6e-19 to +7.9e-18 /s
   of column gain); they set C23's tolerance floor.
 - C23 accumulates each accepted step's operator-weighted column change (`ini_abun.column_atoms`;
   `operator_column_weights`: `w_0 = dzi[0]`, `w_j = 0.5*(dzi[j-1]+dzi[j])`, `w_last = dzi[-1]`, so a zero-flux update
@@ -1132,7 +1136,7 @@ terms stay (both referees recommended it): the rule "keep VULCAN's original
 convergence criteria" keeps every VULCAN 2 test and allows extra tests that fix a
 confirmed defect; a relaxation of VULCAN's gate is never adopted.
 
-The parity audit's three ion-mode / low-T items stay at parity; P4, P5, P7, P9 stay; every
+The parity audit's three ion-mode / low-T items stay at parity; P4, P5, P7 stay (P9 is corrected as C35, by the maintainer's decision); every
 confirmed data and step-control defect is corrected (C25-C29, which replace P8, the first P10
 and the old "NH3 and CH stay" decision); the C20 report is not filed upstream; the
 tangent-stall early stop is not built; `test_vmap_photo_batch`'s ymix assertion is the scale

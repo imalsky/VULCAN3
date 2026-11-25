@@ -134,15 +134,18 @@ def build_diffusion_coeffs(y: np.ndarray, atm, cfg, mode: str = "auto") -> Diffu
             Bi[0] = 1.0 / dzi[0] * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[1]
             Bi[0] -= ((vm[0] < 0) * vm[0]) / dzi[0]
         else:
-            bdry0_mol_term = (
-                1.0
-                / dzi[0]
-                * Dzz[0]
-                / 2.0
-                * (-1.0 / Hpi[0] + ms * g[0] / (Navo * kb * Ti[0]) + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0])
-            )
-            Ai[0] = -1.0 / dzi[0] * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[0] + bdry0_mol_term
-            Bi[0] = 1.0 / dzi[0] * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[1] + bdry0_mol_term
+            # Each cell's density takes its own gravity (the corrected upstream rows; notes "Parity ledger", C35).
+            def bdry0_mol_term(cell):
+                return (
+                    1.0
+                    / dzi[0]
+                    * Dzz[0]
+                    / 2.0
+                    * (-1.0 / Hpi[0] + ms * g[cell] / (Navo * kb * Ti[0]) + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0])
+                )
+
+            Ai[0] = -1.0 / dzi[0] * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[0] + bdry0_mol_term(0)
+            Bi[0] = 1.0 / dzi[0] * (Dzz[0] / dzi[0]) * (ysum[1] + ysum[0]) / 2.0 / ysum[1] + bdry0_mol_term(1)
         if use_set:
             # Add settling velocity (upwind) at j=0
             Ai[0] -= ((vs[0] > 0) * vs[0]) / dzi[0]
@@ -161,21 +164,26 @@ def build_diffusion_coeffs(y: np.ndarray, atm, cfg, mode: str = "auto") -> Diffu
             Ci[nz - 1] = 1.0 / dzi[-1] * (Dzz[nz - 2] / dzi[-1]) * (ysum[nz - 1] + ysum[nz - 2]) / 2.0 / ysum[nz - 2]
             Ci[nz - 1] += ((vm[-1] > 0) * vm[-1]) / dzi[-1]
         else:
-            bdry_top_mol_term = (
-                -1.0
-                / dzi[-1]
-                * Dzz[-1]
-                / 2.0
-                * (-1.0 / Hpi[-1] + ms * g[-1] / (Navo * kb * Ti[-1]) + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1])
-            )
-            Ai[nz - 1] = (
-                -1.0 / dzi[-1] * (Dzz[nz - 2] / dzi[-1]) * (ysum[nz - 1] + ysum[nz - 2]) / 2.0 / ysum[nz - 1]
-                + bdry_top_mol_term
-            )
-            Ci[nz - 1] = (
-                1.0 / dzi[-1] * (Dzz[nz - 2] / dzi[-1]) * (ysum[nz - 1] + ysum[nz - 2]) / 2.0 / ysum[nz - 2]
-                + bdry_top_mol_term
-            )
+
+            def bdry_top_mol_term(cell):
+                return (
+                    -1.0
+                    / dzi[-1]
+                    * Dzz[-1]
+                    / 2.0
+                    * (
+                        -1.0 / Hpi[-1]
+                        + ms * g[cell] / (Navo * kb * Ti[-1])
+                        + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1]
+                    )
+                )
+
+            Ai[nz - 1] = -1.0 / dzi[-1] * (Dzz[nz - 2] / dzi[-1]) * (ysum[nz - 1] + ysum[nz - 2]) / 2.0 / ysum[
+                nz - 1
+            ] + bdry_top_mol_term(-1)
+            Ci[nz - 1] = 1.0 / dzi[-1] * (Dzz[nz - 2] / dzi[-1]) * (ysum[nz - 1] + ysum[nz - 2]) / 2.0 / ysum[
+                nz - 2
+            ] + bdry_top_mol_term(-2)
         if use_set:
             Ai[nz - 1] += ((vs[-1] < 0) * vs[-1]) / dzi[-1]
             Ci[nz - 1] += ((vs[-1] > 0) * vs[-1]) / dzi[-1]

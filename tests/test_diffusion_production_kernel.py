@@ -82,3 +82,46 @@ def test_production_kernel_matches_reference(mode):
     abs_tol = max(OP_FLOOR, OP_FLOOR * np.abs(diff_numpy).max())
     err = relerr(diff_prod, diff_numpy, floor=abs_tol)
     assert err < OP_RTOL, f"{mode}-mode diffusion operator relerr {err:.3e}"
+
+
+CLOSED_COLUMN_TOL = 1e-10  # measured 3e-12 or less; upstream's boundary rows give 1.5e-4 in gravity mode (C35)
+
+
+@pytest.mark.parametrize("mode", ["gravity", "vm", "vz"])
+def test_closed_transport_conserves_the_weighted_column(mode):
+    """With closed boundaries the transport operator moves each species and creates none.
+
+    The interface fluxes telescope under `operator_column_weights`, so the weighted column tendency of every species
+    is round-off against the weighted sum of its cell tendencies. HD189's gravity falls with height, which is what
+    upstream's boundary rows get wrong: they weigh the neighbour cell with the boundary cell's gravity.
+    """
+    import jax.numpy as jnp
+
+    from vulcan3 import jax_step
+    from vulcan3.config import default_config
+    from vulcan3.ini_abun import operator_column_weights
+    from vulcan3.state import RunState, legacy_view
+
+    vulcan_cfg = default_config()
+    vulcan_cfg.use_vm_mol = False
+    vulcan_cfg.use_hybrid_vm_mol = False
+    rs = RunState.with_pre_loop_setup(vulcan_cfg)
+    data_var, data_atm, _ = legacy_view(rs)
+    y = np.asarray(data_var.y, dtype=np.float64)
+    nz, ni = y.shape
+    assert np.ptp(np.asarray(data_atm.g)) > 0.0, "a constant gravity cannot see the boundary rows"
+    if mode == "vm":
+        data_atm.vm = np.random.default_rng(1).standard_normal((nz - 1, ni)) * 50.0
+        vulcan_cfg.use_vm_mol = True
+    if mode == "vz":
+        data_atm.vz = np.random.default_rng(2).standard_normal(nz - 1) * 100.0
+
+    atm_static = jax_step.make_atm_static(data_atm, ni, nz, cfg=vulcan_cfg)
+    coeffs = jax_step._build_diff_coeffs_jax(jnp.asarray(y), atm_static, jax_step.compute_diff_grav(atm_static))[:6]
+    tendency = np.asarray(jax_step._apply_diffusion_jax(jnp.asarray(y), *coeffs, atm_static))
+    weights = np.asarray(operator_column_weights(np.asarray(data_atm.dz)))[:, None]
+    moved = (weights * np.abs(tendency)).sum(axis=0)
+    created = np.abs((weights * tendency).sum(axis=0))
+    assert moved.max() > 0.0
+    worst = float(np.max(created[moved > 0.0] / moved[moved > 0.0]))
+    assert worst < CLOSED_COLUMN_TOL, f"{mode}: weighted column tendency {worst:.2e} of the cell tendencies"

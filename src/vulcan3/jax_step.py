@@ -418,20 +418,16 @@ def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
     B_grav_int = inv_2dz_ave * Dzz[j_int] * grav_jp_b
     C_grav_int = -inv_2dz_ave * Dzz[j_int - 1] * grav_jm_c
 
-    bdry0_grav = (
-        1.0
-        / dzi[0]
-        * Dzz[0]
-        / 2.0
-        * (-1.0 / Hpi[0] + ms * g[0] / (Navo * kb * Ti[0]) + alpha / Ti[0] * (Tco[1] - Tco[0]) / dzi[0])
-    )
-    bdry_top_grav = (
-        -1.0
-        / dzi[-1]
-        * Dzz[-1]
-        / 2.0
-        * (-1.0 / Hpi[-1] + ms * g[-1] / (Navo * kb * Ti[-1]) + alpha / Ti[-1] * (Tco[-1] - Tco[-2]) / dzi[-1])
-    )
+    # Each cell's density is weighed with its own gravity, as in the interior rows, so the flux through the first and
+    # the last interface is the same seen from both sides and the weighted column is conserved. Upstream uses the
+    # boundary cell's gravity for both cells (op.py:1549-1558; notes "Parity ledger", C35).
+    def boundary_drift(face: int, cell: int, upper: int) -> jnp.ndarray:
+        gravity = ms * g[cell] / (Navo * kb * Ti[face])
+        thermal = alpha / Ti[face] * (Tco[upper] - Tco[upper - 1]) / dzi[face]
+        return 1.0 / dzi[face] * Dzz[face] / 2.0 * (-1.0 / Hpi[face] + gravity + thermal)
+
+    bdry0_grav_A, bdry0_grav_B = boundary_drift(0, 0, 1), boundary_drift(0, 1, 1)
+    bdry_top_grav_A, bdry_top_grav_C = -boundary_drift(-1, -1, -1), -boundary_drift(-1, -2, -1)
 
     # Upwind molecular-diffusion advection variant (`use_vm_mol`). `vm` is the
     # interface drift velocity (nz-1, ni): vm[k] acts on the interface between
@@ -457,10 +453,10 @@ def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
     B_base = (1.0 - use_vm) * B_grav_int + use_vm * B_vm_int
     C_base = (1.0 - use_vm) * C_grav_int + use_vm * C_vm_int
 
-    bdry0_A_base = (1.0 - use_vm) * bdry0_grav + use_vm * bdry0_vm
-    bdry0_B_base = (1.0 - use_vm) * bdry0_grav + use_vm * bdry0_vm_B
-    bdry_top_A_base = (1.0 - use_vm) * bdry_top_grav + use_vm * bdry_top_vm
-    bdry_top_C_base = (1.0 - use_vm) * bdry_top_grav + use_vm * bdry_top_vm_C
+    bdry0_A_base = (1.0 - use_vm) * bdry0_grav_A + use_vm * bdry0_vm
+    bdry0_B_base = (1.0 - use_vm) * bdry0_grav_B + use_vm * bdry0_vm_B
+    bdry_top_A_base = (1.0 - use_vm) * bdry_top_grav_A + use_vm * bdry_top_vm
+    bdry_top_C_base = (1.0 - use_vm) * bdry_top_grav_C + use_vm * bdry_top_vm_C
 
     A_extra = A_base + use_set * A_vs_int
     B_extra = B_base + use_set * B_vs_int

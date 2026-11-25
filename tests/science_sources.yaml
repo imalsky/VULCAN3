@@ -487,6 +487,18 @@ intentional_divergences:
       on purpose are listed in INTENTIONAL_JAX_DELTAS.
     recorded_in: tools/audit_master_parity.py
 
+  moldiff_boundary_gravity:
+    reason: >-
+      VULCAN 2's molecular-diffusion boundary rows weigh the neighbour cell
+      with the boundary cell's gravity, where the interior rows use each
+      cell's own. The first and last interface fluxes then differ between
+      their two sides and the column is not conserved: a closed column with
+      trace hydrogen gains 16% of it over 1e15 s. VULCAN-JAX uses the
+      neighbour cell's gravity in those two coefficients; the disposable
+      oracle copy gets the same correction. Default-on, no knob. Notes
+      "Parity ledger", C35.
+    recorded_in: src/vulcan3/jax_step.py::compute_diff_grav; tests/oracle.py::ORACLE_CODE_DELTAS_REPEATED; tests/test_diffusion_production_kernel.py
+
   collision_limit:
     reason: >-
       A rate fit extrapolated far from its range, or a dissociation reverse

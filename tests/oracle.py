@@ -354,22 +354,61 @@ def apply_data_deltas(root: Path) -> list[str]:
     return list(ORACLE_DATA_DELTAS)
 
 
+# The same rule for a correction that upstream repeats: {relative file: ((OLD, NEW, tag, count), ...)}, each OLD
+# found exactly `count` times. The molecular-diffusion boundary rows (notes "Parity ledger", C35) are written once in
+# each of diffdf, diffdf_settling and four Jacobian builders: the y[1] coefficient of the bottom row takes g[1] and
+# the y[nz-2] coefficient of the top row g[-2], as the interior rows weigh each cell with its own gravity.
+_C35 = "molecular-diffusion boundary rows weigh each cell with its own gravity (notes Parity ledger, C35)"
+ORACLE_CODE_DELTAS_REPEATED: dict[str, tuple[tuple[str, str, str, int], ...]] = {
+    "op.py": (
+        (
+            "/ysum[1] +\\\n        1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])",
+            "/ysum[1] +\\\n        1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[1]/(Navo*kb*Ti[0])",
+            _C35,
+            2,
+        ),
+        (
+            "/(2.*ysum[1]) \\\n        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[0]/(Navo*kb*Ti[0])",
+            "/(2.*ysum[1]) \\\n        +1./(dzi[0])* Dzz[0]/2.*(-1./Hpi[0]+ms*g[1]/(Navo*kb*Ti[0])",
+            _C35,
+            4,
+        ),
+        (
+            "/ysum[nz-2] \\\n        -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])",
+            "/ysum[nz-2] \\\n        -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-2]/(Navo*kb*Ti[-1])",
+            _C35,
+            2,
+        ),
+        (
+            "/(2.*ysum[(nz-1)-1]) \\\n                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-1]/(Navo*kb*Ti[-1])",
+            "/(2.*ysum[(nz-1)-1]) \\\n                -1./(dzi[-1])* Dzz[-1]/2.*(-1./Hpi[-1]+ms*g[-2]/(Navo*kb*Ti[-1])",
+            _C35,
+            4,
+        ),
+    ),
+}
+
+
 def apply_code_deltas(root: Path) -> list[str]:
-    """Apply `ORACLE_CODE_DELTAS` to the COPY at `root`; return the applied tags."""
+    """Apply `ORACLE_CODE_DELTAS` and `ORACLE_CODE_DELTAS_REPEATED` to the COPY at `root`; return the applied tags."""
     applied: list[str] = []
-    for rel, deltas in ORACLE_CODE_DELTAS.items():
+    counted = {rel: tuple((*d, 1) for d in deltas) for rel, deltas in ORACLE_CODE_DELTAS.items()}
+    for rel, repeated in ORACLE_CODE_DELTAS_REPEATED.items():
+        counted[rel] = counted.get(rel, ()) + repeated
+    for rel, deltas in counted.items():
         path = root / rel
         text = path.read_bytes().decode("utf-8")
-        for old, new, tag in deltas:
+        for old, new, tag, count in deltas:
             n = text.count(old)
-            if n != 1:
+            if n != count:
                 raise RuntimeError(
-                    f"{path}: delta {tag!r} expects its OLD block exactly once, "
+                    f"{path}: delta {tag!r} expects its OLD block {count} time(s), "
                     f"found {n}; the pinned upstream no longer matches "
                     "ORACLE_CODE_DELTAS -- re-derive or delete the entry"
                 )
             text = text.replace(old, new)
-            applied.append(tag)
+            if tag not in applied:
+                applied.append(tag)
         path.write_bytes(text.encode("utf-8"))
     return applied
 
