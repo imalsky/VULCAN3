@@ -421,13 +421,13 @@ def compute_diff_grav(atm: AtmStatic) -> DiffGrav:
     # Each cell's density is weighed with its own gravity, as in the interior rows, so the flux through the first and
     # the last interface is the same seen from both sides and the weighted column is conserved. Upstream uses the
     # boundary cell's gravity for both cells (op.py:1549-1558; notes "Parity ledger", C35).
-    def boundary_drift(face: int, cell: int, upper: int) -> jnp.ndarray:
+    def boundary_drift(sign: float, face: int, cell: int, upper: int) -> jnp.ndarray:
         gravity = ms * g[cell] / (Navo * kb * Ti[face])
         thermal = alpha / Ti[face] * (Tco[upper] - Tco[upper - 1]) / dzi[face]
-        return 1.0 / dzi[face] * Dzz[face] / 2.0 * (-1.0 / Hpi[face] + gravity + thermal)
+        return sign / dzi[face] * Dzz[face] / 2.0 * (-1.0 / Hpi[face] + gravity + thermal)
 
-    bdry0_grav_A, bdry0_grav_B = boundary_drift(0, 0, 1), boundary_drift(0, 1, 1)
-    bdry_top_grav_A, bdry_top_grav_C = -boundary_drift(-1, -1, -1), -boundary_drift(-1, -2, -1)
+    bdry0_grav_A, bdry0_grav_B = boundary_drift(1.0, 0, 0, 1), boundary_drift(1.0, 0, 1, 1)
+    bdry_top_grav_A, bdry_top_grav_C = boundary_drift(-1.0, -1, -1, -1), boundary_drift(-1.0, -1, -2, -1)
 
     # Upwind molecular-diffusion advection variant (`use_vm_mol`). `vm` is the
     # interface drift velocity (nz-1, ni): vm[k] acts on the interface between

@@ -87,13 +87,14 @@ def test_production_kernel_matches_reference(mode):
 CLOSED_COLUMN_TOL = 1e-10  # measured 3e-12 or less; upstream's boundary rows give 1.5e-4 in gravity mode (C35)
 
 
-@pytest.mark.parametrize("mode", ["gravity", "vm", "vz"])
+@pytest.mark.parametrize("mode", ["gravity", "gravity, no eddy", "vm", "vz"])
 def test_closed_transport_conserves_the_weighted_column(mode):
     """With closed boundaries the transport operator moves each species and creates none.
 
     The interface fluxes telescope under `operator_column_weights`, so the weighted column tendency of every species
     is round-off against the weighted sum of its cell tendencies. HD189's gravity falls with height, which is what
-    upstream's boundary rows get wrong: they weigh the neighbour cell with the boundary cell's gravity.
+    upstream's boundary rows get wrong: they weigh the neighbour cell with the boundary cell's gravity. Eddy mixing
+    carries most of the deep column, so the case without it is the one that sees the bottom row.
     """
     import jax.numpy as jnp
 
@@ -115,6 +116,8 @@ def test_closed_transport_conserves_the_weighted_column(mode):
         vulcan_cfg.use_vm_mol = True
     if mode == "vz":
         data_atm.vz = np.random.default_rng(2).standard_normal(nz - 1) * 100.0
+    if mode == "gravity, no eddy":
+        data_atm.Kzz = np.zeros_like(np.asarray(data_atm.Kzz))
 
     atm_static = jax_step.make_atm_static(data_atm, ni, nz, cfg=vulcan_cfg)
     coeffs = jax_step._build_diff_coeffs_jax(jnp.asarray(y), atm_static, jax_step.compute_diff_grav(atm_static))[:6]

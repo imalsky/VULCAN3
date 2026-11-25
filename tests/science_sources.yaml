@@ -19,7 +19,8 @@ schema_version: 1
 # ---------------------------------------------------------------------------
 # `VULCAN_MASTER_DIR` names a clean checkout at the named commit; there is no
 # default path. An upstream defect corrected on both sides is a code delta in
-# tests/oracle.py::ORACLE_CODE_DELTAS, applied to the disposable copy only
+# tests/oracle.py::ORACLE_CODE_DELTAS (or ORACLE_CODE_DELTAS_REPEATED, for a
+# correction upstream writes in several places), applied to the disposable copy only
 # (see `intentional_divergences`).
 oracles:
 

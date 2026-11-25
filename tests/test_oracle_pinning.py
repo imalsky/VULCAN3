@@ -212,6 +212,10 @@ def test_worktree_gives_a_copy_and_proves_the_original_is_untouched(fake_oracle,
         copy_op = (work / "op.py").read_text()
         assert old not in copy_op
         assert new in copy_op
+        # ... as did every repeated one, at each of its places
+        for old_r, new_r, _tag_r, count in orc.ORACLE_CODE_DELTAS_REPEATED["op.py"]:
+            assert old_r not in copy_op
+            assert copy_op.count(new_r) == count
         # ... and so did every declared data delta
         pkg = ROOT / "src" / "vulcan3"
         for rel in orc.ORACLE_DATA_DELTAS:
@@ -227,6 +231,13 @@ def test_worktree_gives_a_copy_and_proves_the_original_is_untouched(fake_oracle,
     (repinned / "op.py").write_text("nothing\n")
     with pytest.raises(RuntimeError, match="ORACLE_CODE_DELTAS"):
         orc.apply_code_deltas(repinned)
+    # ... as does one that carries a repeated block the wrong number of times
+    miscounted = fake_oracle.parent / "miscounted"
+    miscounted.mkdir()
+    old_r = orc.ORACLE_CODE_DELTAS_REPEATED["op.py"][0][0]
+    (miscounted / "op.py").write_text((fake_oracle / "op.py").read_text() + old_r + "\n")
+    with pytest.raises(RuntimeError, match=r"expects its OLD block 2 time\(s\), found 3"):
+        orc.apply_code_deltas(miscounted)
     # ... and the before/after fingerprint actually catches a mutation
     with pytest.raises(AssertionError, match="CHANGED during the test"), orc.oracle_worktree("vulcan2_ncho"):
         (fake_oracle / "thermo" / "leak.txt").write_text("oops\n")

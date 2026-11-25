@@ -370,7 +370,7 @@ Default NCHO network, 69 species, 872 reactions.
 "master" = the pinned VULCAN 2 clone; upstream lines are 80f75b9; "fixed
 upstream" is against the VULCAN 3 line at a68d7151. "declared" = machine-checked
 (`tests/science_sources.yaml intentional_divergences`,
-`tools/audit_master_parity.py`, `tests/oracle.py::ORACLE_CODE_DELTAS`); "silent" =
+`tools/audit_master_parity.py`, `tests/oracle.py::ORACLE_CODE_DELTAS` and `ORACLE_CODE_DELTAS_REPEATED`); "silent" =
 notes only. None affects the default gas-only HD189 result unless stated. C8-C10
 have no surviving record.
 
@@ -694,10 +694,11 @@ only within a block, so on imposed large dt its relative residual blows up where
   at 1.4e11 s.
 - P9, cause and fix (C35) [M, daw, same setup, `4e20488`, measured with the fix as a patch in the scratch driver;
   an outside review computed the same result on three atmospheres]. The gravity-mode interior rows weigh each cell's
-  density with that cell's own `g`; the bottom row uses `g[0]` on `y[1]` and the top row `g[-1]` on `y[-2]`
-  (`compute_diff_grav`; `op.py:1549-1558`), so the first and last interface fluxes differ between their two sides.
-  With `g[1]` and `g[-2]` in those two off-diagonal coefficients the weighted column telescopes on a fixed grid; the
-  upwind (`use_vm_mol`), settling and advection rows already do. Closed Earth with the patch: H/N -3.0e-3, S/N
+  density with that cell's own `g`; upstream's bottom row uses `g[0]` on `y[1]` and its top row `g[-1]` on `y[-2]`
+  (`op.py:1549-1558`; `compute_diff_grav` did the same before C35), so the first and last interface fluxes differ
+  between their two sides. With `g[1]` and `g[-2]` in those two off-diagonal coefficients the weighted column
+  telescopes on a fixed grid. The upwind drift (`use_vm_mol`), the settling velocity and the advection terms already
+  did; central diffusion with settling carries the same gravity rows and is corrected with them. Closed Earth with the patch: H/N -3.0e-3, S/N
   +7.2e-4, C/N +2.1e-4 at 1.6e18 s (unpatched +16%, +4.1%, +0.39% at 1.3e15 s); the remainder was not traced. Shipped
   configs with the patch, against without (worst cell above 1e-12): HD189 0.014 dex (O(1D), top layer), HD209 8e-4,
   W39b 2e-5, with the counts unchanged at 1495, 1206 and 1084; K2-18b bit for bit (upwind); Earth 0.019 dex and
