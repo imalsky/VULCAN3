@@ -25,7 +25,7 @@ name in parentheses is the entry of that name here or in vulcan-retrieval's note
   longdy 0.58 [M]; with the bottom-up seed it certifies at 7924, longdy 0.087 [M, daw, one core]. The budget stays
   VULCAN 3's (the maintainer decided): a stated limit.
 - `oracle.yml` is `workflow_dispatch` only; last green dispatch at `eb13008` (the oracle job 10 min, each step-count job under 14, the three full-tier
-  shards 29-53 min) [M]; at `ff73d93` the runner's step counts were HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084). At `ae17ec8` the full tier
+  shards 29-53 min) [M]. At `ff73d93` the runner's step counts were HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084. At `ae17ec8` the full tier
   with the pinned clone gives 518 passed, 38 skipped on daw (x86-64, CPU) and 519 passed, 37 skipped on arm64 [M]; every
   skip is a GPU or arm64 case on daw and a CUDA case on arm64.
 - Oracle clones (revisions in `tests/science_sources.yaml`, path in the header above) are clean on daw with `core.fileMode false`.
