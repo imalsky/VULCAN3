@@ -10,10 +10,13 @@ name in parentheses is the entry of that name here or in vulcan-retrieval's note
 
 ## Current state
 
-- 0.19.0 on main: the public names the consumers import, the step-control and electron-balance fixes and the
-  open-column refusal. Tags `v0.17.0`, `v0.18.0` (`760d96c`, the rename plus the W39b baseline merge),
+- 0.20.0 (`eb13008`, tag `v0.20.0`, on TestPyPI): 0.19.0 plus the seed functions taking the run config,
+  `sequestered_frac` in place of `O_sequestered_frac`, the bottom-up equilibrium seed and the C35 boundary rows. 0.19.0
+  (`32c6a95`, tag `v0.19.0`): the public names the consumers import, the step-control and electron-balance fixes and
+  the open-column refusal. Tags `v0.17.0`, `v0.18.0` (`760d96c`, the rename plus the W39b baseline merge),
   `w39b-baseline-v2`. Releases before 0.18.0 were `vulcan-jax`. Releases are on TestPyPI, not on PyPI [I].
-- Consumers floor `vulcan3>=0.19.0`. The eight private aliases 0.19.0 kept for consumers released on 0.18.0 are gone on main after the 0.19.0 release. Production: vulcan-retrieval's WASP-39b on NAS GH200s (2025 SNCHO file, ni 93; v5
+- vulcan-forward and vulcan-retrieval floor `vulcan3>=0.20.0`; jwst-transit-authority floors 0.19.0 and pins its own
+  commit. The eight private aliases 0.19.0 kept for consumers released on 0.18.0 are gone in 0.20.0. Production: vulcan-retrieval's WASP-39b on NAS GH200s (2025 SNCHO file, ni 93; v5
   ran the 2021 file, ni 89; `ffi`, grouped RHS).
 - Step-count gates (`tests/test_step_count_gates.py`, full tier): HD189 1495, HD209 1206, W39b 1084 on x86-64 and
   on arm64 [M] ("Parity ledger", below table A). HD189_vulcan3 is not in that test. It certified at 7601 accepted
@@ -21,7 +24,8 @@ name in parentheses is the entry of that name here or in vulcan-retrieval's note
   phase converged near 2660 steps and the hybrid phase-1 budget (2000 steps, `op.py:1107-1108`) ended it at 4660 with
   longdy 0.58 [M]; with the bottom-up seed it certifies at 7924, longdy 0.087 [M, daw, one core]. The budget stays
   VULCAN 3's (the maintainer decided): a stated limit.
-- `oracle.yml` is `workflow_dispatch` only; last green dispatch at `ae17ec8` (the oracle job 85 min, each step-count job under 13; at `ff73d93` the runner's step counts were HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084). At `ae17ec8` the full tier
+- `oracle.yml` is `workflow_dispatch` only; last green dispatch at `eb13008` (the oracle job 10 min, each step-count job under 14, the three full-tier
+  shards 29-53 min) [M]; at `ff73d93` the runner's step counts were HD189 1580 / 1495, HD209 1211 / 1206, W39b 1082 / 1084). At `ae17ec8` the full tier
   with the pinned clone gives 518 passed, 38 skipped on daw (x86-64, CPU) and 519 passed, 37 skipped on arm64 [M]; every
   skip is a GPU or arm64 case on daw and a CUDA case on arm64.
 - Oracle clones (revisions in `tests/science_sources.yaml`, path in the header above) are clean on daw with `core.fileMode false`.
