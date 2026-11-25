@@ -37,6 +37,9 @@ from test_vmap_while_loop import (
 
 from vulcan3._carry import _ATM_ARRAY_FIELDS
 
+# Batched runs compile large programs: a minute or more each on a CI runner.
+pytestmark = pytest.mark.slow
+
 # The bound test_vmap_while_loop holds batched-vs-solo to; a refilled lane
 # differs from the plain batch for the same reason (cadence, not fixed point).
 REL_MAX = RTOL

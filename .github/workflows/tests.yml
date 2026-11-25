@@ -31,8 +31,8 @@ jobs:
 
   tests:
     runs-on: ubuntu-latest
-    # The normal tier is 59 test-minutes on daw: 20 at three workers, doubled for the runner, plus the install.
-    timeout-minutes: 60
+    # The normal tier is about 19 test-minutes on an arm64 laptop; a test over about 20 s there belongs in the full tier.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -62,5 +62,6 @@ jobs:
       - name: Run tests
         env:
           VULCAN3_ALLOW_MISSING_FIXTURES: "1"
-        # Three workers: four exceed the 16 GB runner. --cov holds the run to pyproject's fail_under.
-        run: python -m pytest tests -n 3 -q --tb=short -ra --durations=15 --cov --cov-report=term
+        # Three workers: four exceed the 16 GB runner. --cov holds the run to pyproject's fail_under; it is measured
+        # on one version only.
+        run: python -m pytest tests -n 3 -q --tb=short -ra --durations=15 ${{ matrix.python-version == '3.10' && '--cov --cov-report=term' || '' }}

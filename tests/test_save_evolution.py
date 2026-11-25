@@ -14,11 +14,13 @@ import pickle
 from pathlib import Path
 
 import numpy as np
+import pytest
 from _helpers import set_cfg
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
+@pytest.mark.slow
 def test_save_evolution_snapshots_and_vul_round_trip():
     from vulcan3 import legacy_io, op_jax, outer_loop
     from vulcan3.state import RunState

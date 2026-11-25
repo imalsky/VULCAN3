@@ -167,7 +167,8 @@ python tools/audit_master_parity.py --master $VULCAN_MASTER_DIR
 - Keep the `.vul` layout that master's `plot_py/` loads (`oracle.md` "Output VULCAN 2's tools read").
 - A function earns a test if it is hot-path, a numerical bridge to master, a jit/vmap/grad boundary, or a parser: the
   bar is "could fail silently and matter". The usual bars are in `oracle.md` "Default bars".
-- A test that takes minutes or several GB is marked `slow` (full tier), never deselected for its cost. Master-oracle
+- A test that takes minutes or several GB is marked `slow` (full tier), never deselected for its cost. The normal tier
+  stays near 10 minutes on the CI runner: a test over about 20 s on the laptop is marked `slow`. Master-oracle
   tests run only with `$VULCAN_MASTER_DIR` set, in subprocesses against a disposable copy. Test-only reference kernels
   live in `tests/_oracles.py`.
 

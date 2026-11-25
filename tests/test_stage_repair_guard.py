@@ -104,6 +104,7 @@ _NEEDS_W39B = pytest.mark.skipif(
 
 
 @_NEEDS_W39B
+@pytest.mark.slow
 def test_guard_keeps_the_w39b_trace_carrier_band_positive(w39b_band_counts):
     for dt, counts in w39b_band_counts.items():
         assert counts["guarded"] == 0, (dt, counts)
@@ -130,6 +131,7 @@ def test_unguarded_repair_inverts_the_w39b_band(w39b_band_counts):
     not (DATA / "adj_state_hd189.npz").is_file(),
     reason="HD189 fixture missing (npz artifacts are gitignored)",
 )
+@pytest.mark.slow
 def test_guard_clamps_only_trace_carrier_cells_of_the_hd189_column():
     """At dt 1e6 the p99 per-cell correction ratio stays under 1.1e-2.
 

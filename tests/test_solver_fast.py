@@ -624,6 +624,7 @@ def check_real_blocks(fixture: str, cfg_name: str, backend: str):
     not (ROOT / "tests" / "data" / "adj_state_hd189.npz").exists(),
     reason="HD189 adjoint fixture missing",
 )
+@pytest.mark.slow
 def test_fast_on_real_hd189_blocks(fast):
     check_real_blocks("adj_state_hd189.npz", "HD189", fast.BACKEND)
 

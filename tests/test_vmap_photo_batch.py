@@ -17,6 +17,9 @@ import pytest
 from _helpers import fast_cfg, stack_atm_statics, stack_integ_states, unstack_integ_states
 from test_vmap_while_loop import _build_integ, _build_rs, _max_rel_diff
 
+# Batched runs compile large programs: a minute or more each on a CI runner.
+pytestmark = pytest.mark.slow
+
 COUNT_MAX = 30
 # Batched runs evaluate photolysis on the iteration tick (accepted states
 # only), solo runs on the accepted-step count, so the stored RT arrays are a

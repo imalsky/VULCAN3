@@ -15,6 +15,7 @@ frozen value at a bottom pin.
 
 from __future__ import annotations
 
+import pytest
 from _helpers import run_child
 
 CONDEN_NETWORK = "thermo/SNCHO_photo_network_2025.txt"
@@ -141,6 +142,7 @@ print("PASS")
 """
 
 
+@pytest.mark.slow
 def test_condensation_runtime_subprocess():
     res = run_child(_CHILD, network=CONDEN_NETWORK, label="condensation")
     assert "SETTLING_OK" in res.stdout, res.stdout

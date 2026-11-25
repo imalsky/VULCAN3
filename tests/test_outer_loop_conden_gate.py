@@ -6,6 +6,7 @@ crosses start_conden_time does not condense. One trial step of a condensing colu
 
 from __future__ import annotations
 
+import pytest
 from _helpers import run_child
 
 NETWORK = "thermo/NCHO_photo_network_lowT_Jupiter.txt"
@@ -74,6 +75,7 @@ print("PASS")
 """
 
 
+@pytest.mark.slow
 def test_conden_gates_use_entry_time_t() -> None:
     res = run_child(_CHILD, network=NETWORK, label="condensation gates")
     assert res.stdout.strip().endswith("PASS"), res.stdout

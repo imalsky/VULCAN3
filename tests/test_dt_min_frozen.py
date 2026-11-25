@@ -54,6 +54,7 @@ def _out_fn(final):
 
 
 @pytest.mark.strict_isolation
+@pytest.mark.slow
 def test_a_floor_too_long_stops_a_solo_run_and_names_the_cell(tmp_path, caplog):
     from vulcan3 import cli
     from vulcan3._loop_branches import _splice_step_atm
@@ -201,6 +202,7 @@ def test_held_steps_never_certify_a_column():
 
 
 @pytest.mark.strict_isolation
+@pytest.mark.slow
 def test_a_frozen_lane_stops_alone_and_the_batch_raises(caplog):
     _, integ, rs = _column()
     state, atm_static = integ.prepare_runstate(rs)
@@ -322,6 +324,7 @@ def _without_atom(integ, state, atom="N"):
 
 
 @pytest.mark.strict_isolation
+@pytest.mark.slow
 def test_a_changed_state_missing_an_atom_is_refused_by_each_runner():
     _, integ, rs = _column()
     state, atm_static = integ.prepare_runstate(rs)
@@ -455,6 +458,7 @@ assert float(final.y[0, i_s4]) > 10.0 * float(state.y[0, i_s4])
 """
 
 
+@pytest.mark.slow
 def test_a_short_sulfur_lifetime_can_step_at_the_default_floor():
     """S4 + M -> S2 + S2 + M at 2900 K and 7.6 bar. S4 starts 50 times below its balance with S2.
 

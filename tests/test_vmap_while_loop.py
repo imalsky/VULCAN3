@@ -74,6 +74,7 @@ def _max_rel_diff(batched_ymix, ref_ymix, floor=YMIX_FLOOR):
 
 
 @pytest.mark.strict_isolation
+@pytest.mark.slow
 def test_run_batch_matches_solo_runs():
     import jax.numpy as jnp
 

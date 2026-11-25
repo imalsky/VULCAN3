@@ -51,6 +51,9 @@ from test_vmap_while_loop import _build_integ, _build_rs, _pin_cfg
 
 from vulcan3._runner_queue import _queue_compact_rungs
 
+# Batched runs compile large programs: a minute or more each on a CI runner.
+pytestmark = pytest.mark.slow
+
 TISO = (900.0, 1000.0, 1100.0, 1200.0, 1300.0)
 # Per-job step caps (the carry's count_max_dyn) so the lanes end at different
 # ticks whatever the physics does; all below the photo-off COUNT_MAX of 40.

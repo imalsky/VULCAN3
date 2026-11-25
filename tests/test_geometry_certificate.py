@@ -6,6 +6,8 @@ update_frq 100 and 1 certify the same column. Subprocess:
 import-frozen network.
 """
 
+import pytest
+
 CADENCE_TOL = 1e-2  # measured 3.1e-3 at geom_conv_tol 1e-3; 1.56 without the term
 
 
@@ -43,6 +45,7 @@ def _check():
     assert worst < CADENCE_TOL, worst
 
 
+@pytest.mark.slow
 def test_certified_column_is_geometry_cadence_independent(tmp_path):
     from _helpers import run_self
 
