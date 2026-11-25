@@ -656,7 +656,22 @@ only within a block, so on imposed large dt its relative residual blows up where
   Repaired on H2S at 1e9, 1e10, 1e11 and 1e12 (11171, 1368, 202 and 115 steps) S/H ends +3.7e-5 to +4.1e-5, and
   against the 1e9 run the others differ by at most 0.0014, 0.0015 and 0.0023 dex over all species (sulfur carriers
   <= 0.0015, H2S <= 6e-5). Not covered: a count of applied and dropped corrections by layer, photo on at large
-  steps (it steps at 1e5-1e7 s), any planet but WASP-39 b.
+  steps (it steps at 1e5-1e7 s).
+- Other planets [M, daw CPU, one core each, `d52b662`, `scratch/conserve_planets/` there; HD189 and HD209, photo
+  off, on their own network and on the 2025 sulfur network; X/H of the dz-weighted column against the run's own
+  start]. That large-step test cannot be repeated on them with the error control on: the step settles at 1.13e5 s
+  (HD189), 1.18e5 s (HD209) and 3.2e3 s (HD189 with sulfur) whatever `dt_max` is ("The dt controller has no
+  headroom"), so the leak regime (1e8 s and up) is not reached. At those steps, 20000 of them with the stopping test
+  held off: repaired, the worst element drift is 4.8e-6 (HD189, N/H), 2.4e-6 (HD209, N/H) and 2.8e-5 (HD209 with
+  sulfur, S/H); unrepaired 1.1e-4 (HD189, C/H), 3.0e-3 (HD209, C/H) and 3.2e-3 (HD209 with sulfur, S/H), and the
+  unrepaired column is 0.001, 0.012 and 0.006 dex from the repaired one. HD189 with sulfur stays at 3.3e-7 either
+  way (it reaches only 6.2e7 s). With the error control switched off (`rtol` 1e6, steps forced to `dt_max` 1e9 or
+  1e11 s, to 1e13 s) neither run is usable and the repair does not hold the budget: repaired HD189 ends with O/H
+  +2.4% and C/H +5.2% at 1e11 and +110% and +240% at 1e9, HD209 -6% and -12% at 1e11, with 317 to 700 trials
+  rejected for a negative; unrepaired, HD209 loses every element at 1e9. Reading: on these planets the repair is
+  what keeps the budget at the steps they take (20 to 1000 times better), and it is not a substitute for the error
+  control; where the extra atoms come from in the forced runs was not traced (the clip of negatives is the first
+  suspect [I]).
 - Not fixed by the repair: the moldiff boundary rows (P9, +6.6e-19 to +7.9e-18 /s
   of column gain); they set C23's tolerance floor.
 - C23 accumulates each accepted step's operator-weighted column change (`ini_abun.column_atoms`;
