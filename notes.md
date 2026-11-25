@@ -438,7 +438,7 @@ B. Found in upstream, kept at parity
 | P4 | `atm_type='table'` stale `pico` for `dz` | `vulcan.py:118` -> `build_atm.py:406,530,554` | same | `dzi` up to 12%; not live | no |
 | P5 | `const_lowT` sum omits NH3, He as remainder | `build_atm.py:48`, `:213` | `ini_abun._load_const_lowT_y` | He/H 0.83% low at 10x N; not live | no |
 | P7 | photolysis quadrature skips the bin-grid join interval | `op.py:2771-2780` | `photo.compute_J_jax_flat` | HO2 J 0.06% (W39b) / 0.32% (HD189), others <= 0.05% | no |
-| P9 | moldiff boundary rows do not conserve the column | `op.py:1549-1558` | `bdry0_grav` / `bdry_top_grav` in `jax_step` | +6.6e-19 to +7.9e-18 /s; C23 bounds it | no |
+| P9 | moldiff boundary rows do not conserve the column | `op.py:1549-1558` | `bdry0_grav` / `bdry_top_grav` in `jax_step` | +6.6e-19 to +7.9e-18 /s; C23 bounds it at certification on a closed column with H in bulk; a closed trace-H Earth column held past it gains H/N +16% and S/N +4.1% by 1.3e15 s ("Stage repair and element budget") | no |
 | P10 | escape Jacobian entry `top_flux/y[-1]` too large by `dzi[-1]` | `op.py:2106-2107` vs RHS `:1689` | comment at the `diff_lim` term in `jax_ros2_step` | LHS only; HD209's `diff_esc` inert | no |
 | P11 | C2H4O, CH3NO2 listed twice with different masses (HCS's two rows agree since C28) | `all_compose.txt:76/158, 118/161` | `composition._PARITY_DUPLICATES` (first row kept) | moldiff 7e-5 | no |
 | P12 | H2SO4 mass inconsistent with the S row (the CS family corrected by C28) | `all_compose.txt:143` | same | ~0.2% on trace masses | no |
@@ -687,6 +687,18 @@ only within a block, so on imposed large dt its relative residual blows up where
   closer (7246 and 7241 steps). A shipped open column has no closed total, so only that comparison reads there.
   Reading: P9 is negligible for a bulk element and reaches 16% for a trace element over 1e15 s; shipped Earth stops
   at 1.4e11 s.
+- P9, cause and a fix that is not applied [M, daw, same setup, `4e20488`, the fix as a patch in the scratch driver;
+  an outside review computed the same result on three atmospheres]. The gravity-mode interior rows weigh each cell's
+  density with that cell's own `g`; the bottom row uses `g[0]` on `y[1]` and the top row `g[-1]` on `y[-2]`
+  (`compute_diff_grav`; `op.py:1549-1558`), so the first and last interface fluxes differ between their two sides.
+  With `g[1]` and `g[-2]` in those two off-diagonal coefficients the weighted column telescopes on a fixed grid; the
+  upwind (`use_vm_mol`), settling and advection rows already do. Closed Earth with the patch: H/N -3.0e-3, S/N
+  +7.2e-4, C/N +2.1e-4 at 1.6e18 s (unpatched +16%, +4.1%, +0.39% at 1.3e15 s); the remainder was not traced. Shipped
+  configs with the patch, against without (worst cell above 1e-12): HD189 0.014 dex (O(1D), top layer), HD209 8e-4,
+  W39b 2e-5, with the counts unchanged at 1495, 1206 and 1084; K2-18b bit for bit (upwind); Earth 0.019 dex and
+  11216 -> 11148 steps; Jupiter 7246 -> 7162 with the frozen ice moved. Adopting it is a declared departure and a
+  moved shipped column: the oracle copy needs the same patch, the numpy reference and three fixtures change, and
+  every consumer re-baselines. P9 stays at parity until the maintainer decides.
 - Not fixed by the repair: the moldiff boundary rows (P9, +6.6e-19 to +7.9e-18 /s
   of column gain); they set C23's tolerance floor.
 - C23 accumulates each accepted step's operator-weighted column change (`ini_abun.column_atoms`;
