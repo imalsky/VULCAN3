@@ -672,6 +672,21 @@ only within a block, so on imposed large dt its relative residual blows up where
   what keeps the budget at the steps they take (20 to 1000 times better), and it is not a substitute for the error
   control; where the extra atoms come from in the forced runs was not traced (the clip of negatives is the first
   suspect [I]).
+- Open-column configs [M, daw CPU, one core each, single-thread XLA, `9f514c5`, `scratch/conserve_planets/` there].
+  Closed variants (boundary fluxes, bottom pins, escape, condensation and the `fix_species` pin off; 12000 steps with
+  the stopping test held off; operator-weighted column against the run's own start). K2-18b (X/H, steps to 1.4e7 s):
+  repaired 1.2e-7 at worst (S), unrepaired S +9.7e-3, C +7.9e-4, O +8.1e-5. Jupiter (X/H, steps to 2e6 s, 3.7e8 s
+  reached, not converged): 2.7e-8 repaired, 4.5e-7 unrepaired; its shipped 1e15 s tail has no closed check. Earth
+  (X/N: hydrogen is a trace, H2O 1e-6, and sulfur is SO2 at 2e-10): to 1.3e15 s with steps to 4e12 s, H/N +16%, S/N
+  +4.1%, C/N +0.39%, O/N -6.7e-4, the same with the repair off and with the projection off as well. That drift is the
+  molecular-diffusion boundary rows (P9), not the stage leak: with `use_moldiff` off the same run, to 3.2e18 s at the
+  1e15 s cap, ends at H/N +6.3e-6, C/N -2.5e-6, S/N +1.6e-4. With molecular diffusion on it grows with steps and
+  time, not with the step size: at 1.1e11 s it is 1.2e-6 in 475 default-cap steps and -2.3e-3 in 12000 steps capped
+  at 1e7 s; at 1.1e13 s, +1.3e-3 in 494 steps. As shipped, repair on against off (worst cell above 1e-12): Earth
+  2.3e-6 dex (11216 steps both), K2-18b 9e-4 dex (1876 both), Jupiter 0.1 dex in NH3 ice at 1 bar with the gases
+  closer (7246 and 7241 steps). A shipped open column has no closed total, so only that comparison reads there.
+  Reading: P9 is negligible for a bulk element and reaches 16% for a trace element over 1e15 s; shipped Earth stops
+  at 1.4e11 s.
 - Not fixed by the repair: the moldiff boundary rows (P9, +6.6e-19 to +7.9e-18 /s
   of column gain); they set C23's tolerance floor.
 - C23 accumulates each accepted step's operator-weighted column change (`ini_abun.column_atoms`;
@@ -860,7 +875,8 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   O3 formation and photolysis.
 - Jupiter (VULCAN 2's example, shipped as `Jupiter.yaml` with the example's seed: the Lodders 2009 table and
   `sequestered_frac: {O: 0.357}`): `vulcan3 -c Jupiter` certifies in 7156 steps on the laptop (t 1.93e17 s, longdy
-  0.080) and 8835 on daw (longdy 0.0998) [M, one core each, `8cbc28a` plus the seed keys]. Against the pinned clone
+  0.080) and on daw in 8835 (longdy 0.0998) with XLA's default threading on one core and 7246 with single-thread
+  XLA [M, `8cbc28a` plus the seed keys; `9f514c5`]. Against the pinned clone
   (5746 steps) every gas above 1e-12 agrees to 0.04 dex on daw and 0.09 on the laptop (H2O at layer 40, the water
   cloud base); the frozen ice at the cloud edges does not (NH3 ice 0.73 dex at layer 47 on daw and 1.17 at layer 59 on
   the laptop, water ice 1.05 at layer 39 on the laptop; "Known bugs, all repos"). With the default seed the count
@@ -876,8 +892,8 @@ clone's `SNCHO_full_photo_network_2025.txt` differs in 4 rows). Its atm file and
   steps. After 1e8 s vulcan3 is not slower: 958 steps to 1e10 s against the clone's 941, then 45 to 8.5e14 s against
   456. The clone stops there (7.7e14 s); vulcan3 does not certify yet (the actinic-flux term, below) and adds a tail at
   the `DT_MAX_S` cap whose length follows how marginal the certificate is: 192, 309 and 1508 steps in three laptop
-  runs (plain, one rule back, both back). The laptop-daw spread is this tail [I]. The count therefore follows the machine and is not gated, and it is
-  25% (laptop) and 54% (daw) above the clone's: outside the 10% bar of `oracle.md`, under its exception for a declared
+  runs (plain, one rule back, both back). The spread between machines and thread settings is this tail [I]. The count therefore follows the rounding (the machine and the thread settings) and is not gated, and it is
+  25% to 54% above the clone's: outside the 10% bar of `oracle.md`, under its exception for a declared
   step-control correction measured to be the cause (the maintainer decided; C29 stays). Before C34 the ammonia cloud had two certified states, and the level the `fix_species` pin takes for NH3
   picked one (measured, end of this entry). Same code (`d24dc50`, the bottom-up seed, the draft config) [M, one core on daw; the laptop arm64]: daw
   certifies in 7380 steps (t 2.28e17 s, longdy 0.097), the laptop in 9146 (t 1.94e18 s, longdy 0.086), and the two
